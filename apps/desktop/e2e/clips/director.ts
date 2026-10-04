@@ -14,7 +14,8 @@ import { profileItem, treeRow } from '../screenshots/nosql';
 
 /**
  * The footage recorder for the Querybara videos (querybara-website/video). Each scene ("clip")
- * films the real app doing one thing against the Larchwood demo databases, at 1920×1080 in the
+ * films the real app doing one thing against the Larchwood demo databases, in a 1920×1080 window
+ * drawn at 1.5× (so the footage is 2880×1620, sharp enough to zoom into for a vertical Short) in the
  * dark theme, paced for a viewer: a drawn mouse pointer that glides to what it clicks and shows
  * each click, typing at a human speed, and a pause after every step that shows something.
  *
@@ -33,6 +34,8 @@ export const CLIPS = process.env['QUERYBARA_E2E_CLIPS'];
 
 export const WIDTH = 1920;
 export const HEIGHT = 1080;
+/** The device scale factor: the footage is SCALE times the window's size. */
+export const SCALE = 1.5;
 
 /** The pause after a step, long enough to read what it showed. */
 const READ_MS = 900;
@@ -182,9 +185,9 @@ export class Clip {
     this.page = launched.page;
   }
 
-  /** Launches the app at 1920×1080 in the dark theme with the demo connections ready. */
+  /** Launches the app at 1920×1080 (1.5×) in the dark theme with the demo connections ready. */
   static async open(setup: ClipSetup = {}): Promise<Clip> {
-    const launched = await launchForShots({ width: WIDTH, height: HEIGHT, scale: 1 });
+    const launched = await launchForShots({ width: WIDTH, height: HEIGHT, scale: SCALE });
     const clip = new Clip(launched);
     for (const profile of setup.connections ?? []) await addConnection(clip.page, profile);
     for (const name of setup.connect ?? []) await connectProfile(clip.page, name);
@@ -207,7 +210,7 @@ export class Clip {
       }
       await this.page.screencast.start({
         path: join(CLIPS, `${id}.webm`),
-        size: { width: WIDTH, height: HEIGHT },
+        size: { width: WIDTH * SCALE, height: HEIGHT * SCALE },
         quality: 100,
       });
     }

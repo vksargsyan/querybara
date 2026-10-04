@@ -182,57 +182,60 @@ test('er-to-alter', async () => {
   });
 });
 
+/**
+ * The production profile under the database's own name: the title bar shows the environment and
+ * then the profile name, which would otherwise read "Production" twice.
+ */
+const LARCHWOOD_LIVE = { ...DEMO.postgresProduction, name: 'Larchwood' };
+
 test('safe-edits', async () => {
-  await film(
-    { connections: [DEMO.postgresProduction], connect: [DEMO.postgresProduction.name] },
-    async (clip) => {
-      const { page } = clip;
-      await openShopTables(page, DEMO.postgresProduction.name);
-      await treeRow(page, 'orders').click();
-      const view = visible(page, 'table-data-panel');
-      await expect(view.getByTestId('table-row-count')).toContainText('rows');
-      await page.waitForTimeout(500);
-      const canvas = (await view.getByTestId('data-grid-canvas').boundingBox())!;
-      const row = (n: number): number => canvas.y + 28 + 13 + 26 * n;
+  await film({ connections: [LARCHWOOD_LIVE], connect: [LARCHWOOD_LIVE.name] }, async (clip) => {
+    const { page } = clip;
+    await openShopTables(page, LARCHWOOD_LIVE.name);
+    await treeRow(page, 'orders').click();
+    const view = visible(page, 'table-data-panel');
+    await expect(view.getByTestId('table-row-count')).toContainText('rows');
+    await page.waitForTimeout(500);
+    const canvas = (await view.getByTestId('data-grid-canvas').boundingBox())!;
+    const row = (n: number): number => canvas.y + 28 + 13 + 26 * n;
 
-      await clip.start('safe-edits');
-      await clip.show('The orders table on a connection marked production', 1600);
+    await clip.start('safe-edits');
+    await clip.show('The orders table on a connection marked production', 1600);
 
-      // The note of the first two orders: walk to the last column, edit, Enter.
-      for (const [n, note] of ['Deliver after 2 pm', 'Leave with the neighbour'].entries()) {
-        await clip.clickAt(canvas.x + 80, row(n));
-        for (let i = 0; i < 10; i++) {
-          await page.keyboard.press('ArrowRight');
-          await page.waitForTimeout(70);
-        }
-        await clip.hold(250);
-        await page.keyboard.press('Enter');
-        const cellEditor = page.getByTestId('cell-editor');
-        await expect(cellEditor).toBeVisible();
-        const input = cellEditor.getByRole('textbox').first();
-        await page.keyboard.press('ControlOrMeta+a');
-        await clip.type(note);
-        await clip.hold(300);
-        await input.press('Enter');
-        await expect(cellEditor).toBeHidden();
-        if (n === 0) await clip.show('Edit a cell right in the grid', 800);
-        else await clip.hold(500);
+    // The note of the first two orders: walk to the last column, edit, Enter.
+    for (const [n, note] of ['Deliver after 2 pm', 'Leave with the neighbour'].entries()) {
+      await clip.clickAt(canvas.x + 80, row(n));
+      for (let i = 0; i < 10; i++) {
+        await page.keyboard.press('ArrowRight');
+        await page.waitForTimeout(70);
       }
-      await expect(view.getByTestId('pending-changes')).toHaveText('2 edited');
-      await clip.point(view.getByTestId('pending-changes'), 400);
-      await clip.show('Two edits staged in the grid; nothing is written yet', 1800);
+      await clip.hold(250);
+      await page.keyboard.press('Enter');
+      const cellEditor = page.getByTestId('cell-editor');
+      await expect(cellEditor).toBeVisible();
+      const input = cellEditor.getByRole('textbox').first();
+      await page.keyboard.press('ControlOrMeta+a');
+      await clip.type(note);
+      await clip.hold(300);
+      await input.press('Enter');
+      await expect(cellEditor).toBeHidden();
+      if (n === 0) await clip.show('Edit a cell right in the grid', 800);
+      else await clip.hold(500);
+    }
+    await expect(view.getByTestId('pending-changes')).toHaveText('2 edited');
+    await clip.point(view.getByTestId('pending-changes'), 400);
+    await clip.show('Two edits staged in the grid; nothing is written yet', 1800);
 
-      await clip.click(view.getByRole('button', { name: /^Apply \(/ }));
-      const dialog = page.getByRole('dialog', { name: 'Apply changes' });
-      await expect(dialog.getByTestId('apply-preview')).toContainText('UPDATE');
-      await clip.show('Apply shows the exact SQL before it runs: two UPDATEs', 2800);
-      await clip.click(dialog.getByRole('button', { name: 'Apply on production' }));
-      const confirm = page.getByRole('alertdialog', { name: 'Run on a production connection?' });
-      await expect(confirm).toBeVisible();
-      await clip.show('Production asks once more, with each statement listed', 2600);
-      await clip.click(confirm.getByRole('button', { name: 'Run anyway' }));
-      await expect(view.getByTestId('pending-changes')).toHaveCount(0);
-      await clip.show('Applied: 2 updated, in one transaction', 2000);
-    },
-  );
+    await clip.click(view.getByRole('button', { name: /^Apply \(/ }));
+    const dialog = page.getByRole('dialog', { name: 'Apply changes' });
+    await expect(dialog.getByTestId('apply-preview')).toContainText('UPDATE');
+    await clip.show('Apply shows the exact SQL before it runs: two UPDATEs', 2800);
+    await clip.click(dialog.getByRole('button', { name: 'Apply on production' }));
+    const confirm = page.getByRole('alertdialog', { name: 'Run on a production connection?' });
+    await expect(confirm).toBeVisible();
+    await clip.show('Production asks once more, with each statement listed', 2600);
+    await clip.click(confirm.getByRole('button', { name: 'Run anyway' }));
+    await expect(view.getByTestId('pending-changes')).toHaveCount(0);
+    await clip.show('Applied: 2 updated, in one transaction', 2000);
+  });
 });
