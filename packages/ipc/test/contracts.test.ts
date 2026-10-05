@@ -434,6 +434,9 @@ describe('mainContract never hands a secret to the renderer', () => {
         delete: notUsed,
         parseUri: notUsed,
         secretStatus: notUsed,
+        inspectFile: notUsed,
+        importFile: notUsed,
+        exportFile: notUsed,
       },
       folders: { list: () => [], save: notUsed, delete: notUsed },
       secrets: { set: notUsed, clear: notUsed },
@@ -603,6 +606,18 @@ describe('parseRequest', () => {
 });
 
 describe('desktop additions', () => {
+  const fileMethodsNotUsed = {
+    inspectFile: (): never => {
+      throw new Error('not used');
+    },
+    importFile: (): never => {
+      throw new Error('not used');
+    },
+    exportFile: (): never => {
+      throw new Error('not used');
+    },
+  };
+
   function serveMain(overrides: Partial<HandlersOf<typeof mainContract>> = {}) {
     const ports = portPair();
     const notUsed = (): never => {
@@ -617,6 +632,9 @@ describe('desktop additions', () => {
         delete: notUsed,
         parseUri: notUsed,
         secretStatus: notUsed,
+        inspectFile: notUsed,
+        importFile: notUsed,
+        exportFile: notUsed,
       },
       folders: { list: () => [], save: notUsed, delete: notUsed },
       secrets: { set: notUsed, clear: notUsed },
@@ -686,6 +704,7 @@ describe('desktop additions', () => {
     const draft = safeProfileSchema.parse(profile({ id: newId() }));
     const main = serveMain({
       profiles: {
+        ...fileMethodsNotUsed,
         list: () => [],
         get: () => {
           throw new Error('not used');
@@ -720,6 +739,7 @@ describe('desktop additions', () => {
     const refId = newId();
     const main = serveMain({
       profiles: {
+        ...fileMethodsNotUsed,
         list: () => [],
         get: () => {
           throw new Error('not used');
@@ -905,6 +925,7 @@ describe('desktop additions', () => {
     const refId = newId();
     const main = serveMain({
       profiles: {
+        ...fileMethodsNotUsed,
         list: () => [],
         get: notUsedHere,
         save: notUsedHere,

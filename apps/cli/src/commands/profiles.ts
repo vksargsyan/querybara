@@ -13,10 +13,11 @@ import {
   type TlsMode,
 } from '@querybara/core';
 import {
-  exportProfiles,
-  importProfiles,
+  applyConnectionsImport,
+  connectionsFileFormat,
+  exportConnections,
   parseConnectionUri,
-  type ExportedFolder,
+  readConnectionsFile,
   type Store,
   type StoredProfile,
 } from '@querybara/storage';
@@ -435,45 +436,20 @@ export async function exportCommand(
   if (profiles.length === 0) throw new CliError('There are no profiles to export');
   const passphrase = await exportPassphrase(runtime, true);
 
-  const allFolders = new Map((store?.folders.list() ?? []).map((f) => [f.id, f]));
-  const folders = new Map<string, ExportedFolder>();
-  for (const profile of profiles) {
-    let id = profile.presentation.folderId;
-    while (id !== null && !folders.has(id)) {
-      const folder = allFolders.get(id);
-      if (!folder) break;
-      folders.set(id, {
-        id,
-        parentId: folder.parentId,
-        name: folder.name,
-        sortOrder: folder.sortOrder,
-      });
-      id = folder.parentId;
-    }
+  // There are profiles, so the store exists.
+  const { data, secrets, unreadable } = exportConnections(store!, profiles, {
+    passphrase,
+    includeSecrets: options.includeSecrets,
+  });
+  if (unreadable > 0) {
+    runtime.reporter.warn(
+      `${plural(unreadable, 'saved secret')} could not be read here and ${unreadable === 1 ? 'is' : 'are'} not in the file (sealed by the desktop app's keychain, or QUERYBARA_PASSPHRASE is not set or differs)`,
+    );
   }
-  let secrets: Record<string, string> | undefined;
-  if (options.includeSecrets && store) {
-    secrets = {};
-    let unavailable = 0;
-    for (const profile of profiles) {
-      const resolved = store.secrets.resolve(profile);
-      for (const [id, value] of Object.entries(resolved.secrets)) secrets[id] = value;
-      unavailable += resolved.missing.filter((ref) => ref.policy === 'save').length;
-    }
-    if (unavailable > 0) {
-      runtime.reporter.warn(
-        `${plural(unavailable, 'saved secret')} could not be read here and ${unavailable === 1 ? 'is' : 'are'} not in the file (sealed by the desktop app's keychain, or QUERYBARA_PASSPHRASE is not set or differs)`,
-      );
-    }
-  }
-  const data = exportProfiles(
-    profiles.map(({ version: _version, ...profile }) => profile),
-    { passphrase, folders: [...folders.values()], ...(secrets ? { secrets } : {}) },
-  );
   writeFileSync(resolve(runtime.ctx.cwd, file), data, { mode: 0o600 });
   await writeLine(
     runtime,
-    `Exported ${plural(profiles.length, 'profile')}${secrets ? ` with ${plural(Object.keys(secrets).length, 'secret')}` : ''} to ${file}`,
+    `Exported ${plural(profiles.length, 'profile')}${options.includeSecrets ? ` with ${plural(secrets, 'secret')}` : ''} to ${file}`,
   );
   return EXIT.ok;
 }
@@ -491,51 +467,28 @@ export async function importCommand(
       code: 'NOT_FOUND',
     });
   }
-  const passphrase = await exportPassphrase(runtime, false);
-  const imported = importProfiles(data, passphrase);
+  const format = connectionsFileFormat(data);
+  if (format === undefined) {
+    throw new CliError(`${file} is not a Querybara export or a Navicat .ncx file`);
+  }
+  const passphrase = format === 'querybara' ? await exportPassphrase(runtime, false) : undefined;
+  const imported = readConnectionsFile(data, passphrase === undefined ? {} : { passphrase });
   const store = runtime.store.require();
+  const result = applyConnectionsImport(store, imported, { replace: options.replace });
 
-  for (const folder of imported.folders) {
-    if (store.folders.get(folder.id)) continue;
-    const parentId =
-      folder.parentId !== null && store.folders.get(folder.parentId) ? folder.parentId : null;
-    store.folders.create({
-      id: folder.id,
-      name: folder.name,
-      parentId,
-      sortOrder: folder.sortOrder,
-    });
-  }
-  let added = 0;
-  let replaced = 0;
-  let skipped = 0;
-  let savedSecrets = 0;
-  let unsavedSecrets = 0;
-  const canSave = store.secrets.canSave();
-  for (const profile of imported.profiles) {
-    const exists = store.profiles.get(profile.id) !== undefined;
-    if (exists && !options.replace) {
-      skipped++;
-      continue;
-    }
-    store.profiles.save(profile);
-    if (exists) replaced++;
-    else added++;
-    for (const ref of secretRefsOf(profile)) {
-      const value = imported.secrets[ref.id];
-      if (value === undefined || ref.policy !== 'save') continue;
-      if (!canSave) {
-        unsavedSecrets++;
-        continue;
-      }
-      store.secrets.set(ref, value);
-      savedSecrets++;
-    }
-  }
+  const { added, replaced, skipped, savedSecrets, unsavedSecrets } = result;
   await writeLine(
     runtime,
     `Imported ${plural(added + replaced, 'profile')} from ${file}${replaced > 0 ? ` (${replaced} replaced)` : ''}${savedSecrets > 0 ? `, ${plural(savedSecrets, 'secret')} saved` : ''}`,
   );
+  const written = new Set(result.written.map((w) => w.key));
+  for (const entry of imported.entries) {
+    if (!written.has(entry.key)) continue;
+    for (const note of entry.notes) runtime.reporter.warn(`${entry.profile.name}: ${note}`);
+  }
+  for (const entry of imported.skipped) {
+    runtime.reporter.warn(`${entry.name} was not imported: ${entry.reason}`);
+  }
   if (skipped > 0) {
     runtime.reporter.warn(
       `${plural(skipped, 'profile')} already existed and ${skipped === 1 ? 'was' : 'were'} skipped; pass --replace to overwrite`,

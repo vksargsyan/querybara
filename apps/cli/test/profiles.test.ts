@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { createCipheriv } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -200,6 +201,46 @@ describe('profiles', () => {
       QUERYBARA_EXPORT_PASSPHRASE: 'wrong',
     });
     expect(wrong.code).toBe(2);
+  });
+
+  it('imports a Navicat .ncx file without a passphrase', async () => {
+    const cipher = createCipheriv(
+      'aes-128-cbc',
+      Buffer.from('libcckeylibcckey'),
+      Buffer.from('libcciv libcciv '),
+    );
+    const saved = Buffer.concat([cipher.update(PASSWORD), cipher.final()])
+      .toString('hex')
+      .toUpperCase();
+    writeFileSync(
+      join(dir, 'navicat.ncx'),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<Connections Ver="1.5">
+  <Connection ConnectionName="Orders" ConnType="MYSQL" Host="db.example" Port="3307" Database="orders" UserName="app" Password="${saved}" SavePassword="true" SSL="false" SSH="false" HTTP="true"/>
+  <Connection ConnectionName="Legacy" ConnType="ORACLE" Host="ora" Port="1521"/>
+</Connections>
+`,
+    );
+    const env = { QUERYBARA_PASSPHRASE: PASSPHRASE };
+    const imported = await cli(['profiles', 'import', 'navicat.ncx'], env);
+    expect(imported.code).toBe(0);
+    expect(imported.stdout).toContain('Imported 1 profile from navicat.ncx, 1 secret saved');
+    expect(imported.stderr).toContain('Orders: HTTP tunnels are not supported');
+    expect(imported.stderr).toContain('Legacy was not imported: Oracle connections');
+    const show = await cli(['profiles', 'show', 'Orders'], env);
+    expect(show.stdout).toContain('db.example:3307');
+    expect(show.stdout).toContain('saved (readable here)');
+
+    const again = await cli(['profiles', 'import', 'navicat.ncx'], env);
+    expect(again.stderr).toContain('1 profile already existed');
+    const replaced = await cli(['profiles', 'import', 'navicat.ncx', '--replace'], env);
+    expect(replaced.stdout).toContain('(1 replaced)');
+    expect(JSON.parse((await cli(['profiles', 'list', '--json'])).stdout)).toHaveLength(1);
+
+    writeFileSync(join(dir, 'other.txt'), 'hello');
+    const refused = await cli(['profiles', 'import', 'other.txt']);
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain('not a Querybara export or a Navicat .ncx file');
   });
 
   it('needs an export passphrase from the environment or a terminal', async () => {

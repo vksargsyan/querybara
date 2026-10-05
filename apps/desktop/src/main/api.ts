@@ -34,6 +34,7 @@ import type { JobManager } from './jobs';
 import { FileGrants, fileDialogHandlers, jobHandlers, type FileDialogs } from './jobs-api';
 import { resaveUnreadableSecrets, resolveProfile } from './secrets';
 import { erModelHandlers } from './er-models';
+import { profileFileHandlers } from './profile-files';
 import type { MenuCommands } from './menu';
 import { scheduleHandlers, type ScheduleEvents } from './schedules-api';
 import type { Scheduler } from './scheduler';
@@ -225,6 +226,7 @@ export function createMainHandlers<P>(
           })),
         };
       },
+      ...profileFileHandlers(store, files),
     },
 
     folders: {

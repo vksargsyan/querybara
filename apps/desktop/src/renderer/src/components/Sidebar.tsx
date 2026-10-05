@@ -10,11 +10,12 @@ import {
 import type { Folder, StoredProfile } from '@querybara/ipc';
 import { useQueryClient } from '@tanstack/react-query';
 import { DropdownMenu } from 'radix-ui';
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 
 import { errorMessage } from '../lib/errors';
 import { mainApi } from '../lib/main-client';
-import { connect, disconnect, useConnections } from '../state/connections';
+import { openExportConnections, openImportConnections } from '../state/connection-files';
+import { connect, disconnect, dismissFailure, useConnections } from '../state/connections';
 import { keys, useFolders, useProfiles } from '../state/data';
 import { confirm } from '../state/dialogs';
 import {
@@ -71,8 +72,8 @@ import { Button, EnvironmentBadge, Icon, cx } from './ui';
  *
  * As in Navicat, a click selects a connection and a double-click (or Enter) connects it, with a
  * spinner in place of its actions button while it connects; only a connected one has a chevron. The header's menu
- * creates connections and folders and closes every open connection; the search and the filter
- * at the bottom narrow the list (state/sidebar-filter.ts).
+ * creates connections and folders, imports and exports connections, and closes every open
+ * connection; the search and the filter at the bottom narrow the list (state/sidebar-filter.ts).
  */
 
 export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) => void }) {
@@ -137,8 +138,20 @@ export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) =
                 New folder
               </MenuItem>
               <DropdownMenu.Separator className="my-1 h-px bg-border" />
+              <MenuItem icon="import" onSelect={() => openImportConnections()}>
+                Import connections…
+              </MenuItem>
+              <MenuItem
+                icon="export"
+                disabled={(profiles.data?.length ?? 0) === 0}
+                onSelect={() => openExportConnections()}
+              >
+                Export connections…
+              </MenuItem>
+              <DropdownMenu.Separator className="my-1 h-px bg-border" />
               <MenuItem
                 icon="disconnect"
+                warning
                 disabled={open.length === 0}
                 onSelect={() => void closeAll()}
               >
@@ -152,9 +165,9 @@ export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) =
         </DropdownMenu.Root>
       </div>
       {error && (
-        <p role="alert" className="px-3 py-2 text-xs text-danger">
+        <ErrorLine role="alert" className="px-3 py-2" onDismiss={() => setError(undefined)}>
           {error}
-        </p>
+        </ErrorLine>
       )}
       <div
         role="tree"
@@ -505,9 +518,9 @@ function ProfileItem(props: {
       await connect(profile.id);
       setExpanded(true);
       void loadChildren(profile.id, []);
-    } catch (e) {
-      const message = errorMessage(e);
-      if (message !== 'Cancelled') props.onError(`${profile.name}: ${message}`);
+    } catch {
+      // A failure shows under the connection (its `failed` state), where it can be dismissed;
+      // a cancelled password prompt shows nothing.
     }
   };
   const close = async (): Promise<void> => {
@@ -668,7 +681,7 @@ function ProfileItem(props: {
                 <MenuItem icon="refresh" onSelect={() => refreshObjects(profile.id, [])}>
                   Refresh objects
                 </MenuItem>
-                <MenuItem icon="disconnect" onSelect={() => void close()}>
+                <MenuItem icon="disconnect" warning onSelect={() => void close()}>
                   Disconnect
                 </MenuItem>
               </>
@@ -735,9 +748,13 @@ function ProfileItem(props: {
         }
       />
       {connection?.status === 'failed' && connection.error && (
-        <p className="px-3 py-1 text-xs text-danger" style={{ paddingLeft: 28 + depth * 14 }}>
+        <ErrorLine
+          className="py-1 pr-3"
+          style={{ paddingLeft: 28 + depth * 14 }}
+          onDismiss={() => dismissFailure(profile.id)}
+        >
           {connection.error}
-        </p>
+        </ErrorLine>
       )}
       {expanded && connected && isSqlEngine(profile.engine) && (
         <div role="group">
@@ -759,6 +776,34 @@ function ProfileItem(props: {
           <SearchTree profile={profile} depth={depth + 1} onError={props.onError} />
         </div>
       )}
+    </div>
+  );
+}
+
+/** An error in the side bar, in red, with a button that dismisses it. */
+function ErrorLine(props: {
+  readonly children: ReactNode;
+  readonly onDismiss: () => void;
+  readonly className?: string;
+  readonly style?: CSSProperties;
+  readonly role?: 'alert';
+}) {
+  return (
+    <div
+      role={props.role}
+      className={cx('flex items-start gap-1 text-xs text-danger', props.className)}
+      style={props.style}
+    >
+      <p className="min-w-0 flex-1 break-words">{props.children}</p>
+      <button
+        type="button"
+        aria-label="Dismiss the error"
+        title="Dismiss"
+        onClick={props.onDismiss}
+        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted hover:bg-hover hover:text-fg"
+      >
+        <Icon name="close" className="h-3 w-3" />
+      </button>
     </div>
   );
 }

@@ -661,6 +661,20 @@ describe('replacement range', () => {
   });
 });
 
+describe('a quoted name still being typed', () => {
+  it('is not offered as a table of the statement', () => {
+    // fast-check's counterexample: an unclosed quote after JOIN parsed as a relation named "".
+    for (const [dialect, sql] of [
+      ['mysql', 'SELECT |JOIN `'],
+      ['mariadb', 'SELECT |JOIN `'],
+      ['postgres', 'SELECT |JOIN "'],
+      ['mysql', 'SELECT * FROM users JOIN `|'],
+    ] as const) {
+      expect(run(dialect, sql).labels).not.toContain('');
+    }
+  });
+});
+
 describe('ranking', () => {
   it('puts exact-case prefix matches, then any-case prefixes, then subsequences', () => {
     const labels = run('postgres', 'SELECT * FROM Us|').labels;
