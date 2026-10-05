@@ -173,7 +173,17 @@ test('marks the request at the cursor with a wash that keeps its text readable',
   await replaceText('GET _cat/indices');
   const request = consolePanel().locator('.querybara-console-request');
   await expect(request).toHaveCount(1);
-  const background = await request.evaluate((element) => getComputedStyle(element).backgroundColor);
+  // The editor redraws the decoration 150 ms after an edit, and an element it has just replaced
+  // has no computed style: read until the background comes from one still in the editor.
+  let background = '';
+  await expect
+    .poll(async () => {
+      background = await request.evaluate((element) =>
+        element.isConnected ? getComputedStyle(element).backgroundColor : '',
+      );
+      return background;
+    })
+    .not.toBe('');
   // `color(srgb r g b / a)` or `rgba(r, g, b, a)`: a translucent wash, never the solid accent.
   const alpha = Number(/[/,]\s*([\d.]+)\)$/.exec(background)?.[1] ?? 1);
   expect(alpha).toBeGreaterThan(0);
