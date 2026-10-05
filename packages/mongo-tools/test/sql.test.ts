@@ -33,17 +33,18 @@ describe('SQL to find()', () => {
     expect(mql('SELECT name, address.city FROM customers')).toBe(
       "db.customers.find({}, { name: 1, 'address.city': 1, _id: 0 })",
     );
+    // Aliases and values need an aggregate: before MongoDB 4.4 a find() projection only includes.
     expect(mql('SELECT name AS n, address.city city, 5 AS five FROM customers')).toBe(
-      "db.customers.find({}, { n: '$name', city: '$address.city', five: { $literal: 5 }, _id: 0 })",
+      "db.customers.aggregate([ { $project: { n: '$name', city: '$address.city', five: { $literal: 5 }, _id: 0 } } ])",
     );
     expect(mql('SELECT _id, name FROM customers')).toBe(
       'db.customers.find({}, { _id: 1, name: 1 })',
     );
     expect(mql('SELECT _id AS id FROM customers')).toBe(
-      "db.customers.find({}, { id: '$_id', _id: 0 })",
+      "db.customers.aggregate([ { $project: { id: '$_id', _id: 0 } } ])",
     );
     expect(mql("SELECT 'x', name FROM t")).toBe(
-      "db.t.find({}, { expr1: { $literal: 'x' }, name: 1, _id: 0 })",
+      "db.t.aggregate([ { $project: { expr1: { $literal: 'x' }, name: 1, _id: 0 } } ])",
     );
     expect(mql('SELECT * FROM customers')).toBe('db.customers.find({})');
     expect(mql('SELECT customers.* FROM customers')).toBe('db.customers.find({})');
@@ -191,7 +192,10 @@ describe('SQL to find()', () => {
 
   it('sorts by column, alias and position, and pages', () => {
     expect(mql('SELECT name, address.city AS city FROM c ORDER BY city DESC, 1, age ASC')).toBe(
-      "db.c.find({}, { name: 1, city: '$address.city', _id: 0 }).sort({ 'address.city': -1, name: 1, age: 1 })",
+      "db.c.aggregate([ { $sort: { 'address.city': -1, name: 1, age: 1 } }, { $project: { name: 1, city: '$address.city', _id: 0 } } ])",
+    );
+    expect(mql('SELECT name AS n FROM c WHERE age > 21 ORDER BY age LIMIT 5 OFFSET 2')).toBe(
+      "db.c.aggregate([ { $match: { age: { $gt: 21 } } }, { $sort: { age: 1 } }, { $skip: 2 }, { $limit: 5 }, { $project: { n: '$name', _id: 0 } } ])",
     );
     expect(mql('SELECT * FROM c ORDER BY a DESC NULLS LAST, b NULLS FIRST LIMIT 10')).toBe(
       'db.c.find({}).sort({ a: -1, b: 1 }).limit(10)',
@@ -205,20 +209,20 @@ describe('SQL to find()', () => {
 
   it('returns the query as data, its columns and multi-line text', () => {
     const translation = sqlToMql(
-      'SELECT name AS n, age FROM people WHERE age > 21 ORDER BY age LIMIT 5',
+      'SELECT name, age FROM people WHERE age > 21 ORDER BY age LIMIT 5',
     );
     expect(translation.kind).toBe('find');
     if (translation.kind !== 'find') return;
     expect(translation.collection).toBe('people');
-    expect(translation.columns).toEqual(['n', 'age']);
+    expect(translation.columns).toEqual(['name', 'age']);
     expect(toFindQuery(translation.query)).toEqual({
       filter: '{"age":{"$gt":{"$numberInt":"21"}}}',
-      projection: '{"n":"$name","age":{"$numberInt":"1"},"_id":{"$numberInt":"0"}}',
+      projection: '{"name":{"$numberInt":"1"},"age":{"$numberInt":"1"},"_id":{"$numberInt":"0"}}',
       sort: '{"age":{"$numberInt":"1"}}',
       limit: 5,
     });
     expect(translation.text).toBe(
-      "db.people.find({ age: { $gt: 21 } }, { n: '$name', age: 1, _id: 0 })\n  .sort({ age: 1 })\n  .limit(5)",
+      'db.people.find({ age: { $gt: 21 } }, { name: 1, age: 1, _id: 0 })\n  .sort({ age: 1 })\n  .limit(5)',
     );
     const parsed = parseFindText(translation.text);
     expect(parsed.collection).toBe('people');
@@ -267,10 +271,10 @@ describe('SQL to aggregate()', () => {
 
   it('returns one row for aggregates without GROUP BY, even over no documents', () => {
     expect(mql("SELECT COUNT(*) AS n, AVG(x) FROM t WHERE s = 'none'")).toBe(
-      "db.t.aggregate([ { $match: { s: 'none' } }, { $facet: { rows: [ { $group: { _id: null, n: { $sum: 1 }, avg_x: { $avg: '$x' } } } ] } }, { $replaceWith: { $ifNull: [ { $first: '$rows' }, { n: 0, avg_x: null } ] } }, { $project: { _id: 0, n: '$n', avg_x: '$avg_x' } } ])",
+      "db.t.aggregate([ { $match: { s: 'none' } }, { $facet: { rows: [ { $group: { _id: null, n: { $sum: 1 }, avg_x: { $avg: '$x' } } } ] } }, { $replaceWith: { $ifNull: [ { $arrayElemAt: [ '$rows', 0 ] }, { n: 0, avg_x: null } ] } }, { $project: { _id: 0, n: '$n', avg_x: '$avg_x' } } ])",
     );
     expect(mql('SELECT COUNT(DISTINCT a) FROM t')).toBe(
-      "db.t.aggregate([ { $facet: { rows: [ { $group: { _id: null, count_distinct_a: { $addToSet: '$a' } } }, { $set: { count_distinct_a: { $size: { $setDifference: [ '$count_distinct_a', [ null ] ] } } } } ] } }, { $replaceWith: { $ifNull: [ { $first: '$rows' }, { count_distinct_a: 0 } ] } }, { $project: { _id: 0, count_distinct_a: '$count_distinct_a' } } ])",
+      "db.t.aggregate([ { $facet: { rows: [ { $group: { _id: null, count_distinct_a: { $addToSet: '$a' } } }, { $set: { count_distinct_a: { $size: { $setDifference: [ '$count_distinct_a', [ null ] ] } } } } ] } }, { $replaceWith: { $ifNull: [ { $arrayElemAt: [ '$rows', 0 ] }, { count_distinct_a: 0 } ] } }, { $project: { _id: 0, count_distinct_a: '$count_distinct_a' } } ])",
     );
   });
 
@@ -286,7 +290,7 @@ describe('SQL to aggregate()', () => {
       "db.orders.aggregate([ { $group: { _id: '$status', n: { $sum: 1 } } }, { $match: { n: { $gt: 5 } } }, { $project: { _id: 0, status: '$_id', n: '$n' } } ])",
     );
     expect(mql('SELECT COUNT(*) AS n FROM t HAVING COUNT(*) > 0')).toBe(
-      "db.t.aggregate([ { $facet: { rows: [ { $group: { _id: null, n: { $sum: 1 } } } ] } }, { $replaceWith: { $ifNull: [ { $first: '$rows' }, { n: 0 } ] } }, { $match: { n: { $gt: 0 } } }, { $project: { _id: 0, n: '$n' } } ])",
+      "db.t.aggregate([ { $facet: { rows: [ { $group: { _id: null, n: { $sum: 1 } } } ] } }, { $replaceWith: { $ifNull: [ { $arrayElemAt: [ '$rows', 0 ] }, { n: 0 } ] } }, { $match: { n: { $gt: 0 } } }, { $project: { _id: 0, n: '$n' } } ])",
     );
   });
 
@@ -314,7 +318,7 @@ describe('SQL to aggregate()', () => {
         "SELECT * FROM customers c LEFT OUTER JOIN orders o ON c._id = o.customerId AND o.status = 'A' AND o.qty > o.min WHERE c.active AND o._id IS NULL",
       ),
     ).toBe(
-      "db.customers.aggregate([ { $match: { active: true } }, { $lookup: { from: 'orders', localField: '_id', foreignField: 'customerId', pipeline: [ { $match: { status: 'A', qty: { $ne: null }, min: { $ne: null }, $expr: { $gt: [ '$qty', '$min' ] } } } ], as: 'o' } }, { $unwind: { path: '$o', preserveNullAndEmptyArrays: true } }, { $match: { 'o._id': null } } ])",
+      "db.customers.aggregate([ { $match: { active: true } }, { $lookup: { from: 'orders', let: { id: '$_id' }, pipeline: [ { $match: { $expr: { $eq: [ '$customerId', '$$id' ] }, status: 'A', qty: { $ne: null }, min: { $ne: null }, $and: [ { $expr: { $gt: [ '$qty', '$min' ] } } ] } } ], as: 'o' } }, { $unwind: { path: '$o', preserveNullAndEmptyArrays: true } }, { $match: { 'o._id': null } } ])",
     );
     expect(
       mql('SELECT * FROM a INNER JOIN b ON a.x = b.x AND b.y = a.info.y AND a._id = b.aid'),

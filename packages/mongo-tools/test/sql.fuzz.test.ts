@@ -241,32 +241,34 @@ const direction = fc.constantFrom(
   ' ASC NULLS FIRST',
 );
 
-/** SELECT columns FROM t [WHERE] [ORDER BY] [LIMIT]: a find(). */
-const plainQuery = fc
-  .tuple(
-    kw('SELECT'),
-    fc.oneof(
-      fc.constant(['*']),
-      fc
-        .uniqueArray(field, { minLength: 1, maxLength: 4 })
-        .chain((fields) =>
-          fc
-            .array(fc.boolean(), { minLength: fields.length, maxLength: fields.length })
-            .map((aliased) => fields.map((f, i) => (aliased[i] ? `${f} AS x${i}` : f))),
-        ),
-    ),
-    fc.boolean(),
-    fc.option(condition(field, 3), { nil: undefined }),
-    fc.array(fc.tuple(field, direction), { maxLength: 3 }),
-    limit,
-  )
-  .map(([select, items, literalItem, where, order, page]) => {
-    const list = items[0] === '*' ? items : [...items, ...(literalItem ? ["'k' AS kind"] : [])];
-    let sql = `${select} ${list.join(', ')} FROM things`;
-    if (where) sql += ` WHERE ${where}`;
-    if (order.length > 0) sql += ` ORDER BY ${order.map(([f, d]) => f + d).join(', ')}`;
-    return sql + page;
-  });
+/**
+ * SELECT columns FROM t [WHERE] [ORDER BY] [LIMIT]: a find() when it only selects fields, an
+ * aggregate() when it renames them or selects a value (a find() projection cannot before 4.4).
+ */
+const selectQuery = (renaming: boolean) =>
+  fc
+    .tuple(
+      kw('SELECT'),
+      renaming
+        ? fc
+            .uniqueArray(field, { maxLength: 4 })
+            .chain((fields) =>
+              fc
+                .array(fc.boolean(), { minLength: fields.length, maxLength: fields.length })
+                .map((aliased) => fields.map((f, i) => (aliased[i] ? `${f} AS x${i}` : f))),
+            )
+            .map((items) => [...items, "'k' AS kind"])
+        : fc.oneof(fc.constant(['*']), fc.uniqueArray(field, { minLength: 1, maxLength: 4 })),
+      fc.option(condition(field, 3), { nil: undefined }),
+      fc.array(fc.tuple(field, direction), { maxLength: 3 }),
+      limit,
+    )
+    .map(([select, items, where, order, page]) => {
+      let sql = `${select} ${items.join(', ')} FROM things`;
+      if (where) sql += ` WHERE ${where}`;
+      if (order.length > 0) sql += ` ORDER BY ${order.map(([f, d]) => f + d).join(', ')}`;
+      return sql + page;
+    });
 
 const AGGREGATES = [
   'COUNT(*)',
@@ -389,7 +391,8 @@ describe('SQL to MQL fuzzing', () => {
   }, 60_000);
 
   it.each([
-    ['plain', plainQuery, 'find'],
+    ['plain', selectQuery(false), 'find'],
+    ['renaming', selectQuery(true), 'aggregate'],
     ['grouped', groupedQuery, 'aggregate'],
     ['distinct', distinctQuery, 'aggregate'],
     ['join', joinQuery, 'aggregate'],

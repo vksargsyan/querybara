@@ -49,15 +49,19 @@ import { parseSql } from './parser';
  * - GROUP BY and DISTINCT put null and missing in one group, as SQL does.
  * - Joins use $lookup and $unwind (LEFT JOIN keeps unmatched documents). The joined document
  *   sits under the join's alias, so `o.total` stays `o.total` in the result. Differs from SQL:
- *   a join key that is null or missing on both sides matches ($lookup equality), and an array
- *   key matches any of its elements.
+ *   null join keys can match. With one equality and nothing else in ON, the keys compare as
+ *   $lookup's localField and foreignField do (null and missing match each other, and an array
+ *   key matches any of its elements); otherwise they compare in `$expr` with $eq (null matches
+ *   null, missing matches missing, and arrays compare whole).
  * - ORDER BY sorts as MongoDB does: nulls first in ascending order, types in BSON order.
  * - Without aliases, a selected dotted path keeps its nesting (`address.city` stays
  *   `{ address: { city } }`); `columns` lists the output paths in SELECT order.
  * - LIMIT 0 is refused: MongoDB reads a zero limit as no limit.
  *
- * The pipelines use stages from MongoDB 5.0 (the oldest supported server): $lookup with both
- * localField and a pipeline, $replaceWith, $set and the $first array operator.
+ * Everything translated runs on MongoDB 4.2 and later, so the translation does not depend on the
+ * server: a select list with aliases or values runs as an aggregate (a find() projection can only
+ * include fields before 4.4), a join with conditions besides its one equality uses `let` (5.0
+ * added localField with a pipeline), and arrays are read with $arrayElemAt (4.4 added $first).
  */
 
 export interface SqlToMqlOptions {
@@ -380,11 +384,11 @@ class Translator {
     }
     const filter = andFilters(conditions);
     const lookup: BsonDocument = { from: join.table.name };
-    if (equalities.length === 1) {
+    if (equalities.length === 1 && Object.keys(filter).length === 0) {
       lookup['localField'] = equalities[0]!.local;
       lookup['foreignField'] = equalities[0]!.foreign;
-      if (Object.keys(filter).length > 0) lookup['pipeline'] = [{ $match: filter }];
     } else {
+      // localField with a pipeline needs MongoDB 5.0, so a filtered join compares through let.
       const variables: BsonDocument = {};
       const taken = new Set<string>();
       const tests = equalities.map(({ local, foreign }) => {
@@ -395,7 +399,8 @@ class Translator {
         return { $eq: [`$${foreign}`, `$$${name}`] };
       });
       lookup['let'] = variables;
-      lookup['pipeline'] = [{ $match: andFilters([{ $expr: { $and: tests } }, filter]) }];
+      const test = tests.length === 1 ? tests[0]! : { $and: tests };
+      lookup['pipeline'] = [{ $match: andFilters([{ $expr: test }, filter]) }];
     }
     lookup['as'] = alias;
     const unwind: BsonValue =
@@ -592,7 +597,10 @@ class Translator {
     const limit = statement.limit?.value;
     const collection = statement.from.name;
     const columns = outputs?.map((output) => output.name);
-    if (this.joins.length === 0) {
+    // Before MongoDB 4.4 a find() projection can only include fields: an alias or a value there
+    // is read as an inclusion and silently comes back missing, so those run as an aggregate.
+    const includesOnly = outputs?.every((output) => bsonTag(output.value) === 'Int32') ?? true;
+    if (this.joins.length === 0 && includesOnly) {
       const query: QueryModel = {
         filter: before,
         ...(projection !== undefined ? { projection } : {}),
@@ -844,7 +852,7 @@ class Translator {
       for (const accumulator of accumulators) setField(empty, accumulator.name, accumulator.empty);
       grouping = [
         { $facet: { rows: grouping } },
-        { $replaceWith: { $ifNull: [{ $first: '$rows' }, empty] } },
+        { $replaceWith: { $ifNull: [{ $arrayElemAt: ['$rows', 0] }, empty] } },
       ];
     }
 
@@ -1013,7 +1021,7 @@ class Translator {
 /**
  * Translates one SQL SELECT into a MongoDB find() or aggregate() (see the module comment for
  * what is supported and how SQL's semantics are kept). find() is chosen when the query needs
- * nothing else: no join, grouping, aggregate or DISTINCT. Every failure is a
+ * nothing else: no join, grouping, aggregate, DISTINCT, alias or value. Every failure is a
  * SqlTranslationError locating the problem in `sql`; nothing else is thrown.
  */
 export function sqlToMql(sql: string, options: SqlToMqlOptions = {}): SqlTranslation {
