@@ -22,7 +22,9 @@ What works today:
   Advanced, TLS, SSH, Proxy); profiles with host/port, socket or URI endpoints; the four TLS
   modes (off by default; a URI's sslmode, rediss://, https:// or mongodb+srv:// turns it on);
   passwords saved in the OS keychain, remembered for the session, or asked every time; URI and
-  pgpass import; encrypted profile export; stepwise Test Connection.
+  pgpass import; Import and Export connections in the side bar's menu and the CLI: a
+  passphrase-encrypted file, optionally with saved passwords, and Navicat `.ncx` files with their
+  saved passwords; stepwise Test Connection.
 - **Command palette**: ⌘P (Ctrl+P) goes to a table, view or collection by a few of its
   letters; ⌘⇧P (Ctrl+Shift+P) runs any command; key bindings as VS Code's, with chords, and a
   Keyboard Shortcuts editor (⌘K ⌘S) to change them.

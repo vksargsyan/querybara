@@ -151,6 +151,7 @@ export {
 } from './import/uri';
 export { matchPgpass, parsePgpass, type PgpassEntry, type PgpassTarget } from './import/pgpass';
 export {
+  EXPORT_MAGIC,
   exportProfiles,
   exportedFolderSchema,
   importProfiles,
@@ -158,3 +159,26 @@ export {
   type ExportedFolder,
   type ImportedProfiles,
 } from './import/export';
+export { decryptNavicatPassword } from './import/navicat-cipher';
+export {
+  isNavicatConnections,
+  parseNavicatConnections,
+  type NavicatConnection,
+  type NavicatImport,
+  type SkippedConnection,
+} from './import/navicat';
+export {
+  CONNECTIONS_FILE_LIMIT,
+  applyConnectionsImport,
+  connectionsFileFormat,
+  existingProfileFor,
+  exportConnections,
+  readConnectionsFile,
+  type ConnectionsExport,
+  type ConnectionsExportOptions,
+  type ConnectionsFile,
+  type ConnectionsFileEntry,
+  type ConnectionsFileFormat,
+  type ConnectionsImportOptions,
+  type ConnectionsImportResult,
+} from './import/connections-file';

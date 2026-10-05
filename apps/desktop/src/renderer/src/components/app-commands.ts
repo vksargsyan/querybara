@@ -3,6 +3,7 @@ import type { StoredProfile } from '@querybara/ipc';
 
 import { mainApi } from '../lib/main-client';
 import { registerCommands, showStatus } from '../state/commands';
+import { openExportConnections, openImportConnections } from '../state/connection-files';
 import { connect, disconnect, useConnections } from '../state/connections';
 import { keys, queryClient } from '../state/data';
 import {
@@ -122,6 +123,23 @@ export function registerAppCommands(actions: () => AppActions): () => void {
       title: 'New Connection…',
       icon: 'connection-new',
       run: () => actions().newConnection(),
+    },
+    {
+      id: 'connection.import',
+      category: 'Connection',
+      title: 'Import Connections…',
+      icon: 'import',
+      keywords: ['navicat', 'ncx', 'restore', 'move'],
+      run: () => openImportConnections(),
+    },
+    {
+      id: 'connection.export',
+      category: 'Connection',
+      title: 'Export Connections…',
+      icon: 'export',
+      keywords: ['backup', 'move', 'share'],
+      enabled: () => profiles().length > 0,
+      run: () => openExportConnections(),
     },
     {
       id: 'connection.newFolder',

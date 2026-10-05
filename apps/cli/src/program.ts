@@ -1038,10 +1038,16 @@ Examples:
 
   profiles
     .command('import')
-    .description('import profiles from a passphrase-encrypted export file')
+    .description('import profiles from an export file or a Navicat .ncx file')
     .argument('<file>', 'file to read')
-    .option('--replace', 'replace profiles that already exist (same id)')
-    .addHelpText('after', '\nThe passphrase comes from QUERYBARA_EXPORT_PASSPHRASE or a prompt.')
+    .option(
+      '--replace',
+      'replace profiles that already exist (same id; same engine and name from Navicat)',
+    )
+    .addHelpText(
+      'after',
+      '\nThe passphrase of an export file comes from QUERYBARA_EXPORT_PASSPHRASE or a prompt.\nA Navicat .ncx file (File > Export Connections) needs no passphrase; the passwords saved in\nit are saved when QUERYBARA_PASSPHRASE is set.',
+    )
     .action((file: string, options: { replace?: boolean }) => {
       schedule((runtime) => importCommand(runtime, file, { replace: options.replace === true }));
     });

@@ -8,6 +8,7 @@ import { registerAppCommands, type AppActions } from './components/app-commands'
 import { CommandPalette } from './components/CommandPalette';
 import { CommandStatus } from './components/CommandStatus';
 import { ConnectionDialog, type ConnectionDialogMode } from './components/ConnectionDialog';
+import { ConnectionFilesDialogs } from './components/connection/ConnectionFilesDialogs';
 import { Dock, openQueryTab } from './components/dock';
 import { HistoryPanel } from './components/HistoryPanel';
 import { HostKeyPrompts } from './components/HostKeyPrompt';
@@ -170,6 +171,7 @@ export function App() {
       <TransferDialogs />
       <TransferDbHost />
       <BackupDialogs />
+      <ConnectionFilesDialogs />
       <AboutDialog />
       <CommandPalette />
       <CommandStatus />

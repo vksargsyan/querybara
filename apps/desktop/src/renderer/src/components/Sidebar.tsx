@@ -14,6 +14,7 @@ import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { errorMessage } from '../lib/errors';
 import { mainApi } from '../lib/main-client';
+import { openExportConnections, openImportConnections } from '../state/connection-files';
 import { connect, disconnect, useConnections } from '../state/connections';
 import { keys, useFolders, useProfiles } from '../state/data';
 import { confirm } from '../state/dialogs';
@@ -71,8 +72,8 @@ import { Button, EnvironmentBadge, Icon, cx } from './ui';
  *
  * As in Navicat, a click selects a connection and a double-click (or Enter) connects it, with a
  * spinner in place of its actions button while it connects; only a connected one has a chevron. The header's menu
- * creates connections and folders and closes every open connection; the search and the filter
- * at the bottom narrow the list (state/sidebar-filter.ts).
+ * creates connections and folders, imports and exports connections, and closes every open
+ * connection; the search and the filter at the bottom narrow the list (state/sidebar-filter.ts).
  */
 
 export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) => void }) {
@@ -135,6 +136,17 @@ export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) =
               </MenuItem>
               <MenuItem icon="folder-new" onSelect={() => void newFolder()}>
                 New folder
+              </MenuItem>
+              <DropdownMenu.Separator className="my-1 h-px bg-border" />
+              <MenuItem icon="import" onSelect={() => openImportConnections()}>
+                Import connections…
+              </MenuItem>
+              <MenuItem
+                icon="export"
+                disabled={(profiles.data?.length ?? 0) === 0}
+                onSelect={() => openExportConnections()}
+              >
+                Export connections…
               </MenuItem>
               <DropdownMenu.Separator className="my-1 h-px bg-border" />
               <MenuItem

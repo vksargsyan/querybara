@@ -449,3 +449,85 @@ export const privateKeyInfoSchema = z.object({
   converted: z.boolean(),
 });
 export type PrivateKeyInfo = z.infer<typeof privateKeyInfoSchema>;
+
+// ---------------------------------------------------------------------------------------------
+// Connection files: Querybara exports and Navicat .ncx files (spec §4)
+
+const filePathSchema = z.string().min(1).max(4096);
+const countSchema = z.number().int().nonnegative();
+
+/** A connections file picked with `dialogs.openFile`, and the export's passphrase if it has one. */
+export const connectionsFileInputSchema = z.object({
+  path: filePathSchema,
+  passphrase: secretValueSchema.optional(),
+});
+
+export const connectionsFileFormatSchema = z.enum(['querybara', 'navicat']);
+export type ConnectionsFileFormat = z.infer<typeof connectionsFileFormatSchema>;
+
+/**
+ * One connection of the file as it would be imported. Saved passwords are counted, never sent
+ * (and the counts avoid secret-like names, which the contract's leak check refuses).
+ */
+export const connectionsFileEntrySchema = z.object({
+  /** Names the entry for `profiles.importFile`. */
+  key: z.string().min(1).max(200),
+  profile: safeProfileSchema,
+  /** The profile importing it would replace (same id, or same engine and name from Navicat). */
+  existing: z.object({ id: idSchema, name: z.string() }).optional(),
+  /** The folder path it goes into ("Shop / Production"); absent at the root. */
+  folder: z.string().max(2000).optional(),
+  /** Saved passwords and passphrases the file holds for it. */
+  savedLogins: countSchema,
+  /** What does not carry over. */
+  notes: z.array(z.string().max(500)),
+});
+export type ConnectionsFileEntry = z.infer<typeof connectionsFileEntrySchema>;
+
+export const connectionsFilePreviewSchema = z.object({
+  format: connectionsFileFormatSchema,
+  /** An encrypted export read without its passphrase: nothing else is known yet. */
+  locked: z.boolean(),
+  exportedAt: timestampSchema.optional(),
+  entries: z.array(connectionsFileEntrySchema),
+  /** Connections in the file that cannot be imported, and why. */
+  skipped: z.array(z.object({ name: z.string().max(500), reason: z.string().max(500) })),
+});
+export type ConnectionsFilePreview = z.infer<typeof connectionsFilePreviewSchema>;
+
+export const connectionsImportInputSchema = connectionsFileInputSchema.extend({
+  /** The entries to import, by key. */
+  keys: z.array(z.string().min(1).max(200)).min(1).max(10_000),
+  /** Replace the profiles entries match; without it they are skipped. */
+  replace: z.boolean(),
+});
+
+export const connectionsImportResultSchema = z.object({
+  added: countSchema,
+  replaced: countSchema,
+  skipped: countSchema,
+  /** Passwords and passphrases saved in the secret store. */
+  savedLogins: countSchema,
+  /** Passwords and passphrases that could not be saved: no OS keychain. */
+  unsavedLogins: countSchema,
+  profileIds: z.array(idSchema),
+});
+export type ConnectionsImportResult = z.infer<typeof connectionsImportResultSchema>;
+
+/** Export to a path picked with `dialogs.saveFile`. */
+export const connectionsExportInputSchema = z.object({
+  path: filePathSchema,
+  profileIds: z.array(idSchema).min(1).max(10_000),
+  passphrase: secretValueSchema.min(1),
+  /** Add the saved secrets that can be read here. */
+  includeSecrets: z.boolean(),
+});
+
+export const connectionsExportResultSchema = z.object({
+  profiles: countSchema,
+  /** Passwords and passphrases written to the file. */
+  logins: countSchema,
+  /** Saved passwords that could not be read here and are not in the file. */
+  unreadable: countSchema,
+});
+export type ConnectionsExportResult = z.infer<typeof connectionsExportResultSchema>;

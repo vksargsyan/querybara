@@ -15,6 +15,12 @@ import {
   appSettingsPatchSchema,
   appSettingsSchema,
   connectionEventSchema,
+  connectionsExportInputSchema,
+  connectionsExportResultSchema,
+  connectionsFileInputSchema,
+  connectionsFilePreviewSchema,
+  connectionsImportInputSchema,
+  connectionsImportResultSchema,
   expectedVersionSchema,
   externalUrlSchema,
   folderSaveInputSchema,
@@ -115,6 +121,19 @@ export const mainContract = defineContract({
       input: z.object({ profileId: idSchema.optional() }),
       output: secretStatusSchema,
     },
+    /**
+     * Reads a connections file picked with `dialogs.openFile`: a Querybara export or a Navicat
+     * `.ncx` file. An export read without its passphrase reports `locked` and nothing
+     * else; a wrong one fails with AUTH_FAILED. Secrets in the file stay in main.
+     */
+    inspectFile: { input: connectionsFileInputSchema, output: connectionsFilePreviewSchema },
+    /** Imports the chosen entries of a file `inspectFile` read, with their folders and secrets. */
+    importFile: { input: connectionsImportInputSchema, output: connectionsImportResultSchema },
+    /**
+     * Writes profiles, the folders above them and, when asked, their readable secrets to a
+     * passphrase-encrypted file at a path picked with `dialogs.saveFile`.
+     */
+    exportFile: { input: connectionsExportInputSchema, output: connectionsExportResultSchema },
   },
   folders: {
     list: { input: z.void(), output: z.array(folderSchema) },
