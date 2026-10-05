@@ -111,8 +111,9 @@ What works today:
   SQL tab translates a SELECT to find() or aggregate() as it is typed, runs it, and opens it in
   the collection view or the aggregation editor; any query exports as a Node.js, Python, Java,
   C#, Go or PHP program for the official driver.
-- **Redis and Valkey**: standalone, Sentinel and Cluster with ACL users; a SCAN-based key browser
-  with a namespace tree, type filters and lazy memory sizes (cluster-wide in Cluster mode);
+- **Redis and Valkey**: standalone, Sentinel and Cluster with ACL users (Cluster nodes behind NAT,
+  Docker or Kubernetes NodePorts reached through the seed that answers as each); a SCAN-based key
+  browser with a namespace tree, type filters and lazy memory sizes (cluster-wide in Cluster mode);
   editors for strings, hashes, lists, sets, sorted sets, streams (groups and pending entries),
   RedisJSON, HyperLogLog, bitmaps and geo; TTL, rename and copy; bulk delete with a dry run; a CLI
   with autocomplete and inline docs; Pub/Sub, an INFO dashboard, slow log, clients, latency,

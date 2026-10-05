@@ -157,6 +157,13 @@ export const connectionOptionsSchema = z.object({
   /** Redis: the delimiter that splits key names into the browser's namespace tree (default ":"). */
   keyDelimiter: z.string().min(1).max(16).optional(),
   /**
+   * Redis Cluster: reach every node through the seed that answers as it, rather than the
+   * address it announces (nodes behind NAT, Docker or Kubernetes NodePorts announce addresses
+   * only reachable inside their network). Each seed is asked which node it is on every connect,
+   * so the mapping follows nodes that move; nodes no seed answers as are reached as announced.
+   */
+  mapNodesToSeeds: z.boolean().optional(),
+  /**
    * Elasticsearch: discover the cluster's other nodes from the listed URLs and
    * spread requests over them (off by default: the addresses nodes announce are often not
    * reachable from a desktop).

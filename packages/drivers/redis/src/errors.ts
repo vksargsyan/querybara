@@ -237,6 +237,36 @@ export function mapRedisError(error: unknown, ctx: RedisErrorContext): Querybara
   );
 }
 
+/**
+ * The seeds answered with the slots, but the nodes they name could not be reached: most often
+ * nodes behind NAT (Docker, Kubernetes) that announce addresses only reachable inside their
+ * network. `addresses` are the nodes as they announce themselves.
+ */
+export function unreachableNodesError(
+  addresses: readonly string[],
+  ctx: RedisErrorContext,
+  options: { readonly mapNodesToSeeds: boolean; readonly cause: unknown },
+): QuerybaraError {
+  const list = addresses.join(', ');
+  const tunnelled = /\(through the tunnel\)$/.test(ctx.where);
+  let hint: string;
+  if (options.mapNodesToSeeds) {
+    hint = `No seed answered as ${addresses.length === 1 ? 'this node' : 'these nodes'}: add an address this computer reaches each of them at as a seed`;
+  } else if (tunnelled) {
+    hint =
+      'The tunnel’s far end cannot reach the addresses the nodes announce: list a reachable address of every node as a seed and turn on "Reach nodes through the seed addresses"';
+  } else {
+    hint =
+      'The nodes announce addresses this computer cannot reach (NAT, Docker, Kubernetes): list a reachable address of every node as a seed and turn on "Reach nodes through the seed addresses", or connect through an SSH tunnel into their network';
+  }
+  return querybara(
+    'CONNECTION_FAILED',
+    `The cluster seeds answered, but ${addresses.length === 1 ? 'the node' : 'the nodes'} they announce could not be reached: ${list}`,
+    hint,
+    options.cause,
+  );
+}
+
 const PRIORITY: Readonly<Partial<Record<ErrorCode, number>>> = {
   AUTH_FAILED: 0,
   TLS_FAILED: 1,

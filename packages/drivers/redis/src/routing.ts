@@ -29,12 +29,12 @@ export function announcedAddress(local: string): string | undefined {
   return announced.get(local)?.address;
 }
 
-function addressText({ host, port }: HostPort): string {
+export function addressText({ host, port }: HostPort): string {
   return host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
 }
 
 /** "host:port" as ioredis keys nodes (IPv6 hosts unbracketed): split at the last colon. */
-function parseKey(key: string): HostPort | undefined {
+export function parseKey(key: string): HostPort | undefined {
   const colon = key.lastIndexOf(':');
   const port = Number(key.slice(colon + 1));
   if (colon <= 0 || !Number.isInteger(port) || port < 1 || port > 65535) return undefined;
@@ -42,7 +42,7 @@ function parseKey(key: string): HostPort | undefined {
 }
 
 /** What ioredis's NAT map returns: the forward, and the node's own TLS name when verified. */
-interface Mapped extends HostPort {
+export interface Mapped extends HostPort {
   /** For a Cluster node's connection. */
   tls?: ConnectionOptions;
   /** For the Sentinel-resolved master's connection (merged into its TLS options). */
@@ -189,26 +189,37 @@ export class NodeRouting {
   }
 
   private discoveryClient(seed: Extract<NetworkTarget, { kind: 'tcp' }>): Redis {
-    const plan = this.plan;
-    const tls = plan.topology === 'sentinel' ? this.sentinelTls() : this.nodeTls(seed.tlsHost);
-    const options: RedisOptions = {
-      host: seed.host,
-      port: seed.port,
-      lazyConnect: true,
-      enableReadyCheck: false,
-      enableOfflineQueue: false,
-      retryStrategy: () => null,
-      maxRetriesPerRequest: 0,
-      protocol: 2,
-      connectTimeout: plan.connectTimeoutMs,
-      commandTimeout: plan.connectTimeoutMs,
-      ...(plan.password !== undefined
-        ? { username: plan.user ?? 'default', password: plan.password }
-        : {}),
-      ...(tls ? { tls } : {}),
-    };
-    return new Redis(options);
+    const tls = this.plan.topology === 'sentinel' ? this.sentinelTls() : this.nodeTls(seed.tlsHost);
+    return probeClient(this.plan, seed, tls);
   }
+}
+
+/**
+ * A one-off connection to a seed or Sentinel for a question asked before connecting: fails at
+ * once (no retries, no offline queue) and within the connect timeout.
+ */
+export function probeClient(
+  plan: RedisConnectionPlan,
+  target: HostPort,
+  tls: ConnectionOptions | undefined,
+): Redis {
+  const options: RedisOptions = {
+    host: target.host,
+    port: target.port,
+    lazyConnect: true,
+    enableReadyCheck: false,
+    enableOfflineQueue: false,
+    retryStrategy: () => null,
+    maxRetriesPerRequest: 0,
+    protocol: 2,
+    connectTimeout: plan.connectTimeoutMs,
+    commandTimeout: plan.connectTimeoutMs,
+    ...(plan.password !== undefined
+      ? { username: plan.user ?? 'default', password: plan.password }
+      : {}),
+    ...(tls ? { tls } : {}),
+  };
+  return new Redis(options);
 }
 
 /** Every node of a CLUSTER SLOTS reply: [start, end, [ip, port, id], replicas...] per range. */

@@ -574,6 +574,17 @@ describe('Redis profile ↔ form', () => {
       },
       auth: { method: 'password', password: ref() },
     },
+    'a cluster reached through its seeds': {
+      endpoint: {
+        kind: 'cluster',
+        seeds: [
+          { host: '89.149.208.150', port: 32588 },
+          { host: '89.149.208.150', port: 32465 },
+        ],
+      },
+      auth: { method: 'none' },
+      options: { mapNodesToSeeds: true },
+    },
     'rediss:// URI': {
       endpoint: { kind: 'uri', uri: 'rediss://app@cache:6380/2' },
       auth: { method: 'password', user: 'app', password: ref('session') },
@@ -637,6 +648,21 @@ describe('Redis profile ↔ form', () => {
     expect(cluster.options.defaultDatabase).toBeUndefined();
     expect(cluster.options.keyDelimiter).toBe('|');
     expect(cluster.auth).toEqual({ method: 'none' });
+  });
+
+  it('saves "reach nodes through the seed addresses" for a cluster only', () => {
+    const save = (values: ConnectionFormValues) =>
+      safeProfileSchema.parse(formToProfile(values).profile).options.mapNodesToSeeds;
+    expect(save(redis({ endpointKind: 'cluster', mapNodesToSeeds: true }))).toBe(true);
+    expect(save(redis({ endpointKind: 'cluster' }))).toBeUndefined();
+    // Left checked on a cluster, then switched to a single host: not saved.
+    expect(save(redis({ endpointKind: 'host', mapNodesToSeeds: true }))).toBeUndefined();
+    const mapped = roundTrip({
+      engine: 'redis',
+      endpoint: { kind: 'cluster', seeds: [{ host: 'c1', port: 7000 }] },
+      options: { mapNodesToSeeds: true },
+    }).values;
+    expect(mapped).toMatchObject({ endpointKind: 'cluster', mapNodesToSeeds: true });
   });
 });
 

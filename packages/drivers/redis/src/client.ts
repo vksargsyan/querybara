@@ -5,8 +5,15 @@ import { QuerybaraError } from '@querybara/core';
 import { Cluster, Command, Redis, type ClusterOptions, type RedisOptions } from 'ioredis';
 
 import type { RedisConnectionPlan } from './config';
-import { isReplyError, mapRedisError, pickConnectError, type RedisErrorContext } from './errors';
-import { NodeRouting, announcedAddress } from './routing';
+import {
+  isReplyError,
+  mapRedisError,
+  pickConnectError,
+  unreachableNodesError,
+  type RedisErrorContext,
+} from './errors';
+import { NodeRouting, addressText, announcedAddress, parseKey } from './routing';
+import { SeedMap } from './seed-map';
 
 /** A command argument as ioredis takes it; byte arrays are sent as they are. */
 export type Arg = string | Uint8Array | number;
@@ -24,11 +31,16 @@ function toIoArg(arg: Arg): IoArg {
   return Buffer.isBuffer(arg) ? arg : Buffer.from(arg.buffer, arg.byteOffset, arg.byteLength);
 }
 
+/** Node connections reached through a seed (SeedMap) → the address the node announces. */
+const seedMapped = new WeakMap<Redis, string>();
+
 /**
  * "host:port" of an ioredis node connection: the address the node announced, also when it is
- * reached through a tunnel's forward (see NodeRouting).
+ * reached through a tunnel's forward (see NodeRouting) or a seed (see SeedMap).
  */
 export function addressOf(node: Redis): string {
+  const mapped = seedMapped.get(node);
+  if (mapped !== undefined) return mapped;
   const host = node.options.host ?? 'localhost';
   const port = node.options.port ?? 6379;
   const address = host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
@@ -56,7 +68,8 @@ const MAX_RECONNECTS = 10;
  * is reported.
  *
  * Sentinel and Cluster behind a tunnel reach every node through its forwards (NodeRouting);
- * `plan.seeds` are then the forwarded seeds or Sentinels.
+ * `plan.seeds` are then the forwarded seeds or Sentinels. A Cluster with `mapNodesToSeeds`
+ * reaches each node through the seed that answers as it (SeedMap).
  */
 export class RedisConnection {
   private established = false;
@@ -86,18 +99,32 @@ export class RedisConnection {
     const routed: RedisConnectionPlan = routing
       ? { ...plan, seeds: routing.seeds, target: routing.seeds[0] ?? plan.target }
       : plan;
+    let seedMap: SeedMap | undefined;
+    if (plan.mapNodesToSeeds) {
+      try {
+        seedMap = await SeedMap.probe(plan, routed.seeds, (target) =>
+          routing ? routing.nodeTls(target.tlsHost) : plan.tlsOptions,
+        );
+      } catch (error) {
+        routing?.release();
+        throw error;
+      }
+    }
     const box: { conn?: RedisConnection } = {};
     const live = (): boolean => box.conn !== undefined && box.conn.established && !box.conn.closed;
     const retry = (times: number): number | null =>
       live() && times <= MAX_RECONNECTS ? Math.min(times * 200, 2000) : null;
-    const client = createClient(routed, retry, live, routing);
+    const client = createClient(routed, retry, live, routing, seedMap);
     const conn = new RedisConnection(routed, client, routing);
     box.conn = conn;
     // Errors also reach the pending commands; the listeners keep ioredis from logging them.
     client.on('error', () => undefined);
     if (client instanceof Cluster) client.on('node error', () => undefined);
     try {
-      await connectClient(client, conn.context('connect'));
+      await connectClient(client, conn.context('connect'), {
+        announced: (target) => seedMap?.announcedAt(target),
+        mapNodesToSeeds: plan.mapNodesToSeeds,
+      });
     } catch (error) {
       routing?.release();
       throw error;
@@ -162,8 +189,8 @@ export class RedisConnection {
     if (slot === null || slot === undefined) return undefined;
     const key = this.client.slots[slot]?.[0];
     if (key === undefined) return undefined;
-    const owner = announcedAddress(key) ?? key;
-    return this.primaries().find((n) => addressOf(n) === owner);
+    // ioredis keys slots by the address it dials (a forward, a seed), IPv6 hosts unbracketed.
+    return this.primaries().find((n) => `${n.options.host}:${n.options.port}` === key);
   }
 
   /** Runs a command; with `node`, on that node connection (following MOVED / ASK in Cluster mode). */
@@ -308,26 +335,78 @@ export class RedisConnection {
   }
 }
 
+/** What `connectClient` reports about Cluster nodes that could not be reached. */
+export interface ClusterConnectInfo {
+  /** The address a node announces, for one reached through a seed (SeedMap). */
+  readonly announced: (target: { host: string; port: number }) => string | undefined;
+  readonly mapNodesToSeeds: boolean;
+}
+
 /** Connects an ioredis client, reporting the most telling error when it fails. */
 export async function connectClient(
   client: Redis | Cluster,
   ctx: RedisErrorContext,
+  cluster?: ClusterConnectInfo,
 ): Promise<void> {
   const events: unknown[] = [];
   const listener = (error: unknown): void => {
     events.push(error);
   };
+  // Cluster nodes that failed after the seeds answered with the slots (key: "host:port" dialed).
+  const failedNodes = new Set<string>();
+  let refreshed = false;
+  const onRefresh = (): void => {
+    refreshed = true;
+  };
+  const nodeListener = (error: unknown, key?: unknown): void => {
+    events.push(error);
+    if (refreshed && typeof key === 'string') failedNodes.add(key);
+  };
   client.on('error', listener);
-  if (client instanceof Cluster) client.on('node error', listener);
+  if (client instanceof Cluster) {
+    client.on('node error', nodeListener);
+    client.on('refresh', onRefresh);
+  }
   try {
-    await client.connect();
+    await (client instanceof Cluster ? connectCluster(client) : client.connect());
   } catch (error) {
     client.disconnect();
-    throw pickConnectError(error, events, ctx);
+    const picked = pickConnectError(error, events, ctx);
+    const credentials = picked.code === 'AUTH_FAILED' || picked.code === 'TLS_FAILED';
+    if (client instanceof Cluster && cluster && failedNodes.size > 0 && !credentials) {
+      const addresses = [...failedNodes].map((key) => {
+        const target = parseKey(key);
+        return (target && cluster.announced(target)) ?? (target ? addressText(target) : key);
+      });
+      throw unreachableNodesError(addresses, ctx, {
+        mapNodesToSeeds: cluster.mapNodesToSeeds,
+        cause: events.at(-1) ?? error,
+      });
+    }
+    throw picked;
   } finally {
     client.off('error', listener);
-    if (client instanceof Cluster) client.off('node error', listener);
+    if (client instanceof Cluster) {
+      client.off('node error', nodeListener);
+      client.off('refresh', onRefresh);
+    }
   }
+}
+
+/**
+ * Cluster#connect never settles when the seeds answer but the nodes they name cannot be
+ * reached: its ready check fails, the cluster ends, and only the reconnect it would have made
+ * settles it. Ending settles it here instead.
+ */
+function connectCluster(cluster: Cluster): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ended = (): void => reject(new Error('Connection is closed.'));
+    cluster.once('end', ended);
+    cluster
+      .connect()
+      .then(resolve, reject)
+      .finally(() => cluster.off('end', ended));
+  });
 }
 
 function withoutKeepAlive(redis: Redis): void {
@@ -366,6 +445,7 @@ function createClient(
   retry: (times: number) => number | null,
   established: () => boolean,
   routing: NodeRouting | undefined,
+  seedMap?: SeedMap,
 ): Redis | Cluster {
   const common = commonOptions(plan);
   if (plan.topology === 'cluster') {
@@ -382,10 +462,26 @@ function createClient(
       slotsRefreshTimeout: Math.max(1000, plan.connectTimeoutMs),
       clusterRetryStrategy: (times) => retry(times) ?? null,
       redisOptions: common,
-      ...(routing ? { natMap: routing.natMap } : {}),
+      ...(seedMap
+        ? { natMap: seedMap.natMap(routing?.natMap) }
+        : routing
+          ? { natMap: routing.natMap }
+          : {}),
     };
     const cluster = new Cluster(seeds, options);
     if (!plan.keepAlive) cluster.on('+node', (node: Redis) => withoutKeepAlive(node));
+    if (seedMap) {
+      // A seed's connection is kept when the slots name it, so no "+node": label on refresh too.
+      const label = (node: Redis): void => {
+        const announced = seedMap.announcedAt({
+          host: node.options.host ?? 'localhost',
+          port: node.options.port ?? 6379,
+        });
+        if (announced !== undefined) seedMapped.set(node, announced);
+      };
+      cluster.on('+node', label);
+      cluster.on('refresh', () => cluster.nodes('all').forEach(label));
+    }
     return cluster;
   }
   const base: RedisOptions = { ...common, db: plan.database, retryStrategy: retry };

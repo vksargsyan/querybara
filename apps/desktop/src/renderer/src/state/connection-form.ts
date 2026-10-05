@@ -214,6 +214,8 @@ export const connectionFormSchema = z
     cloudId: z.string().trim().max(2048),
     /** Elasticsearch: discover the other nodes from the listed ones. */
     sniff: z.boolean(),
+    /** Redis Cluster: reach each node through the seed that answers as it. */
+    mapNodesToSeeds: z.boolean(),
     /** MongoDB replica set name for a host list; optional. */
     replicaSet: z.string().trim().max(255),
     sentinels: z.array(hostRowSchema).max(MAX_HOST_ROWS),
@@ -611,6 +613,7 @@ export function defaultFormValues(engine: DialogEngine = 'postgres'): Connection
     urls: [defaultUrlRow()],
     cloudId: '',
     sniff: false,
+    mapNodesToSeeds: false,
     replicaSet: '',
     sentinels: [defaultSentinelRow()],
     masterName: '',
@@ -696,6 +699,7 @@ export function switchEngine(
     urls: fresh.urls,
     cloudId: fresh.cloudId,
     sniff: fresh.sniff,
+    mapNodesToSeeds: fresh.mapNodesToSeeds,
   };
 }
 
@@ -796,6 +800,7 @@ export function profileToForm(profile: ConnectionProfile): ConnectionFormValues 
     readPreference: options.readPreference ?? '',
     keyDelimiter: options.keyDelimiter ?? '',
     sniff: options.sniff === true,
+    mapNodesToSeeds: options.mapNodesToSeeds === true,
     tlsMode: tls.mode,
     caPath: tls.caPath ?? '',
     certPath: tls.certPath ?? '',
@@ -1034,6 +1039,7 @@ function optionsFromForm(
     readPreference: previousReadPreference,
     keyDelimiter: _keyDelimiter,
     sniff: _sniff,
+    mapNodesToSeeds: _mapNodesToSeeds,
     ...shared
   } = existing ?? {};
   const viaUri = form.endpointKind === 'uri';
@@ -1063,6 +1069,9 @@ function optionsFromForm(
             : undefined;
   }
   if (form.engine === 'redis') options.keyDelimiter = optional(form.keyDelimiter);
+  if (form.engine === 'redis' && form.endpointKind === 'cluster' && form.mapNodesToSeeds) {
+    options.mapNodesToSeeds = true;
+  }
   if (form.engine === 'elasticsearch' && form.endpointKind === 'urls' && form.sniff) {
     options.sniff = true;
   }
