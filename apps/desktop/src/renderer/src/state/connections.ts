@@ -139,6 +139,11 @@ export async function disconnect(profileId: string): Promise<void> {
   }
 }
 
+/** Forgets a failed attempt to connect, and with it the error shown under the connection. */
+export function dismissFailure(profileId: string): void {
+  if (useConnections.getState().byProfile[profileId]?.status === 'failed') remove(profileId);
+}
+
 /** Applies a supervisor event from main: shows restarts and failures of a host. */
 export function applyConnectionEvent(event: ConnectionEvent): void {
   const current = useConnections.getState().byProfile[event.profileId];
