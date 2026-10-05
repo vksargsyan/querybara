@@ -18,7 +18,7 @@
     "@querybara/driver-sql-base": "workspace:*",
     "@querybara/mongo-tools": "workspace:*",
     "@querybara/tunnel": "workspace:*",
-    "mongodb": "^7.7.0"
+    "mongodb": "^6.21.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",

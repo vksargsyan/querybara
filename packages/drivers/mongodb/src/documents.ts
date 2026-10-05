@@ -229,9 +229,10 @@ export function insertMany(
 
 /**
  * Replaces a document only while it still equals the version the user edited: the filter is
- * its _id plus `$expr: { $eq: ['$$ROOT', { $literal: original }] }`, so the check and the write
- * are one atomic operation. When nothing matched, the current version is read back for the
- * CONFLICT error (or NOT_FOUND when the document is gone).
+ * its _id plus `$expr: { $eq: [{ $cmp: ['$$ROOT', { $literal: original }] }, 0] }`, so the check
+ * and the write are one atomic operation ($cmp, because MongoDB 4.2 cannot optimize a plain $eq
+ * on $$ROOT: "FieldPath::tail() called on single element path"). When nothing matched, the
+ * current version is read back for the CONFLICT error (or NOT_FOUND when the document is gone).
  */
 export function replaceOne(
   ctx: MongoContext,
@@ -259,7 +260,7 @@ export function replaceOne(
     const result = await ctx.plainCollection(ns).replaceOne(
       driverDoc<Filter<Document>>({
         _id: before['_id']!,
-        $expr: { $eq: ['$$ROOT', { $literal: before }] },
+        $expr: { $eq: [{ $cmp: ['$$ROOT', { $literal: before }] }, 0] },
       }),
       after,
       { session: exec.session },
