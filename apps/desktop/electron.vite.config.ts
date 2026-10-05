@@ -79,6 +79,7 @@ export const MONGODB_OPTIONAL_PEERS = [
   'gcp-metadata',
   'mongodb-client-encryption',
   '@aws-sdk/credential-providers',
+  'aws4',
 ];
 
 const nodeOutput = {

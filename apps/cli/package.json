@@ -21,9 +21,9 @@
     "test:integration": "tsup && vitest run test/integration --testTimeout=120000 --hookTimeout=120000"
   },
   "dependencies": {
-    "bson": "^7.3.3",
+    "bson": "^6.10.4",
     "ioredis": "^6.0.0",
-    "mongodb": "^7.7.0",
+    "mongodb": "^6.21.0",
     "mysql2": "^3.24.4",
     "pg": "^8.23.0",
     "pg-cursor": "^2.22.0",
