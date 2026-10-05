@@ -15,6 +15,7 @@ import {
   showSavedComparisons,
   useSyncPanels,
 } from '../../state/sync/panels';
+import { MenuItem } from '../MenuItem';
 import { Button, Modal } from '../ui';
 import { comparisonDraft, editSchedule } from '../../state/schedules';
 
@@ -36,26 +37,21 @@ export function SyncMenu(props: { readonly trigger: ReactElement }) {
             align="end"
             className="z-50 min-w-48 rounded border border-border bg-raised p-1 text-[13px] shadow-widget"
           >
-            <Item onSelect={() => openStructureCompare()}>Compare structure…</Item>
-            <Item onSelect={() => openDataCompare()}>Compare data…</Item>
+            <MenuItem icon="compare" onSelect={() => openStructureCompare()}>
+              Compare structure…
+            </MenuItem>
+            <MenuItem icon="compare-rows" onSelect={() => openDataCompare()}>
+              Compare data…
+            </MenuItem>
             <DropdownMenu.Separator className="my-1 h-px bg-border" />
-            <Item onSelect={() => showSavedComparisons(true)}>Saved comparisons…</Item>
+            <MenuItem icon="bookmark" onSelect={() => showSavedComparisons(true)}>
+              Saved comparisons…
+            </MenuItem>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
       <SavedComparisonsHost />
     </>
-  );
-}
-
-function Item(props: { readonly children: string; readonly onSelect: () => void }) {
-  return (
-    <DropdownMenu.Item
-      onSelect={props.onSelect}
-      className="cursor-default rounded px-2 py-1.5 outline-none data-[highlighted]:bg-list-active"
-    >
-      {props.children}
-    </DropdownMenu.Item>
   );
 }
 

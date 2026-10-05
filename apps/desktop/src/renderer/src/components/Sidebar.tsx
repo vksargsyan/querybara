@@ -151,6 +151,7 @@ export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) =
               <DropdownMenu.Separator className="my-1 h-px bg-border" />
               <MenuItem
                 icon="disconnect"
+                warning
                 disabled={open.length === 0}
                 onSelect={() => void closeAll()}
               >
@@ -680,7 +681,7 @@ function ProfileItem(props: {
                 <MenuItem icon="refresh" onSelect={() => refreshObjects(profile.id, [])}>
                   Refresh objects
                 </MenuItem>
-                <MenuItem icon="disconnect" onSelect={() => void close()}>
+                <MenuItem icon="disconnect" warning onSelect={() => void close()}>
                   Disconnect
                 </MenuItem>
               </>

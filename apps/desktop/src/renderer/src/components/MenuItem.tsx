@@ -3,11 +3,15 @@ import type { ReactNode } from 'react';
 
 import { Icon, cx, type IconName } from './ui';
 
-/** A menu item, with its glyph when it has one (every tree menu's items do). */
+/**
+ * A menu item, with its glyph when it has one (every tree menu's items do). `danger` colours a
+ * destructive item red; `warning` colours one that interrupts work (Disconnect) ochre.
+ */
 export function MenuItem(props: {
   readonly children: ReactNode;
   readonly onSelect: () => void;
   readonly danger?: boolean;
+  readonly warning?: boolean;
   readonly disabled?: boolean;
   readonly icon?: IconName;
   /** The key that does the same, right-aligned: "⌘C". */
@@ -20,10 +24,14 @@ export function MenuItem(props: {
       className={cx(
         'flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-list-active',
         props.danger && 'text-danger',
+        props.warning && !props.danger && 'text-warning',
       )}
     >
       {props.icon !== undefined && (
-        <Icon name={props.icon} className={props.danger ? 'text-danger' : 'text-muted'} />
+        <Icon
+          name={props.icon}
+          className={props.danger ? 'text-danger' : props.warning ? 'text-warning' : 'text-muted'}
+        />
       )}
       {props.children}
       {props.shortcut !== undefined && (
