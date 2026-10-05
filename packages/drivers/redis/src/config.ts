@@ -135,6 +135,11 @@ export interface RedisConnectionPlan {
    * announces (see RedisConnection, which maps them onto forwards with ioredis's NAT map).
    */
   readonly nodeRoute?: NodeRoute;
+  /**
+   * Cluster: reach each node through the seed that answers as it, not the address it announces
+   * (see SeedMap).
+   */
+  readonly mapNodesToSeeds: boolean;
 }
 
 /** CLIENT SETNAME refuses spaces, newlines and other special characters. */
@@ -345,5 +350,6 @@ export function buildRedisConnectionPlan(
     where: override || nodeRoute ? `${where} (through the tunnel)` : where,
     tunnelled: override !== undefined || nodeRoute !== undefined,
     ...(nodeRoute ? { nodeRoute } : {}),
+    mapNodesToSeeds: topology === 'cluster' && opts.mapNodesToSeeds === true,
   };
 }

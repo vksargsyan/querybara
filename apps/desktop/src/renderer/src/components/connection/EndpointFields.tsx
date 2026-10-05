@@ -174,6 +174,17 @@ export function EndpointFields(props: {
             newRow={() => defaultHostRow(engine)}
             hint="Any reachable nodes; Querybara discovers the rest of the cluster from them."
           />
+          <div className="col-span-2 flex flex-col gap-0.5 text-[13px]">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" {...register('mapNodesToSeeds')} />
+              Reach nodes through the seed addresses
+            </label>
+            <p className="ml-5 text-xs text-muted">
+              For nodes behind NAT, Docker or Kubernetes NodePorts, which announce addresses only
+              reachable inside their network: list every node as a seed, and Querybara reaches each
+              node through the seed that answers as it, asking again on every connect.
+            </p>
+          </div>
           <Note>A cluster has only database 0.</Note>
         </>
       );
