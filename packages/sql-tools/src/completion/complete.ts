@@ -424,6 +424,8 @@ class ItemBuilder {
       if (qualifier === undefined) continue;
       const target = ref.parts.map((part) => part.name).join('.');
       const label = (ref.alias ?? ref.parts[ref.parts.length - 1])!.name;
+      // A quoted name still being typed (JOIN `) names nothing yet.
+      if (label === '') continue;
       this.push({
         label,
         kind: ref.alias ? 'alias' : 'table',
