@@ -233,19 +233,23 @@ describe.skipIf(!REDIS_URL)('redis host services on a standalone server', () => 
     );
     setTimeout(() => abort.abort(), 300);
     await expect(blocked).rejects.toMatchObject({ code: 'CANCELLED' });
-    // The session came back on a new connection, still in database 1.
+    // The session came back on a new connection, still in database 1. Reconnecting can take
+    // longer than poll's default second on a busy runner.
     await expect
-      .poll(async () => {
-        try {
-          const r = await client.redis.command({
-            sessionId: cli.sessionId,
-            args: ['CLIENT', 'INFO'],
-          });
-          return r.reply.type === 'bulk' && /db=1/.test(utf8Text(r.reply.value));
-        } catch {
-          return false;
-        }
-      })
+      .poll(
+        async () => {
+          try {
+            const r = await client.redis.command({
+              sessionId: cli.sessionId,
+              args: ['CLIENT', 'INFO'],
+            });
+            return r.reply.type === 'bulk' && /db=1/.test(utf8Text(r.reply.value));
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 10_000 },
+      )
       .toBe(true);
     const copied = await client.redis.command({
       sessionId: cli.sessionId,
