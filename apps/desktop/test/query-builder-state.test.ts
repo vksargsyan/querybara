@@ -18,6 +18,7 @@ import {
   connectColumns,
   groupBySelected,
   isColumnSelected,
+  moveDatabase,
   moveItem,
   reconcile,
   removeJoinCondition,
@@ -561,6 +562,83 @@ describe('QueryBuilder', () => {
     my.setJoinType(my.state.model.joins[0]!.id, 'full');
     expect(my.blockingIssue?.message).toBe('MySQL has no FULL JOIN.');
     expect(a).toBeDefined();
+  });
+});
+
+describe('QueryBuilder moved to another database', () => {
+  function mysql(database: string): BuilderCatalog {
+    return builderCatalog({ ...shop('mysql'), database }, 'mysql');
+  }
+
+  function builder(database: string, dialect: SqlDialect = 'mysql') {
+    const catalog = dialect === 'mysql' ? mysql(database) : pgCatalog;
+    return new QueryBuilder(
+      { profileId: 'p', dialect, database },
+      () => Promise.resolve(catalog),
+      ids(),
+    );
+  }
+
+  it('moves MySQL tables of the old database and keeps the canvas', async () => {
+    const before = builder('shop');
+    await before.init();
+    const orders = before.addTable(entry(before.catalog!, 'orders'))!;
+    before.movePositions({ [orders]: { x: 500, y: 300 } });
+    before.setSearch('ord');
+    const layout = before.state.layoutRequest;
+    expect(before.state.sql).toBe('SELECT *\nFROM `shop`.`orders`');
+
+    const after = builder('shop_dev');
+    await after.carryOver(before);
+    expect(after.state.model.tables).toEqual([{ id: orders, schema: 'shop_dev', name: 'orders' }]);
+    expect(after.state.sql).toBe('SELECT *\nFROM `shop_dev`.`orders`');
+    expect(after.state.positions[orders]).toEqual({ x: 500, y: 300 });
+    expect(after.state.search).toBe('ord');
+    expect(after.state.layoutRequest).toBe(layout);
+    expect(after.state.catalog.status).toBe('ready');
+  });
+
+  it('leaves other databases, PostgreSQL schemas and SQL it cannot show as they are', async () => {
+    const other = builder('shop');
+    await other.init();
+    other.setSql('SELECT * FROM crm.people');
+    const moved = builder('shop_dev');
+    await moved.carryOver(other);
+    expect(moved.state.sql).toBe('SELECT * FROM crm.people');
+    expect(moved.state.sqlSource).toBe('editor');
+
+    const pg = builder('shop', 'postgres');
+    await pg.init();
+    pg.addTable(entry(pg.catalog!, 'orders'));
+    const pgMoved = builder('shop_dev', 'postgres');
+    await pgMoved.carryOver(pg);
+    expect(pgMoved.state.sql).toBe(pg.state.sql);
+
+    const custom = builder('shop');
+    await custom.init();
+    custom.setSql('SELECT 1 UNION SELECT 2');
+    const customMoved = builder('shop_dev');
+    await customMoved.carryOver(custom);
+    expect(customMoved.state.sql).toBe('SELECT 1 UNION SELECT 2');
+    expect(customMoved.state.sync.status).toBe('unsupported');
+  });
+
+  it('renames only the old database, in any case', () => {
+    const model = {
+      ...emptyQueryModel(),
+      tables: [
+        { id: 'a', schema: 'SHOP', name: 'orders' },
+        { id: 'b', schema: 'crm', name: 'people' },
+        { id: 'c', name: 'items' },
+      ],
+    };
+    expect(moveDatabase(model, 'shop', 'shop_dev').tables).toEqual([
+      { id: 'a', schema: 'shop_dev', name: 'orders' },
+      { id: 'b', schema: 'crm', name: 'people' },
+      { id: 'c', name: 'items' },
+    ]);
+    expect(moveDatabase(model, 'shop', 'Shop')).toBe(model);
+    expect(moveDatabase(model, 'sales', 'shop_dev')).toBe(model);
   });
 });
 

@@ -4,9 +4,11 @@ import { create } from 'zustand';
 
 import { currentDock } from '../../components/dock';
 import { cachedProfile } from '../data';
+import { confirm } from '../dialogs';
 import { loadSnapshot, metadataCache, useMetadata } from '../metadata';
 import { patchPanel, registerPanel, unregisterPanel } from '../panels';
-import { createTab, getTab, runtimeOf, useWorkspace } from '../workspace';
+import { switchTarget, type TabTarget } from '../runner';
+import { createTab, getTab, patchTab, runtimeOf, useWorkspace } from '../workspace';
 import { QueryBuilder, type BuilderTarget } from './builder';
 import { builderCatalog, type BuilderCatalog } from './catalog';
 
@@ -48,6 +50,41 @@ export interface OpenBuilderOptions {
   readonly sql?: string | undefined;
 }
 
+function builderTitle(profileName: string, place: string | undefined): string {
+  return place === undefined ? `Query builder (${profileName})` : `Query builder (${place})`;
+}
+
+/**
+ * Creates a panel's builder on `target`: the runner reads the builder's SQL through the tab's
+ * editor handle, and the catalog reloads when the connection's structure changes.
+ */
+function attachBuilder(id: string, target: BuilderTarget): QueryBuilder {
+  cleanups.get(id)?.();
+  const builder = new QueryBuilder(target, () => loadCatalog(target));
+  runtimeOf(id).editor = {
+    getText: () => builder.state.sql,
+    cursorOffset: () => 0,
+    selection: () => undefined,
+    setText: (text) => builder.setSql(text),
+    focus: () => undefined,
+    format: () => undefined,
+  };
+  useQueryBuilders.setState((state) => ({ builders: { ...state.builders, [id]: builder } }));
+  const offMetadata = useMetadata.subscribe((state, previous) => {
+    if (state.versions[target.profileId] !== previous.versions[target.profileId]) {
+      void builder.reloadCatalog();
+    }
+  });
+  const offTab = useWorkspace.subscribe((state) => {
+    patchPanel(id, { busy: state.tabs[id]?.running === true });
+  });
+  cleanups.set(id, () => {
+    offMetadata();
+    offTab();
+  });
+  return builder;
+}
+
 /** Opens a query builder panel for a SQL connection; undefined for other engines. */
 export function openQueryBuilder(options: OpenBuilderOptions): string | undefined {
   const profile = cachedProfile(options.profileId);
@@ -60,9 +97,7 @@ export function openQueryBuilder(options: OpenBuilderOptions): string | undefine
     ...(options.schema === undefined ? {} : { schema: options.schema }),
   };
   const id = newId();
-  const place = options.schema ?? options.database;
-  const title =
-    place === undefined ? `Query builder (${profile.name})` : `Query builder (${place})`;
+  const title = builderTitle(profile.name, options.schema ?? options.database);
   registerPanel({ id, kind: 'query-builder', profileId: profile.id, title });
   createTab({
     id,
@@ -70,27 +105,7 @@ export function openQueryBuilder(options: OpenBuilderOptions): string | undefine
     title,
     ...(options.database === undefined ? {} : { database: options.database }),
   });
-  const builder = new QueryBuilder(target, () => loadCatalog(target));
-  // The runner reads the text to run from the tab's editor handle: here, the builder's SQL.
-  runtimeOf(id).editor = {
-    getText: () => builder.state.sql,
-    cursorOffset: () => 0,
-    selection: () => undefined,
-    setText: (text) => builder.setSql(text),
-    focus: () => undefined,
-    format: () => undefined,
-  };
-  useQueryBuilders.setState((state) => ({ builders: { ...state.builders, [id]: builder } }));
-  const offMetadata = useMetadata.subscribe((state, previous) => {
-    if (state.versions[profile.id] !== previous.versions[profile.id]) void builder.reloadCatalog();
-  });
-  const offTab = useWorkspace.subscribe((state) => {
-    patchPanel(id, { busy: state.tabs[id]?.running === true });
-  });
-  cleanups.set(id, () => {
-    offMetadata();
-    offTab();
-  });
+  const builder = attachBuilder(id, target);
   void builder.init(options.sql);
   currentDock()?.addPanel({
     id,
@@ -101,6 +116,40 @@ export function openQueryBuilder(options: OpenBuilderOptions): string | undefine
     renderer: 'always',
   });
   return id;
+}
+
+/**
+ * Moves a builder to another connection or database (the toolbar's selectors): its query tab
+ * switches session, and a new builder on the target takes over the canvas. Another dialect
+ * starts an empty query, after asking when there is one to lose.
+ */
+export async function retargetQueryBuilder(panelId: string, next: TabTarget): Promise<void> {
+  const previous = queryBuilder(panelId);
+  const profile = cachedProfile(next.profileId);
+  if (!previous || !profile || !isSqlEngine(profile.engine)) return;
+  const dialect: SqlDialect = profile.engine;
+  const sameDialect = dialect === previous.target.dialect;
+  const { model, sqlSource } = previous.state;
+  if (!sameDialect && (model.tables.length > 0 || sqlSource === 'editor')) {
+    const ok = await confirm({
+      title: 'Start a new query?',
+      message: `"${profile.name}" uses another SQL dialect, so the query builder starts over there.`,
+      confirmLabel: 'Switch and start over',
+    });
+    if (!ok) return;
+  }
+  if (!(await switchTarget(panelId, next))) return;
+  const target: BuilderTarget = {
+    profileId: profile.id,
+    dialect,
+    ...(next.database === undefined ? {} : { database: next.database }),
+  };
+  const title = builderTitle(profile.name, next.database);
+  patchTab(panelId, { title });
+  patchPanel(panelId, { profileId: profile.id, title });
+  currentDock()?.getPanel(panelId)?.api.setTitle(title);
+  const builder = attachBuilder(panelId, target);
+  void (sameDialect ? builder.carryOver(previous) : builder.init());
 }
 
 /**

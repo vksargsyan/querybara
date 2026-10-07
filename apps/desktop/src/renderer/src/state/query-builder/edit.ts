@@ -452,3 +452,20 @@ export function unknownTables(
   if (!catalog) return [];
   return model.tables.filter((table) => !entryOf(catalog, table));
 }
+
+/**
+ * MySQL/MariaDB: the model moved to another database (the panel's database selector). Tables
+ * qualified with the old database are qualified with the new one; other qualifiers stay. The
+ * same model when nothing changes.
+ */
+export function moveDatabase(model: QueryModel, from: string, to: string): QueryModel {
+  const old = from.toLowerCase();
+  if (old === to.toLowerCase()) return model;
+  if (!model.tables.some((table) => table.schema?.toLowerCase() === old)) return model;
+  return {
+    ...model,
+    tables: model.tables.map((table) =>
+      table.schema?.toLowerCase() === old ? { ...table, schema: to } : table,
+    ),
+  };
+}

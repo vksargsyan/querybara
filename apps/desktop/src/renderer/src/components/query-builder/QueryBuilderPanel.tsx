@@ -3,11 +3,12 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useConnections } from '../../state/connections';
 import { cachedProfile, useSettings } from '../../state/data';
 import { useBuilderState, type QueryBuilder } from '../../state/query-builder/builder';
-import { useQueryBuilders } from '../../state/query-builder/panels';
+import { retargetQueryBuilder, useQueryBuilders } from '../../state/query-builder/panels';
 import { cancelQuery, runQuery } from '../../state/runner';
 import { useWorkspace } from '../../state/workspace';
 import { openQueryTab } from '../dock';
 import { Results } from '../QueryPanel';
+import { TargetSelects } from '../TargetSelects';
 import { useTheme } from '../theme';
 import { Button, EnvironmentBadge, Icon, cx } from '../ui';
 import { Canvas } from './Canvas';
@@ -119,6 +120,9 @@ function Toolbar(props: {
   const blocking = useBuilderState(builder, () => builder.blockingIssue);
   const hasTables = useBuilderState(builder, (state) => state.model.tables.length > 0);
   const readOnly = useBuilderState(builder, (state) => state.sync.status !== 'synced');
+  const catalogDatabase = useBuilderState(builder, (state) =>
+    state.catalog.status === 'ready' ? state.catalog.catalog.database : undefined,
+  );
   const running = tab?.running === true;
   return (
     <div
@@ -126,6 +130,16 @@ function Toolbar(props: {
       aria-label="Query builder"
       className="flex flex-wrap items-center gap-1.5 border-b border-border bg-panel px-2 py-1.5"
     >
+      <TargetSelects
+        profileId={builder.target.profileId}
+        database={builder.target.database ?? catalogDatabase}
+        disabled={running}
+        onChange={(target) => {
+          props.flush();
+          void retargetQueryBuilder(panelId, target);
+        }}
+      />
+      <span className="mx-1 h-5 w-px bg-border" />
       <Button
         size="sm"
         variant="primary"

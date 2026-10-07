@@ -8,7 +8,7 @@ import { cachedProfile, keys, queryClient } from './data';
 import { metadataCache } from './metadata';
 import type { PlannedStatement } from './run-plan';
 import { qualifierBefore, tabFacts, type TabSessionState } from './session-facts';
-import { getTab, runtimeOf } from './workspace';
+import { getTab, patchTab, runtimeOf, type QueryTab } from './workspace';
 
 /**
  * What autocomplete needs beyond the metadata (spec §6): each query tab's session context (its
@@ -29,6 +29,12 @@ function tabSession(tabId: string): TabSessionState | undefined {
   return entry;
 }
 
+/** The database the tab chose (its selector), then what its session changed since. */
+function tabState(tab: QueryTab): TabSessionState | undefined {
+  const session = tabSession(tab.id);
+  return tab.database === undefined ? session : { database: tab.database, ...session };
+}
+
 /**
  * Called by the runner after a run: DDL refreshes the metadata it changed (or waits for COMMIT
  * inside a PostgreSQL transaction), and USE / SET search_path move the tab's completion context.
@@ -36,7 +42,7 @@ function tabSession(tabId: string): TabSessionState | undefined {
 export function noteStatementsRun(tabId: string, statements: readonly PlannedStatement[]): void {
   const tab = getTab(tabId);
   if (!tab || statements.length === 0) return;
-  const facts = tabFacts(metadataCache.facts(tab.profileId), tabSession(tabId));
+  const facts = tabFacts(metadataCache.facts(tab.profileId), tabState(tab));
   const effects = metadataCache.afterRun(tab.profileId, {
     tabId,
     statements,
@@ -46,6 +52,9 @@ export function noteStatementsRun(tabId: string, statements: readonly PlannedSta
   const sessionId = runtimeOf(tabId).sessionId;
   if (effects?.session && sessionId !== undefined) {
     tabSessions.set(tabId, { ...tabSession(tabId), ...effects.session, sessionId });
+    // A USE moves the tab's database selector, and a new session opens there too.
+    const database = effects.session.database;
+    if (database !== undefined) patchTab(tabId, { database });
   }
 }
 
@@ -66,7 +75,7 @@ export function completionTarget(tabId: string): CompletionTarget | undefined {
   const tab = getTab(tabId);
   const engine = tab ? cachedProfile(tab.profileId)?.engine : undefined;
   if (!tab || engine === undefined || !isSqlEngine(engine)) return undefined;
-  const facts = tabFacts(metadataCache.facts(tab.profileId), tabSession(tabId));
+  const facts = tabFacts(metadataCache.facts(tab.profileId), tabState(tab));
   return {
     profileId: tab.profileId,
     dialect: engine,

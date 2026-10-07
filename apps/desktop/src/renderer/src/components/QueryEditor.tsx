@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
 import { syntaxDiagnostics } from '../lib/language';
 import { createEditor, EDITOR_FONT, languageFor, monaco } from '../lib/monaco';
 import { bindModel, registerSqlLanguage, unbindModel } from '../lib/sql-language';
-import { noteEditor } from '../state/autosave';
+import { noteEditor, type AutosaveSnapshot } from '../state/autosave';
 import { explainQuery } from '../state/explain/run';
 import { openMetadata, useMetadataStatus } from '../state/metadata';
 import { openQueryBuilderFromTab } from '../state/query-builder/panels';
@@ -31,8 +31,26 @@ function modelFor(tabId: string, text: string, dialect: SqlDialect): monaco.edit
     model = monaco.editor.createModel(text, languageFor(dialect));
     models.set(tabId, model);
     bindModel(model, tabId);
+  } else if (model.getLanguageId() !== languageFor(dialect)) {
+    // The tab moved to a connection of another dialect.
+    monaco.editor.setModelLanguage(model, languageFor(dialect));
   }
   return model;
+}
+
+/** What autosave writes for a tab: its text, caret, connection and database. */
+function autosaveSnapshot(tabId: string): AutosaveSnapshot | undefined {
+  const tab = getTab(tabId);
+  const model = models.get(tabId);
+  if (!tab || !model || model.isDisposed()) return undefined;
+  return {
+    kind: 'sql',
+    profileId: tab.profileId,
+    database: tab.database ?? null,
+    title: tab.title,
+    text: model.getValue(),
+    cursor: runtimeOf(tabId).editor?.cursorOffset() ?? null,
+  };
 }
 
 /** Frees a closed tab's text model. */
@@ -67,6 +85,7 @@ export function QueryEditor(props: {
   const initialText = useWorkspace((state) => state.tabs[tabId]?.initialText ?? '');
   const marker = useWorkspace((state) => state.tabs[tabId]?.errorMarker);
   const profileId = useWorkspace((state) => state.tabs[tabId]?.profileId);
+  const database = useWorkspace((state) => state.tabs[tabId]?.database);
   const loadingMetadata = useMetadataStatus((state) =>
     profileId === undefined ? false : state.byProfile[profileId]?.loading === true,
   );
@@ -183,19 +202,7 @@ export function QueryEditor(props: {
       });
     };
     // Autosave (spec §18): the buffer is read when the batch is written, not per keystroke.
-    const autosave = (): void =>
-      noteEditor(tabId, () => {
-        const tab = getTab(tabId);
-        if (!tab || model.isDisposed()) return undefined;
-        return {
-          kind: 'sql',
-          profileId: tab.profileId,
-          database: null,
-          title: tab.title,
-          text: model.getValue(),
-          cursor: runtimeOf(tabId).editor?.cursorOffset() ?? null,
-        };
-      });
+    const autosave = (): void => noteEditor(tabId, () => autosaveSnapshot(tabId));
     if (model.getValueLength() > 0) autosave();
     const changes = model.onDidChangeContent(() => {
       clearTimeout(timer);
@@ -219,6 +226,15 @@ export function QueryEditor(props: {
   useEffect(() => {
     if (profileId !== undefined) openMetadata(profileId);
   }, [profileId]);
+
+  // A new connection or database (the toolbar's selectors) is autosaved with the text.
+  const target = useRef({ profileId, database });
+  useEffect(() => {
+    const before = target.current;
+    target.current = { profileId, database };
+    if (before.profileId === profileId && before.database === database) return;
+    if (models.get(tabId)?.getValueLength()) noteEditor(tabId, () => autosaveSnapshot(tabId));
+  }, [tabId, profileId, database]);
 
   useEffect(() => {
     monaco.editor.setTheme(props.theme === 'dark' ? 'querybara-dark' : 'querybara-light');
