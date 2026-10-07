@@ -631,6 +631,45 @@ export async function setAutoCommit(tabId: string, on: boolean): Promise<void> {
   patchTab(tabId, { autoCommit: on });
 }
 
+/** Where a tab's statements run: a connection, and a database on it (its own when unset). */
+export interface TabTarget {
+  readonly profileId: string;
+  readonly database: string | undefined;
+}
+
+/**
+ * Moves a tab to another connection or database (the toolbar's selectors). The tab's session
+ * is closed, asking first when it has an open transaction, and the next run opens one on the
+ * new target. False when the tab is busy or the user kept the transaction.
+ */
+export async function switchTarget(tabId: string, target: TabTarget): Promise<boolean> {
+  const tab = getTab(tabId);
+  if (!tab || tab.running) return false;
+  if (tab.profileId === target.profileId && tab.database === target.database) return true;
+  await refreshTransactionState(tabId);
+  if (getTab(tabId)?.inTransaction) {
+    const ok = await confirm({
+      title: 'Switch with an open transaction?',
+      message: `"${tab.title}" has uncommitted changes. Switching the connection or database rolls them back.`,
+      confirmLabel: 'Roll back and switch',
+      danger: true,
+    });
+    if (!ok) return false;
+  }
+  const runtime = runtimeOf(tabId);
+  await closeOpenResult(tabId, 'cancelled');
+  const { host, sessionId } = runtime;
+  runtime.sessionId = undefined;
+  if (host && sessionId) await host.closeSession({ sessionId }).catch(() => undefined);
+  patchTab(tabId, {
+    profileId: target.profileId,
+    database: target.database,
+    inTransaction: false,
+    errorMarker: undefined,
+  });
+  return true;
+}
+
 /**
  * Closes a tab, asking first when it has an open transaction (spec §6). `force` skips the
  * question, for a panel the dock already removed.

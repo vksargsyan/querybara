@@ -148,6 +148,38 @@ export class QueryBuilder {
     if (sql !== undefined && sql.trim() !== '') this.setSql(sql);
   }
 
+  /**
+   * Takes over the query of the builder this one replaces (the panel moved to another
+   * connection or database of the same dialect) and loads the catalog: the canvas keeps its
+   * tables and places, and MySQL/MariaDB tables of the old database move to the new one. SQL
+   * the builder could not show stays as typed.
+   */
+  async carryOver(previous: QueryBuilder): Promise<void> {
+    const { model, positions, sql, sqlSource, sync, issues } = previous.state;
+    const { search, panel, selectedJoin, layoutRequest } = previous.state;
+    // At once, so the canvas never shows an empty model; with the previous builder's last
+    // layout request, which the canvas has done already.
+    this.set({
+      model,
+      positions,
+      sql,
+      sqlSource,
+      sync,
+      issues,
+      search,
+      panel,
+      selectedJoin,
+      layoutRequest,
+    });
+    await this.reloadCatalog();
+    if (this.readOnly || this.target.dialect === 'postgres') return;
+    const from = previous.catalog?.database ?? previous.target.database;
+    const to = this.catalog?.database ?? this.target.database;
+    if (!from || !to) return;
+    const moved = edit.moveDatabase(this.state.model, from, to);
+    if (moved !== this.state.model) this.apply(moved);
+  }
+
   /** Reads the catalog again (the structure changed); the model stays as it is. */
   async reloadCatalog(): Promise<void> {
     try {

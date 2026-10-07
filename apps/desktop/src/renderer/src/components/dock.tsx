@@ -254,6 +254,7 @@ registerRestorer('sql', (entry, profile) =>
         title: entry.title || `${profile.name} query`,
         text: entry.text,
         ...(entry.cursor === null ? {} : { cursor: entry.cursor }),
+        ...(entry.database === null ? {} : { database: entry.database }),
       }),
 );
 registerRestorer('mongo-console', (entry, profile) =>

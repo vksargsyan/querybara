@@ -11,7 +11,16 @@ import { explainQuery } from '../state/explain/run';
 import { openQueryBuilderFromTab } from '../state/query-builder/panels';
 import { naturalLayout, reconcileLayout } from '../state/grid-layout';
 import { resultSource } from '../state/result-sources';
-import { cancelQuery, commit, fetchMore, rollback, runQuery, setAutoCommit } from '../state/runner';
+import {
+  cancelQuery,
+  commit,
+  fetchMore,
+  rollback,
+  runQuery,
+  setAutoCommit,
+  switchTarget,
+  type TabTarget,
+} from '../state/runner';
 import { openExportQuery } from '../state/transfer-dialogs';
 import {
   patchResult,
@@ -26,6 +35,7 @@ import { PlanView } from './explain/PlanView';
 import { disposeModel, QueryEditor } from './QueryEditor';
 import { resultColumnKeys, ResultGrid } from './ResultGrid';
 import { ColumnsPopover } from './table/ColumnMenus';
+import { TargetSelects } from './TargetSelects';
 import { Button, cx, EnvironmentBadge, Icon, TAB } from './ui';
 import { useTheme } from './theme';
 
@@ -124,6 +134,8 @@ export function QueryPanel(props: { readonly tabId: string }) {
       <div ref={area} className="flex min-h-0 flex-1 flex-col">
         <div style={{ height: `${split * 100}%` }} className="min-h-0">
           <QueryEditor
+            // Another dialect (the connection selector) needs a new editor; the text stays.
+            key={dialect}
             tabId={tabId}
             dialect={dialect}
             theme={theme}
@@ -160,6 +172,16 @@ export function QueryPanel(props: { readonly tabId: string }) {
   );
 }
 
+/** Moves a tab to the target its selectors picked; a default title follows the connection. */
+async function switchTab(tab: QueryTab, target: TabTarget): Promise<void> {
+  const before = cachedProfile(tab.profileId)?.name;
+  if (!(await switchTarget(tab.id, target))) return;
+  const after = cachedProfile(target.profileId)?.name;
+  if (before !== undefined && after !== undefined && tab.title === `${before} query`) {
+    patchTab(tab.id, { title: `${after} query` });
+  }
+}
+
 function Toolbar({ tab, canAnalyze }: { readonly tab: QueryTab; readonly canAnalyze: boolean }) {
   const runSelectionOrStatement = (): void => {
     const selection = runtimeOf(tab.id).editor?.selection();
@@ -171,6 +193,13 @@ function Toolbar({ tab, canAnalyze }: { readonly tab: QueryTab; readonly canAnal
       role="toolbar"
       aria-label="Query"
     >
+      <TargetSelects
+        profileId={tab.profileId}
+        database={tab.database}
+        disabled={tab.running}
+        onChange={(target) => void switchTab(tab, target)}
+      />
+      <span className="mx-1 h-5 w-px bg-border" />
       <Button
         size="sm"
         variant="primary"
