@@ -28,7 +28,14 @@ import {
   useExplorer,
   useProfileExpanded,
 } from '../state/explorer';
-import { createFolder, moveToFolder, takeFolderRename, useFolderRename } from '../state/folders';
+import {
+  createFolder,
+  moveToFolder,
+  setFolderOpen,
+  takeFolderRename,
+  useFolderRename,
+  useOpenFolders,
+} from '../state/folders';
 import { refreshObjects } from '../state/metadata';
 import { objectsPathFor } from '../state/objects-model';
 import { showObjects, useObjectsView } from '../state/objects-view';
@@ -377,7 +384,8 @@ function FolderItem(props: {
   readonly onEdit: (mode: ConnectionDialogMode) => void;
   readonly onError: (message: string) => void;
 }) {
-  const [userOpen, setOpen] = useState(true);
+  const userOpen = useOpenFolders((s) => s.open[props.folder.id] === true);
+  const setOpen = (open: boolean): void => setFolderOpen(props.folder.id, open);
   const open = userOpen || props.forceOpen;
   const [renaming, setRenaming] = useState(false);
   // A folder just made is named in place.
@@ -448,7 +456,7 @@ function FolderItem(props: {
             />
           ) : (
             <span className="flex items-center gap-1.5 font-medium">
-              <Icon name="folder" className="text-muted" />
+              <Icon name={open ? 'folder-open' : 'folder'} className="text-muted" />
               <Highlighted text={props.folder.name} search={props.search} />
             </span>
           )
@@ -893,7 +901,9 @@ function ObjectNode(props: {
             <Icon
               name={
                 node.kind === 'folder'
-                  ? 'folder'
+                  ? expanded
+                    ? 'folder-open'
+                    : 'folder'
                   : node.kind === 'database' || node.kind === 'schema'
                     ? 'database'
                     : 'table'

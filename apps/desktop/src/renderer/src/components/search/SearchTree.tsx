@@ -144,7 +144,7 @@ export function HealthBadge(props: { readonly health: 'green' | 'yellow' | 'red'
   );
 }
 
-function iconFor(node: BrowseNode) {
+function iconFor(node: BrowseNode, expanded: boolean) {
   switch (node.kind) {
     case 'index':
       return <SearchIcon name="index" />;
@@ -153,7 +153,7 @@ function iconFor(node: BrowseNode) {
     case 'alias':
       return <SearchIcon name="alias" />;
     default:
-      return <Icon name="folder" className="text-muted" />;
+      return <Icon name={expanded ? 'folder-open' : 'folder'} className="text-muted" />;
   }
 }
 
@@ -375,7 +375,7 @@ function SearchNode(props: {
         title={object ? 'Double-click to browse its documents' : undefined}
         label={
           <span className="flex min-w-0 items-center gap-1.5" data-search-kind={node.kind}>
-            {iconFor(node)}
+            {iconFor(node, expanded)}
             <span className="truncate">{node.name}</span>
             {health && <HealthBadge health={health} />}
             {detail !== undefined && (

@@ -3,12 +3,15 @@ import {
   themeDark,
   themeLight,
   type DockviewApi,
+  type DockviewPanelApi,
   type IDockviewPanelHeaderProps,
   type IDockviewPanelProps,
+  type Position,
 } from 'dockview-react';
-import { newId } from '@querybara/core';
+import { ENGINES, newId } from '@querybara/core';
 import type { FilterGroup } from '@querybara/table-data';
-import { useEffect } from 'react';
+import { DropdownMenu, Tooltip } from 'radix-ui';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import {
   discardEditor,
@@ -18,12 +21,18 @@ import {
   useRestored,
 } from '../state/autosave';
 import { createDesigner, disposeDesigner, type DesignerTarget } from '../state/designer';
-import { cachedProfile } from '../state/data';
+import { cachedProfile, useProfiles } from '../state/data';
 import { confirm } from '../state/dialogs';
+import { pinnedSlot, setPinned, tabsToClose, useTabPins, type BulkClose } from '../state/dock-tabs';
+import { useBindingOf } from '../state/keybindings';
+import { metadataCache } from '../state/metadata';
+import { useWindowState } from '../state/window';
+import { bindingLabel } from '../lib/keys';
 import {
   panelInfo,
   panelKey,
   panelWithKey,
+  placeOf,
   registerPanel,
   unregisterPanel,
   usePanels,
@@ -48,6 +57,8 @@ import { TableDesignerPanel } from './designer/TableDesignerPanel';
 import { EngineIcon } from './EngineIcon';
 import { QueryPanel } from './QueryPanel';
 import { KeybindingsPanel } from './KeybindingsPanel';
+import { MenuItem, MenuSub } from './MenuItem';
+import { PointerAnchor } from './PointerAnchor';
 import { ObjectsPanel } from './ObjectsPanel';
 import { RedisPanel } from './redis/RedisPanel';
 import { MongoPanel } from './mongo/MongoPanel';
@@ -61,7 +72,7 @@ import { SchedulesPanel } from './schedules/SchedulesPanel';
 import { DumpAnalysisPanel } from './redis/DumpAnalysisPanel';
 import { QueryBuilderPanel } from './query-builder/QueryBuilderPanel';
 import { TableDataPanel } from './table/TableDataPanel';
-import { Icon, cx } from './ui';
+import { Icon, cx, type IconName } from './ui';
 
 /**
  * The main area (spec §19: dockview): query tabs, table data views and table designers as dock
@@ -72,6 +83,10 @@ import { Icon, cx } from './ui';
  *
  * Editor tabs autosave (spec §18): when the dock is ready it reopens the buffers the previous
  * run left, marked "restored", and closing a tab on purpose discards its buffer.
+ *
+ * A tab on a connection wears the connection's colour along its top edge, and its tooltip names
+ * the connection and the database, as Navicat's. A middle click closes a tab; a right click
+ * opens VS Code's tab menu (the closes, pinning, moving into a split).
  */
 
 let dockApi: DockviewApi | undefined;
@@ -127,6 +142,7 @@ export function openTableData(
     kind: 'table-data',
     profileId: target.profileId,
     title: target.name,
+    database: placeOf(target.database, target.schema),
     ...(options.filter ? {} : { key }),
   });
   createTableView(id, target, options);
@@ -149,6 +165,7 @@ export function openTableDesigner(target: DesignerTarget): string {
     kind: 'table-designer',
     profileId: target.profileId,
     title,
+    database: placeOf(target.database, target.schema),
     ...(key ? { key } : {}),
   });
   createDesigner(id, target);
@@ -297,6 +314,17 @@ export async function requestCloseTab(tabId: string): Promise<void> {
   if (closed) dockApi?.getPanel(tabId)?.api.close();
 }
 
+/** Closes any tab: a query tab (asks about an open transaction) or another panel. */
+export async function requestClose(id: string): Promise<void> {
+  if (useWorkspace.getState().tabs[id]) await requestCloseTab(id);
+  else await requestClosePanel(id);
+}
+
+/** Closing would lose work (a staged change, an unsaved design, an open transaction). */
+function hasUnsavedWork(id: string): boolean {
+  return useWorkspace.getState().tabs[id]?.inTransaction === true || panelInfo(id)?.dirty === true;
+}
+
 function QueryPanelHost(props: IDockviewPanelProps<QueryPanelParams>) {
   return <QueryPanel tabId={props.params.tabId} />;
 }
@@ -330,43 +358,29 @@ function RestoredMarker({ id }: { readonly id: string }) {
 function QueryTabHeader(props: IDockviewPanelHeaderProps<QueryPanelParams>) {
   const tabId = props.params.tabId;
   const tab = useWorkspace((state) => state.tabs[tabId]);
-  const engine = tab ? cachedProfile(tab.profileId)?.engine : undefined;
+  const title = tab?.title ?? props.api.title ?? '';
   return (
-    <div
-      className="flex h-full items-center gap-1.5 px-2 text-[13px]"
-      onMouseDown={(event) => {
-        if (event.button === 1) {
-          event.preventDefault();
-          void requestCloseTab(tabId);
-        }
-      }}
-    >
-      {tab?.running && (
-        <span aria-label="Running" className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-      )}
-      {engine && <EngineIcon engine={engine} className="h-3.5 w-3.5" />}
-      <span className="max-w-48 truncate">{tab?.title ?? props.api.title}</span>
-      <RestoredMarker id={tabId} />
-      {tab?.inTransaction && (
-        <span
-          title="Open transaction"
-          className="rounded bg-warning/20 px-1 text-[10px] font-semibold text-warning"
-        >
-          TX
-        </span>
-      )}
-      <button
-        type="button"
-        aria-label={`Close ${tab?.title ?? 'tab'}`}
-        className="rounded p-0.5 text-muted hover:bg-hover hover:text-fg"
-        onClick={(event) => {
-          event.stopPropagation();
-          void requestCloseTab(tabId);
-        }}
-      >
-        <Icon name="close" className="h-3 w-3" />
-      </button>
-    </div>
+    <TabFrame
+      id={tabId}
+      api={props.api}
+      title={title}
+      profileId={tab?.profileId}
+      database={tab ? (tab.database ?? metadataCache.facts(tab.profileId)?.database) : undefined}
+      busy={tab?.running === true ? 'Running' : undefined}
+      badges={
+        <>
+          <RestoredMarker id={tabId} />
+          {tab?.inTransaction && (
+            <span
+              title="Open transaction"
+              className="rounded bg-warning/20 px-1 text-[10px] font-semibold text-warning"
+            >
+              TX
+            </span>
+          )}
+        </>
+      }
+    />
   );
 }
 
@@ -426,54 +440,242 @@ function PanelTabHeader(props: IDockviewPanelHeaderProps<PanelParams>) {
   const panelId = props.params.panelId;
   const info = usePanels((state) => state.panels[panelId]);
   const title = info?.title ?? props.api.title ?? '';
-  // A tab on a connection carries its engine's icon, like the connection in the tree.
-  const engine = info?.profileId !== undefined ? cachedProfile(info.profileId)?.engine : undefined;
   return (
-    <div
-      className="flex h-full items-center gap-1.5 px-2 text-[13px]"
-      onMouseDown={(event) => {
-        if (event.button === 1) {
-          event.preventDefault();
-          void requestClosePanel(panelId);
-        }
-      }}
-    >
-      {info?.busy && (
-        <span aria-label="Working" className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-      )}
-      {engine ? (
-        <EngineIcon engine={engine} className="h-3.5 w-3.5" />
-      ) : (
-        <Icon
-          name={
-            info?.kind === 'keybindings'
-              ? 'settings'
-              : info?.kind === 'schedules'
-                ? 'schedule'
-                : 'table'
-          }
-          className="h-3.5 w-3.5 text-muted"
+    <TabFrame
+      id={panelId}
+      api={props.api}
+      title={title}
+      profileId={info?.profileId === '' ? undefined : info?.profileId}
+      database={info?.database}
+      busy={info?.busy ? 'Working' : undefined}
+      icon={
+        info?.kind === 'keybindings'
+          ? 'settings'
+          : info?.kind === 'schedules'
+            ? 'schedule'
+            : 'table'
+      }
+      badges={
+        <>
+          <RestoredMarker id={panelId} />
+          {info?.dirty && (
+            <span title="Unsaved changes" aria-label="Unsaved changes" className="text-warning">
+              ●
+            </span>
+          )}
+        </>
+      }
+    />
+  );
+}
+
+/**
+ * A tab's header: its connection's engine icon and colour, the title and markers, and the close
+ * button (a pin on a pinned tab, which unpins it). Hovering it shows where it points; a middle
+ * click closes it and a right click opens its menu.
+ */
+function TabFrame(props: {
+  readonly id: string;
+  readonly api: DockviewPanelApi;
+  readonly title: string;
+  /** The connection the tab works on; undefined for an app panel (Schedules). */
+  readonly profileId: string | undefined;
+  readonly database: string | undefined;
+  /** Work under way, by its name ("Running"): a pulsing dot. */
+  readonly busy: string | undefined;
+  /** The glyph of a tab not on a connection. */
+  readonly icon?: IconName;
+  readonly badges: ReactNode;
+}) {
+  const { id, title } = props;
+  const profiles = useProfiles();
+  const profile =
+    props.profileId === undefined
+      ? undefined
+      : (profiles.data?.find((candidate) => candidate.id === props.profileId) ??
+        cachedProfile(props.profileId));
+  const pinned = useTabPins((state) => state.pinned[id] === true);
+  const [menuAt, setMenuAt] = useState<{ readonly x: number; readonly y: number }>();
+  const [tipOpen, setTipOpen] = useState(false);
+  const color = profile?.presentation.color;
+  return (
+    <>
+      {/* The tooltip makes way for the tab's menu. */}
+      <Tooltip.Root open={tipOpen && !menuAt} onOpenChange={setTipOpen}>
+        <Tooltip.Trigger asChild>
+          <div
+            className="relative flex h-full items-center gap-1.5 px-4 text-[13px]"
+            data-testid="dock-tab"
+            onMouseDown={(event) => {
+              setTipOpen(false);
+              // A middle click closes the tab (and does not start the window's autoscroll).
+              if (event.button === 1) {
+                event.preventDefault();
+                void requestClose(id);
+              }
+            }}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setMenuAt({ x: event.clientX, y: event.clientY });
+            }}
+          >
+            {color && (
+              <span
+                aria-hidden="true"
+                data-testid="tab-connection-color"
+                className="pointer-events-none absolute inset-x-0 top-0 h-0.5"
+                style={{ background: color }}
+              />
+            )}
+            {props.busy && (
+              <span
+                aria-label={props.busy}
+                className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
+              />
+            )}
+            {profile ? (
+              <EngineIcon engine={profile.engine} className="h-3.5 w-3.5" />
+            ) : props.icon ? (
+              <Icon name={props.icon} className="h-3.5 w-3.5 text-muted" />
+            ) : null}
+            <span className="max-w-48 truncate">{title}</span>
+            {props.badges}
+            <button
+              type="button"
+              aria-label={pinned ? `Unpin ${title}` : `Close ${title}`}
+              title={pinned ? 'Unpin' : undefined}
+              className="rounded p-0.5 text-muted hover:bg-hover hover:text-fg"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (pinned) pinTab(props.api, false);
+                else void requestClose(id);
+              }}
+            >
+              <Icon name={pinned ? 'pin' : 'close'} className="h-3 w-3" />
+            </button>
+          </div>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content
+            side="bottom"
+            align="start"
+            sideOffset={4}
+            collisionPadding={8}
+            data-testid="tab-tooltip"
+            className="z-50 max-w-[32rem] rounded border border-border bg-raised px-2 py-1 text-[12px] leading-snug text-fg shadow-widget"
+          >
+            <div className="break-all">
+              {title}
+              {props.database !== undefined && props.database !== '' && `@${props.database}`}
+            </div>
+            {profile && (
+              <div className="text-muted">
+                ({profile.name} ({ENGINES[profile.engine].displayName}))
+              </div>
+            )}
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+      {menuAt && (
+        <TabMenu
+          id={id}
+          api={props.api}
+          pinned={pinned}
+          at={menuAt}
+          onClose={() => setMenuAt(undefined)}
         />
       )}
-      <span className="max-w-48 truncate">{title}</span>
-      <RestoredMarker id={panelId} />
-      {info?.dirty && (
-        <span title="Unsaved changes" aria-label="Unsaved changes" className="text-warning">
-          ●
-        </span>
-      )}
-      <button
-        type="button"
-        aria-label={`Close ${title}`}
-        className="rounded p-0.5 text-muted hover:bg-hover hover:text-fg"
-        onClick={(event) => {
-          event.stopPropagation();
-          void requestClosePanel(panelId);
-        }}
-      >
-        <Icon name="close" className="h-3 w-3" />
-      </button>
-    </div>
+    </>
+  );
+}
+
+/** Pins or unpins a tab, moving it to the end of its group's pinned tabs. */
+function pinTab(api: DockviewPanelApi, pinned: boolean): void {
+  const order = api.group.panels.map((panel) => panel.id);
+  setPinned(api.id, pinned);
+  const slot = pinnedSlot(order, api.id);
+  // Only a move that changes its place: the dock drops a group's only tab moved onto itself.
+  if (order.indexOf(api.id) !== slot) {
+    api.moveTo({ group: api.group, position: 'center', index: slot });
+  }
+}
+
+/** Closes the tabs one by one, each asking first when it holds unsaved work. */
+async function closeTabs(ids: readonly string[]): Promise<void> {
+  for (const id of ids) await requestClose(id);
+}
+
+const SPLITS: readonly { readonly position: Position; readonly label: string }[] = [
+  { position: 'right', label: 'Split Right' },
+  { position: 'left', label: 'Split Left' },
+  { position: 'bottom', label: 'Split Down' },
+  { position: 'top', label: 'Split Up' },
+];
+
+/** A tab's context menu, as VS Code's: the closes, pinning, and moving the tab into a split. */
+function TabMenu(props: {
+  readonly id: string;
+  readonly api: DockviewPanelApi;
+  readonly pinned: boolean;
+  readonly at: { readonly x: number; readonly y: number };
+  readonly onClose: () => void;
+}) {
+  const { id, api } = props;
+  const mac = useWindowState((s) => s.platform) === 'darwin';
+  const closeBinding = useBindingOf('view.closeTab');
+  const order = api.group.panels.map((panel) => panel.id);
+  const bulk = (scope: BulkClose): readonly string[] =>
+    tabsToClose(scope, order, id, hasUnsavedWork);
+  const item = (scope: BulkClose, label: string) => {
+    const ids = bulk(scope);
+    return (
+      <MenuItem disabled={ids.length === 0} onSelect={() => void closeTabs(ids)}>
+        {label}
+      </MenuItem>
+    );
+  };
+  return (
+    <DropdownMenu.Root open onOpenChange={(open) => !open && props.onClose()} modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <PointerAnchor x={props.at.x} y={props.at.y} />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="start"
+          sideOffset={2}
+          collisionPadding={8}
+          aria-label="Tab actions"
+          className="z-50 min-w-56 rounded-md border border-border bg-raised p-1 text-[13px] shadow-widget"
+        >
+          <MenuItem
+            icon="close"
+            shortcut={closeBinding ? bindingLabel(closeBinding, mac) : undefined}
+            onSelect={() => void requestClose(id)}
+          >
+            Close
+          </MenuItem>
+          {item('others', 'Close Others')}
+          {item('right', 'Close to the Right')}
+          {item('saved', 'Close Saved')}
+          {item('all', 'Close All')}
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <MenuItem icon="pin" onSelect={() => pinTab(api, !props.pinned)}>
+            {props.pinned ? 'Unpin' : 'Pin'}
+          </MenuItem>
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <MenuSub icon="columns" label="Split & Move" disabled={order.length < 2}>
+            {SPLITS.map((split) => (
+              <MenuItem
+                key={split.position}
+                onSelect={() => api.moveTo({ group: api.group, position: split.position })}
+              >
+                {split.label}
+              </MenuItem>
+            ))}
+          </MenuSub>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 
@@ -491,42 +693,46 @@ function Watermark() {
 export function Dock(props: { readonly theme: 'dark' | 'light' }) {
   useEffect(() => () => void (dockApi = undefined), []);
   return (
-    <DockviewReact
-      className={cx('querybara-dock h-full')}
-      theme={props.theme === 'dark' ? themeDark : themeLight}
-      components={{
-        query: QueryPanelHost,
-        tableData: TableDataHost,
-        tableDesigner: TableDesignerHost,
-        redis: RedisPanelHost,
-        mongo: MongoPanelHost,
-        sync: SyncPanelHost,
-        serverTools: ServerToolsPanelHost,
-        search: SearchPanelHost,
-        queryBuilder: QueryBuilderHost,
-        erDiagram: ErDiagramHost,
-        schedules: SchedulesHost,
-        redisDump: RedisDumpHost,
-        objects: ObjectsHost,
-        keybindings: KeybindingsHost,
-      }}
-      tabComponents={{ queryTab: QueryTabHeader, panelTab: PanelTabHeader }}
-      watermarkComponent={Watermark}
-      disableFloatingGroups
-      onReady={(event) => {
-        dockApi = event.api;
-        event.api.onDidActivePanelChange(({ panel }) => {
-          useWorkspace.setState({ activeTabId: panel?.id });
-        });
-        // A panel removed by the dock itself (not through requestCloseTab) still frees its tab.
-        event.api.onDidRemovePanel((panel) => {
-          if (useWorkspace.getState().tabs[panel.id]) void closeTab(panel.id, { force: true });
-          disposePanel(panel.id);
-          // Closed on purpose: its autosaved buffer goes too.
-          discardEditor(panel.id);
-        });
-        void restoreEditors();
-      }}
-    />
+    // Tab tooltips show half a second into a hover, and at once while moving between tabs.
+    <Tooltip.Provider delayDuration={500} skipDelayDuration={300}>
+      <DockviewReact
+        className={cx('querybara-dock h-full')}
+        theme={props.theme === 'dark' ? themeDark : themeLight}
+        components={{
+          query: QueryPanelHost,
+          tableData: TableDataHost,
+          tableDesigner: TableDesignerHost,
+          redis: RedisPanelHost,
+          mongo: MongoPanelHost,
+          sync: SyncPanelHost,
+          serverTools: ServerToolsPanelHost,
+          search: SearchPanelHost,
+          queryBuilder: QueryBuilderHost,
+          erDiagram: ErDiagramHost,
+          schedules: SchedulesHost,
+          redisDump: RedisDumpHost,
+          objects: ObjectsHost,
+          keybindings: KeybindingsHost,
+        }}
+        tabComponents={{ queryTab: QueryTabHeader, panelTab: PanelTabHeader }}
+        watermarkComponent={Watermark}
+        disableFloatingGroups
+        onReady={(event) => {
+          dockApi = event.api;
+          event.api.onDidActivePanelChange(({ panel }) => {
+            useWorkspace.setState({ activeTabId: panel?.id });
+          });
+          // A panel removed by the dock itself (not through requestCloseTab) still frees its tab.
+          event.api.onDidRemovePanel((panel) => {
+            if (useWorkspace.getState().tabs[panel.id]) void closeTab(panel.id, { force: true });
+            disposePanel(panel.id);
+            // Closed on purpose: its autosaved buffer goes too.
+            discardEditor(panel.id);
+            setPinned(panel.id, false);
+          });
+          void restoreEditors();
+        }}
+      />
+    </Tooltip.Provider>
   );
 }

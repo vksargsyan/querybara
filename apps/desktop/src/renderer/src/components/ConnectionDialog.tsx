@@ -32,6 +32,7 @@ import {
   type DialogEngine,
 } from '../state/connection-form';
 import { keys, useCanSaveSecrets, useFolders, useProfiles } from '../state/data';
+import { setFolderOpen } from '../state/folders';
 import { EngineIcon } from './EngineIcon';
 import { ENDPOINT_LABELS, EndpointFields, URI_EXAMPLES } from './connection/EndpointFields';
 import { EnginePicker, lastUsedEngine } from './connection/EnginePicker';
@@ -381,6 +382,8 @@ export function ConnectionDialog(props: {
         }
       }
       await queryClient.invalidateQueries({ queryKey: keys.profiles });
+      // The tree shows the connection in its folder.
+      if (saved.presentation.folderId !== null) setFolderOpen(saved.presentation.folderId, true);
       onClose();
     } catch (error) {
       setSaveError(errorMessage(error));

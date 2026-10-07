@@ -106,7 +106,7 @@ function MongoIcon({ name }: { readonly name: MongoIconName }) {
   );
 }
 
-export function iconFor(node: BrowseNode) {
+export function iconFor(node: BrowseNode, expanded = false) {
   switch (node.kind) {
     case 'database':
       return <Icon name="database" className="text-lilac" />;
@@ -125,7 +125,7 @@ export function iconFor(node: BrowseNode) {
     case 'role':
       return <MongoIcon name="role" />;
     default:
-      return <Icon name="folder" className="text-muted" />;
+      return <Icon name={expanded ? 'folder-open' : 'folder'} className="text-muted" />;
   }
 }
 
@@ -584,7 +584,7 @@ function MongoNode(props: {
         title={opens ? 'Click to open the documents' : tool ? 'Double-click to open' : undefined}
         label={
           <span className="flex min-w-0 items-center gap-1.5" data-mongo-kind={node.kind}>
-            {iconFor(node)}
+            {iconFor(node, expanded)}
             <span className="truncate">{node.name}</span>
             {detail !== undefined && (
               <span className="ml-auto max-w-[45%] shrink-0 truncate pl-1 font-mono text-[10px] text-muted">

@@ -290,9 +290,13 @@ progress {
   --dv-active-sash-color: var(--focus);
 }
 
-/* The active tab's rust top hairline (dimmed in a group without focus). */
+/*
+ * The active tab's rust top hairline (dimmed in a group without focus). The tab header fills the
+ * tab (its own padding), so a click anywhere on it is the header's: middle click, right click.
+ */
 .querybara-dock .dv-tab {
   position: relative;
+  padding: 0;
   border-right: 1px solid var(--border);
 }
 

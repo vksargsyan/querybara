@@ -258,6 +258,16 @@ export function Icon({
         {...wash}
       />
     ),
+    // An expanded folder: its back, and the front flap tipped open.
+    'folder-open': (
+      <>
+        <path d="M1.75 12V4.2a1 1 0 0 1 1-1h3.3l1.6 1.6h4.6a1 1 0 0 1 1 1V7" />
+        <path
+          d="M1.75 12l1.85-4.4a1 1 0 0 1 .92-.6h9.15a.6.6 0 0 1 .55.84l-1.85 4.36a1.3 1.3 0 0 1-1.2.8H2.75a1 1 0 0 1-1-1z"
+          {...wash}
+        />
+      </>
+    ),
     close: <path d="M4.25 4.25l7.5 7.5M11.75 4.25l-7.5 7.5" />,
     history: (
       <>
@@ -623,6 +633,7 @@ export function Icon({
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
+      data-icon={name}
       fill="none"
       stroke="currentColor"
       strokeWidth={1.3}
