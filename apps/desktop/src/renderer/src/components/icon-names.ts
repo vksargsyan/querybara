@@ -11,6 +11,7 @@ export type IconName =
   | 'database'
   | 'table'
   | 'folder'
+  | 'folder-open'
   | 'close'
   | 'history'
   | 'format'

@@ -6,7 +6,8 @@ import { keys, queryClient } from './data';
 
 /**
  * Folders of the connection tree (spec §4): making one (named "Folder N", then renamed in place)
- * and moving a connection into one, or out to the top level.
+ * and moving a connection into one, or out to the top level. Every folder starts closed when the
+ * app opens; one opens when a connection is put in it, to show it there.
  */
 
 /** The first "Folder N" no folder has yet. */
@@ -15,6 +16,19 @@ export function nextFolderName(folders: readonly Pick<Folder, 'name'>[]): string
   let n = folders.length + 1;
   while (taken.has(`folder ${n}`)) n += 1;
   return `Folder ${n}`;
+}
+
+/** The folders open in the tree (folder id → open); none when the app starts. */
+export const useOpenFolders = create<{ readonly open: Readonly<Record<string, true>> }>()(() => ({
+  open: {},
+}));
+
+export function setFolderOpen(folderId: string, open: boolean): void {
+  useOpenFolders.setState((state) => {
+    if ((state.open[folderId] === true) === open) return state;
+    const { [folderId]: _was, ...rest } = state.open;
+    return { open: open ? { ...rest, [folderId]: true } : rest };
+  });
 }
 
 /** A folder the tree is to rename in place as soon as it shows it (just made). */
@@ -47,4 +61,5 @@ export async function moveToFolder(profile: StoredProfile, folderId: string | nu
     expectedVersion: version,
   });
   await queryClient.invalidateQueries({ queryKey: keys.profiles });
+  if (folderId !== null) setFolderOpen(folderId, true);
 }

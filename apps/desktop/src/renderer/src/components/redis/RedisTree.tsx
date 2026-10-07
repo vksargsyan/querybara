@@ -76,7 +76,7 @@ export function RedisTree(props: { readonly profile: StoredProfile; readonly dep
           onToggle={() => setToolsOpen(!toolsOpen)}
           label={
             <span className="flex items-center gap-1.5">
-              <Icon name="folder" className="text-muted" />
+              <Icon name={toolsOpen ? 'folder-open' : 'folder'} className="text-muted" />
               Tools
             </span>
           }
@@ -277,7 +277,7 @@ function TreeNode(props: {
         label={
           <span className="flex min-w-0 items-center gap-1.5">
             <Icon
-              name={node.kind === 'namespace' ? 'folder' : 'database'}
+              name={node.kind === 'namespace' ? (expanded ? 'folder-open' : 'folder') : 'database'}
               className={node.kind === 'namespace' ? 'text-muted' : 'text-lilac'}
             />
             <span className="truncate font-mono text-[12.5px]">{node.name}</span>

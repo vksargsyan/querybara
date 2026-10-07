@@ -61,7 +61,14 @@ export function createCollectionPanel(
   const open = panelWithKey(key);
   if (open) return { id: open.id, opened: false };
   const id = newId();
-  registerPanel({ id, kind: 'mongo', profileId: target.profileId, title: target.collection, key });
+  registerPanel({
+    id,
+    kind: 'mongo',
+    profileId: target.profileId,
+    title: target.collection,
+    database: target.db,
+    key,
+  });
   const view = new CollectionView(id, target, fields);
   panels.set(id, view);
   void view.init();
@@ -71,7 +78,13 @@ export function createCollectionPanel(
 /** Creates a console's state and registers its panel. */
 export function createConsolePanel(target: ConsoleTarget, title: string): string {
   const id = newId();
-  registerPanel({ id, kind: 'mongo', profileId: target.profileId, title });
+  registerPanel({
+    id,
+    kind: 'mongo',
+    profileId: target.profileId,
+    title,
+    database: target.database,
+  });
   const console = new MongoConsole(id, target);
   panels.set(id, console);
   void console.init();
@@ -81,7 +94,7 @@ export function createConsolePanel(target: ConsoleTarget, title: string): string
 /** Creates a SQL tab's state and registers its panel. */
 export function createSqlPanel(target: SqlQueryTarget, title: string): string {
   const id = newId();
-  registerPanel({ id, kind: 'mongo', profileId: target.profileId, title });
+  registerPanel({ id, kind: 'mongo', profileId: target.profileId, title, database: target.db });
   const query = new SqlQuery(id, target);
   panels.set(id, query);
   void query.init();
@@ -107,6 +120,14 @@ function scopeKey(scope: WatchScope): string[] {
     : scope.kind === 'database'
       ? [scope.db]
       : [scope.ns.db, scope.ns.collection];
+}
+
+/** The database a tool panel works in; undefined for a change stream on the whole cluster. */
+function toolDatabase(request: ToolPanelRequest): string | undefined {
+  const { target } = request;
+  if ('db' in target) return target.db;
+  const scope = scopeKey(target.scope);
+  return scope[0];
 }
 
 /** What a tool panel shows, so opening the same thing again focuses it. */
@@ -178,7 +199,14 @@ export function createToolPanel(request: ToolPanelRequest): {
   const open = panelWithKey(key);
   if (open) return { id: open.id, opened: false, title };
   const id = newId();
-  registerPanel({ id, kind: 'mongo', profileId: request.target.profileId, title, key });
+  registerPanel({
+    id,
+    kind: 'mongo',
+    profileId: request.target.profileId,
+    title,
+    database: toolDatabase(request),
+    key,
+  });
   const panel = createTool(id, request);
   panels.set(id, panel);
   void panel.init();

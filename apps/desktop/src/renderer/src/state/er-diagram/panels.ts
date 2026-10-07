@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { currentDock } from '../../components/dock';
 import { cachedProfile } from '../data';
 import { useMetadata } from '../metadata';
-import { panelWithKey, registerPanel, unregisterPanel } from '../panels';
+import { panelWithKey, placeOf, registerPanel, unregisterPanel } from '../panels';
 import { ErDiagramView, type ErTarget } from './view';
 
 /**
@@ -48,7 +48,14 @@ export function openErDiagram(options: OpenErDiagramOptions): string | undefined
   const id = newId();
   const place = options.schema ?? options.database ?? profile.name;
   const title = `ER diagram (${place})`;
-  registerPanel({ id, kind: 'er-diagram', profileId: profile.id, title, key });
+  registerPanel({
+    id,
+    kind: 'er-diagram',
+    profileId: profile.id,
+    title,
+    database: placeOf(options.database, options.schema),
+    key,
+  });
   const view = new ErDiagramView(id, target);
   useErDiagrams.setState((state) => ({ views: { ...state.views, [id]: view } }));
   const offMetadata = useMetadata.subscribe((state, previous) => {

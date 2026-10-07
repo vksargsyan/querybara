@@ -130,6 +130,7 @@ export class MongoConsole {
   /** Switches the database commands run against (the shell's `use`). */
   async useDatabase(database: string): Promise<void> {
     this.#set({ database });
+    patchPanel(this.id, { database });
     try {
       await this.#lane.run((host, sessionId) => host.mongo.useDatabase({ sessionId, database }));
     } catch (error) {

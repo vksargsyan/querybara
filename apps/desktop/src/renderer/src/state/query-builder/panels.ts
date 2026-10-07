@@ -6,7 +6,7 @@ import { currentDock } from '../../components/dock';
 import { cachedProfile } from '../data';
 import { confirm } from '../dialogs';
 import { loadSnapshot, metadataCache, useMetadata } from '../metadata';
-import { patchPanel, registerPanel, unregisterPanel } from '../panels';
+import { patchPanel, placeOf, registerPanel, unregisterPanel } from '../panels';
 import { switchTarget, type TabTarget } from '../runner';
 import { createTab, getTab, patchTab, runtimeOf, useWorkspace } from '../workspace';
 import { QueryBuilder, type BuilderTarget } from './builder';
@@ -98,7 +98,13 @@ export function openQueryBuilder(options: OpenBuilderOptions): string | undefine
   };
   const id = newId();
   const title = builderTitle(profile.name, options.schema ?? options.database);
-  registerPanel({ id, kind: 'query-builder', profileId: profile.id, title });
+  registerPanel({
+    id,
+    kind: 'query-builder',
+    profileId: profile.id,
+    title,
+    database: placeOf(options.database, options.schema),
+  });
   createTab({
     id,
     profileId: profile.id,
@@ -146,7 +152,7 @@ export async function retargetQueryBuilder(panelId: string, next: TabTarget): Pr
   };
   const title = builderTitle(profile.name, next.database);
   patchTab(panelId, { title });
-  patchPanel(panelId, { profileId: profile.id, title });
+  patchPanel(panelId, { profileId: profile.id, title, database: next.database });
   currentDock()?.getPanel(panelId)?.api.setTitle(title);
   const builder = attachBuilder(panelId, target);
   void (sameDialect ? builder.carryOver(previous) : builder.init());

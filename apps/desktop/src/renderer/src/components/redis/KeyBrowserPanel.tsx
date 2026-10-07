@@ -431,7 +431,7 @@ function KeyTable(props: {
                         name={row.expanded ? 'chevron-down' : 'chevron-right'}
                         className="h-3 w-3 text-muted"
                       />
-                      <Icon name="folder" className="text-muted" />
+                      <Icon name={row.expanded ? 'folder-open' : 'folder'} className="text-muted" />
                       <span className="truncate font-mono">{row.name}</span>
                       <span className="text-xs text-muted">({formatCount(row.count)})</span>
                     </>

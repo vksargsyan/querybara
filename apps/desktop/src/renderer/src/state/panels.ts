@@ -26,6 +26,11 @@ export interface PanelInfo {
   readonly kind: PanelKind;
   readonly profileId: string;
   readonly title: string;
+  /**
+   * Where on the connection the panel points (a database, "database.schema"), for its tab's
+   * tooltip; unset when the panel is not in one database (a cluster tool, the connection's own).
+   */
+  readonly database?: string | undefined;
   /** Identifies what the panel shows (a table), so opening it again focuses this panel. */
   readonly key?: string;
   /** Staged changes or unsaved design: closing asks first. */
@@ -55,6 +60,7 @@ export function patchPanel(id: string, patch: Partial<Omit<PanelInfo, 'id' | 'ki
       next.dirty === current.dirty &&
       next.busy === current.busy &&
       next.profileId === current.profileId &&
+      next.database === current.database &&
       next.key === current.key
     ) {
       return state;
@@ -77,6 +83,20 @@ export function panelInfo(id: string): PanelInfo | undefined {
 /** The open panel showing `key`, if any. */
 export function panelWithKey(key: string): PanelInfo | undefined {
   return Object.values(usePanels.getState().panels).find((panel) => panel.key === key);
+}
+
+/**
+ * How a tab names a table's place: its database on MySQL/MariaDB (where the schema is the
+ * database), "database.schema" on PostgreSQL.
+ */
+export function placeOf(
+  database: string | undefined,
+  schema: string | undefined,
+): string | undefined {
+  if (schema === undefined || schema === '') return database;
+  return database === undefined || database === '' || database === schema
+    ? schema
+    : `${database}.${schema}`;
 }
 
 /** The key of a table's data view or designer (see `PanelInfo.key`). */

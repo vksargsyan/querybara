@@ -25,8 +25,7 @@ import { panelInfo } from '../state/panels';
 import { openSchedulesPanel } from '../state/schedules';
 import { getTableView } from '../state/table-view';
 import { openAbout } from '../state/updates';
-import { useWorkspace } from '../state/workspace';
-import { currentDock, openTableDesigner, requestClosePanel, requestCloseTab } from './dock';
+import { currentDock, openTableDesigner, requestClose } from './dock';
 
 /**
  * The commands of the palette and the key bindings (state/commands.ts): connections, queries,
@@ -324,9 +323,7 @@ export function registerAppCommands(actions: () => AppActions): () => void {
       enabled: () => activeId() !== undefined,
       run: async () => {
         const id = activeId();
-        if (id === undefined) return;
-        if (useWorkspace.getState().tabs[id]) await requestCloseTab(id);
-        else await requestClosePanel(id);
+        if (id !== undefined) await requestClose(id);
       },
     },
     {

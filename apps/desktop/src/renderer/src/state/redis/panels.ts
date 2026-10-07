@@ -101,6 +101,11 @@ function panelKeyOf(target: RedisPanelTarget): string | undefined {
   ].join('\u0000');
 }
 
+/** The logical database a panel works in, as its tab's tooltip names it ("db0"). */
+function redisDatabase(target: RedisPanelTarget): string | undefined {
+  return target.database === undefined ? undefined : `db${target.database}`;
+}
+
 export function panelTitle(target: RedisPanelTarget): string {
   const db =
     target.database !== undefined && target.database !== 0 ? ` [db${target.database}]` : '';
@@ -129,6 +134,7 @@ export function openRedisPanel(target: RedisPanelTarget): string {
     kind: 'redis',
     profileId: target.profileId,
     title,
+    database: redisDatabase(target),
     ...(key !== undefined ? { key } : {}),
   });
   useRedisPanels.setState((state) => ({ targets: { ...state.targets, [id]: target } }));
@@ -151,7 +157,11 @@ export function retargetPanel(panelId: string, patch: Partial<RedisPanelTarget>)
   const title = panelTitle(target);
   const key = panelKeyOf(target);
   useRedisPanels.setState((state) => ({ targets: { ...state.targets, [panelId]: target } }));
-  patchPanel(panelId, { title, ...(key !== undefined ? { key } : {}) });
+  patchPanel(panelId, {
+    title,
+    database: redisDatabase(target),
+    ...(key !== undefined ? { key } : {}),
+  });
   currentDock()?.getPanel(panelId)?.api.setTitle(title);
 }
 
