@@ -4,7 +4,7 @@ import { useWatch } from 'react-hook-form';
 import { mainApi } from '../../lib/main-client';
 import { MAX_SSH_HOPS } from '../../state/connection-form';
 import { Button, Field, Icon, Input, Select } from '../ui';
-import { SecretModeSelect, type ConnectionForm } from './fields';
+import { SecretModeSelect, registerSecret, type ConnectionForm } from './fields';
 
 /** The connection dialog's network sections (spec §4): an SSH tunnel with jump hosts, a proxy. */
 
@@ -204,7 +204,12 @@ function SshHopFields(props: {
               id={id('password')}
               type="password"
               autoComplete="new-password"
-              {...register(`sshHops.${index}.password`)}
+              {...registerSecret(
+                props.form,
+                `sshHops.${index}.password`,
+                `sshHops.${index}.passwordMode`,
+                props.canSave,
+              )}
             />
           </Field>
           <Field label="SSH password storage" htmlFor={id('password-mode')} className="col-span-2">
@@ -291,7 +296,12 @@ function SshHopFields(props: {
                     id={id('passphrase')}
                     type="password"
                     autoComplete="new-password"
-                    {...register(`sshHops.${index}.passphrase`)}
+                    {...registerSecret(
+                      props.form,
+                      `sshHops.${index}.passphrase`,
+                      `sshHops.${index}.passphraseMode`,
+                      props.canSave,
+                    )}
                   />
                   <Button onClick={() => props.onInspect(true)} disabled={hop.passphrase === ''}>
                     Check
@@ -379,7 +389,7 @@ export function ProxySection(props: {
               type="password"
               autoComplete="new-password"
               disabled={mode === 'none'}
-              {...register('proxyPassword')}
+              {...registerSecret(props.form, 'proxyPassword', 'proxyPasswordMode', props.canSave)}
             />
           </Field>
           <div />

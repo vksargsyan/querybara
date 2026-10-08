@@ -86,18 +86,23 @@ export function TitleBar(props: {
         role="toolbar"
         aria-label="Window"
       >
+        {/* Spelled out, in the production badge's red: the window's first action. */}
+        <button
+          type="button"
+          aria-label="New query"
+          title="New query"
+          onClick={props.onNewQuery}
+          disabled={props.newQueryDisabled}
+          className="mr-1 flex h-[20px] items-center rounded-sm bg-env-production/20 px-1.5 text-[10px] font-semibold tracking-wide text-env-production uppercase hover:bg-env-production/30 active:bg-env-production/40 disabled:opacity-40 disabled:hover:bg-env-production/20"
+        >
+          + New query
+        </button>
         <TitleButton
           label="Side bar"
           tooltip={props.sidebarVisible ? 'Hide the side bar' : 'Show the side bar'}
           icon="sidebar"
           pressed={props.sidebarVisible}
           onClick={props.onToggleSidebar}
-        />
-        <TitleButton
-          label="New query"
-          icon="plus"
-          onClick={props.onNewQuery}
-          disabled={props.newQueryDisabled}
         />
         <TitleButton
           label="History"

@@ -136,7 +136,7 @@ export function EnvironmentBadge({ environment }: { readonly environment: Enviro
   return (
     <span
       className={cx(
-        'rounded-sm px-1.5 py-px text-[10px] font-semibold tracking-wide uppercase',
+        'shrink-0 rounded-sm px-1.5 py-px text-[10px] font-semibold tracking-wide uppercase',
         ENVIRONMENT_CLASSES[environment],
       )}
     >

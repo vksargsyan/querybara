@@ -114,6 +114,20 @@ export type PasswordMode = (typeof PASSWORD_MODES)[number];
 /** Storage policies for a secret the profile cannot do without (an SSH password). */
 export const SECRET_MODES = ['save', 'session', 'ask'] as const;
 
+/**
+ * The storage of a secret once something is typed into its field. "Ask every time" keeps
+ * nothing, so a password typed into a field set to it would be dropped on save: an imported
+ * connection's, whose password Navicat did not save or Querybara could not read, comes in set to
+ * it. Typing one moves the storage to the keychain, or to this session without a keychain.
+ */
+export function storageForTyped<M extends PasswordMode>(
+  mode: M,
+  typed: string,
+  canSave: boolean,
+): M | 'save' | 'session' {
+  return mode === 'ask' && typed !== '' ? (canSave ? 'save' : 'session') : mode;
+}
+
 export const SSH_AUTH_METHODS = ['password', 'privateKey', 'agent'] as const;
 export type SshAuthMethod = (typeof SSH_AUTH_METHODS)[number];
 

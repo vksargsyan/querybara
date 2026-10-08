@@ -455,9 +455,11 @@ function FolderItem(props: {
               }}
             />
           ) : (
-            <span className="flex items-center gap-1.5 font-medium">
-              <Icon name={open ? 'folder-open' : 'folder'} className="text-muted" />
-              <Highlighted text={props.folder.name} search={props.search} />
+            <span className="flex min-w-0 items-center gap-1.5 font-medium">
+              <Icon name={open ? 'folder-open' : 'folder'} className="shrink-0 text-muted" />
+              <span className="truncate" title={props.folder.name}>
+                <Highlighted text={props.folder.name} search={props.search} />
+              </span>
             </span>
           )
         }
@@ -609,7 +611,7 @@ function ProfileItem(props: {
               engine={profile.engine}
               className={cx(!connected && 'opacity-60 saturate-50')}
             />
-            <span className="truncate" data-testid="profile-name">
+            <span className="truncate" title={profile.name} data-testid="profile-name">
               <Highlighted text={profile.name} search={props.search} />
             </span>
             {(connection?.status === 'lost' || connection?.status === 'failed') && (
@@ -621,13 +623,16 @@ function ProfileItem(props: {
             )}
             <EnvironmentBadge environment={profile.presentation.environment} />
             {profile.presentation.readOnly && (
-              <span className="rounded bg-panel-2 px-1 text-[10px] text-muted" title="Read-only">
+              <span
+                className="shrink-0 rounded bg-panel-2 px-1 text-[10px] text-muted"
+                title="Read-only"
+              >
                 RO
               </span>
             )}
             {hasWeakTls(profile) && (
               <span
-                className="text-warning"
+                className="shrink-0 text-warning"
                 title={
                   profile.tls.mode === 'disable'
                     ? 'TLS is disabled for this connection'
