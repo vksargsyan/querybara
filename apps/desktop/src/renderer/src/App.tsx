@@ -20,6 +20,7 @@ import { Prompts } from './components/Prompts';
 import { ScheduleDialog } from './components/schedules/ScheduleDialog';
 import { openRedisTool } from './components/redis/RedisTree';
 import { Sidebar } from './components/Sidebar';
+import { SidebarPane } from './components/SidebarPane';
 import { TitleBar } from './components/TitleBar';
 import { useTheme } from './components/theme';
 import { UpdateNotice } from './components/UpdateNotice';
@@ -29,6 +30,7 @@ import { startKeybindings, useKeybindings } from './state/keybindings';
 import { runningCount, showJobs, useJobs, watchJobs } from './state/jobs';
 import { usePanels } from './state/panels';
 import { openSchedulesPanel } from './state/schedules';
+import { showSidebar, useSidebar } from './state/sidebar';
 import { openAbout, watchAppCommands, watchUpdates } from './state/updates';
 import { useWorkspace } from './state/workspace';
 
@@ -43,6 +45,7 @@ export function App() {
   const [dialog, setDialog] = useState<ConnectionDialogMode>();
   const [historyOpen, setHistoryOpen] = useState(false);
   const jobsOpen = useJobs((state) => state.open);
+  const sidebarVisible = useSidebar((state) => state.visible);
   const jobsRunning = useJobs(runningCount);
   const profiles = useProfiles();
   const activeTab = useWorkspace((state) =>
@@ -130,6 +133,8 @@ export function App() {
         title={activeTitle}
         production={production ? activeProfile?.name : undefined}
         theme={theme}
+        sidebarVisible={sidebarVisible}
+        onToggleSidebar={() => showSidebar(!sidebarVisible)}
         onToggleTheme={() => void toggleTheme()}
         onNewQuery={newQuery}
         newQueryDisabled={!activeTab && readyProfiles.length === 0}
@@ -141,9 +146,9 @@ export function App() {
         onToggleJobs={() => showJobs(!jobsOpen)}
       />
       <div className="flex min-h-0 flex-1">
-        <div className="w-72 shrink-0">
+        <SidebarPane>
           <Sidebar onEdit={setDialog} />
-        </div>
+        </SidebarPane>
         <main className="min-w-0 flex-1" aria-label="Query tabs">
           <Dock theme={theme} />
         </main>

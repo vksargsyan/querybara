@@ -22,6 +22,8 @@ export function TitleBar(props: {
   readonly title: string | undefined;
   readonly production: string | undefined;
   readonly theme: 'dark' | 'light';
+  readonly sidebarVisible: boolean;
+  readonly onToggleSidebar: () => void;
   readonly onToggleTheme: () => void;
   readonly onNewQuery: () => void;
   readonly newQueryDisabled: boolean;
@@ -84,6 +86,13 @@ export function TitleBar(props: {
         role="toolbar"
         aria-label="Window"
       >
+        <TitleButton
+          label="Side bar"
+          tooltip={props.sidebarVisible ? 'Hide the side bar' : 'Show the side bar'}
+          icon="sidebar"
+          pressed={props.sidebarVisible}
+          onClick={props.onToggleSidebar}
+        />
         <TitleButton
           label="New query"
           icon="plus"

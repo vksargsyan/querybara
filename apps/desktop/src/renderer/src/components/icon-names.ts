@@ -28,6 +28,7 @@ export type IconName =
   | 'redo'
   | 'discard'
   | 'columns'
+  | 'sidebar'
   | 'bookmark'
   | 'folder-move'
   | 'folder-up'
