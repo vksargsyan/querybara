@@ -343,6 +343,41 @@ describe('main contract handlers', () => {
     expect(store.secrets.get({ id: passwordId, policy: 'save' })).toBeUndefined();
   });
 
+  it('closes an open connection when its password or settings change, so a reconnect uses them', async () => {
+    const { main, hosts, supervisor } = setup();
+    const { saved, passwordId } = await saveProfileWithPassword(main, 'save');
+    const closed: (string | undefined)[] = [];
+    supervisor.subscribe((event) => {
+      if (event.state === 'closed') closed.push(event.message);
+    });
+    await main.openConnection({ profileId: saved.id });
+
+    // Moving or renaming it keeps the connection; saving the same password again does too.
+    const renamed = await main.profiles.save({
+      profile: {
+        ...saved,
+        name: 'Renamed',
+        presentation: { ...saved.presentation, color: '#e5484d' },
+      },
+      expectedVersion: saved.version,
+    });
+    await main.secrets.set({ profileId: saved.id, refId: passwordId, value: SECRET });
+    expect(supervisor.findByProfile(saved.id)).toBeDefined();
+
+    await main.secrets.set({ profileId: saved.id, refId: passwordId, value: ASKED });
+    expect(supervisor.findByProfile(saved.id)).toBeUndefined();
+    expect(closed).toEqual(['The connection settings changed. Reconnect to use them.']);
+    await main.openConnection({ profileId: saved.id });
+    expect(connectMessages(hosts).at(-1)?.resolved.secrets[passwordId]).toBe(ASKED);
+
+    await main.profiles.save({
+      profile: { ...renamed, endpoint: { kind: 'host', host: 'db.internal', port: 5433 } },
+      expectedVersion: renamed.version,
+    });
+    expect(supervisor.findByProfile(saved.id)).toBeUndefined();
+    expect(closed).toHaveLength(2);
+  });
+
   it('records and searches history, and merges settings', async () => {
     const { main } = setup();
     const { saved } = await saveProfileWithPassword(main, 'save');

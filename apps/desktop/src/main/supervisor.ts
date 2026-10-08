@@ -258,8 +258,8 @@ export class ConnectionSupervisor<P> {
     }
   }
 
-  /** Shuts the host down for good. Unknown ids are ignored. */
-  close(connectionId: string): void {
+  /** Shuts the host down for good; `message` says why, to the page. Unknown ids are ignored. */
+  close(connectionId: string, message?: string): void {
     const connection = this.#connections.get(connectionId);
     if (!connection) return;
     this.#connections.delete(connectionId);
@@ -271,7 +271,7 @@ export class ConnectionSupervisor<P> {
       connection,
       new QuerybaraError({ code: 'CANCELLED', message: 'The connection was closed' }),
     );
-    this.#publish(connection);
+    this.#publish(connection, message);
     if (process) {
       try {
         process.send({ type: 'shutdown' });
@@ -283,9 +283,9 @@ export class ConnectionSupervisor<P> {
   }
 
   /** Closes every connection of a profile (it was deleted or edited). */
-  closeProfile(profileId: string): void {
+  closeProfile(profileId: string, message?: string): void {
     for (const connection of [...this.#connections.values()]) {
-      if (connection.profileId === profileId) this.close(connection.connectionId);
+      if (connection.profileId === profileId) this.close(connection.connectionId, message);
     }
   }
 
