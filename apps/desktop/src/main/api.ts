@@ -116,6 +116,9 @@ export interface WindowServices<P> extends FileDialogs {
 
 const SETTINGS_KEY = 'app';
 
+/** Why an open connection closed when its profile was edited, for the page to show. */
+const SETTINGS_CHANGED = 'The connection settings changed. Reconnect to use them.';
+
 function notFound(what: string, id: string): QuerybaraError {
   return new QuerybaraError({ code: 'NOT_FOUND', message: `${what} ${id} was not found` });
 }
@@ -188,8 +191,19 @@ export function createMainHandlers<P>(
     profiles: {
       list: () => store.profiles.list(),
       get: ({ id }) => requireProfile(id),
-      save: ({ profile, expectedVersion }) =>
-        store.profiles.save(profile, expectedVersion === undefined ? {} : { expectedVersion }),
+      save: ({ profile, expectedVersion }) => {
+        const before = profile.id === undefined ? undefined : store.profiles.get(profile.id);
+        const saved = store.profiles.save(
+          profile,
+          expectedVersion === undefined ? {} : { expectedVersion },
+        );
+        // A live connection keeps the settings it was opened with, restarts included: close it,
+        // so the next connect uses the saved ones.
+        if (before && connectsDifferently(before, saved)) {
+          supervisor.closeProfile(saved.id, SETTINGS_CHANGED);
+        }
+        return saved;
+      },
       delete: ({ id }) => {
         supervisor.closeProfile(id);
         store.profiles.delete(id);
@@ -255,7 +269,10 @@ export function createMainHandlers<P>(
       set: ({ profileId, refId, value }) => {
         const ref = secretRefsOf(requireProfile(profileId)).find((r) => r.id === refId);
         if (!ref) throw notFound('Secret reference', refId);
+        const changed = store.secrets.get(ref) !== value;
         store.secrets.set(ref, value);
+        // The connection host signed in with the old value, and would again on a restart.
+        if (changed) supervisor.closeProfile(profileId, SETTINGS_CHANGED);
       },
       clear: ({ profileId, refId }) => {
         for (const ref of secretRefsOf(requireProfile(profileId))) {
@@ -394,6 +411,16 @@ async function* hostKeyEvents(
     if (signal.aborted) resolve();
     else signal.addEventListener('abort', () => resolve(), { once: true });
   });
+}
+
+/**
+ * Whether an edit changes how the profile connects: anything but its name and presentation
+ * (folder, colour, tags, environment and write rules), which an open connection can keep.
+ */
+function connectsDifferently(before: ConnectionProfile, after: ConnectionProfile): boolean {
+  const how = ({ engine, endpoint, auth, tls, ssh, proxy, options }: ConnectionProfile): string =>
+    JSON.stringify({ engine, endpoint, auth, tls, ssh, proxy, options });
+  return how(before) !== how(after);
 }
 
 /** "ops@bastion:22", with an IPv6 host bracketed. */

@@ -23,6 +23,7 @@ import { revealObjects, useObjectsView } from '../state/objects-view';
 import { openPalette, quickPick } from '../state/palette';
 import { panelInfo } from '../state/panels';
 import { openSchedulesPanel } from '../state/schedules';
+import { showSidebar } from '../state/sidebar';
 import { getTableView } from '../state/table-view';
 import { openAbout } from '../state/updates';
 import { currentDock, openTableDesigner, requestClose } from './dock';
@@ -211,9 +212,13 @@ export function registerAppCommands(actions: () => AppActions): () => void {
       title: 'Search Connections',
       icon: 'search',
       run: () => {
-        const input = document.querySelector<HTMLInputElement>('[data-testid="sidebar-search"]');
-        input?.focus();
-        input?.select();
+        showSidebar(true);
+        // Once the side bar shows again: a hidden field takes no focus.
+        requestAnimationFrame(() => {
+          const input = document.querySelector<HTMLInputElement>('[data-testid="sidebar-search"]');
+          input?.focus();
+          input?.select();
+        });
       },
     },
     {
@@ -314,6 +319,14 @@ export function registerAppCommands(actions: () => AppActions): () => void {
           showStatus('info', 'Click a database, a schema or a folder in the side bar first.');
         }
       },
+    },
+    {
+      id: 'view.toggleSidebar',
+      category: 'View',
+      title: 'Toggle Side Bar',
+      icon: 'sidebar',
+      keywords: ['sidebar', 'connections', 'hide', 'show'],
+      run: () => showSidebar(),
     },
     {
       id: 'view.closeTab',

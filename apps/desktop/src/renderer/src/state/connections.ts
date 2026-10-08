@@ -176,7 +176,12 @@ export function applyConnectionEvent(event: ConnectionEvent): void {
       return;
     case 'closed':
       if (current.status !== 'connecting') {
-        update(event.profileId, { hostState: 'closed', status: 'lost', host: undefined });
+        update(event.profileId, {
+          hostState: 'closed',
+          status: 'lost',
+          host: undefined,
+          ...(event.message !== undefined ? { error: event.message } : {}),
+        });
       }
       return;
     case 'connecting':

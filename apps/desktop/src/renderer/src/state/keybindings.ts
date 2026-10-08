@@ -26,6 +26,7 @@ export const DEFAULT_KEYBINDINGS: Readonly<Record<string, string>> = {
   'query.new': 'mod+t',
   'query.history': 'mod+shift+h',
   'view.objects': 'mod+shift+o',
+  'view.toggleSidebar': 'mod+b',
   'view.closeTab': 'mod+w',
   'view.nextTab': 'ctrl+tab',
   'view.previousTab': 'ctrl+shift+tab',

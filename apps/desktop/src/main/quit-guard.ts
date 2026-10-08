@@ -119,6 +119,11 @@ export class QuitGuard<W> {
     this.#bypassed = true;
   }
 
+  /** Asks again after all: the update's restart did not happen. */
+  resume(): void {
+    this.#bypassed = false;
+  }
+
   /** The question, if closing now should ask it. */
   #question(): QuitQuestion | undefined {
     const options = this.#options;

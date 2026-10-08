@@ -28,10 +28,10 @@ What works today:
 - **Command palette**: ⌘P (Ctrl+P) goes to a table, view or collection by a few of its
   letters; ⌘⇧P (Ctrl+Shift+P) runs any command; key bindings as VS Code's, with chords, and a
   Keyboard Shortcuts editor (⌘K ⌘S) to change them.
-- **Explorer**: a side bar with search and a filter by engine, environment and state; a click on
-  a database, schema or folder lists its objects in the Objects tab with rows, sizes, engine,
-  dates and comments (documents, sizes and indexes for MongoDB); a click on a table or
-  collection opens its data.
+- **Explorer**: a side bar you resize by dragging its edge and hide with ⌘B (Ctrl+B), with search
+  and a filter by engine, environment and state; a click on a database, schema or folder lists
+  its objects in the Objects tab with rows, sizes, engine, dates and comments (documents, sizes
+  and indexes for MongoDB); a click on a table or collection opens its data.
 - **SSH tunnels and proxies**: SSH with password, private key (OpenSSH, PEM, PuTTY converted on
   import) or ssh-agent, jump hosts and keep-alives, one SSH session shared by a connection's
   tabs; SOCKS5 and HTTP proxies; MongoDB replica sets, Redis Sentinel and Cluster reached node by

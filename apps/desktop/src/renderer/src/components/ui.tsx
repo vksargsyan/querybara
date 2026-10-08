@@ -557,6 +557,14 @@ export function Icon({
         <path d="M5.9 5.9l4.2 4.2M10.1 5.9l-4.2 4.2" />
       </>
     ),
+    // The window with its side bar.
+    sidebar: (
+      <>
+        <path d="M2 2.5h4v11H2z" {...wash} stroke="none" />
+        <rect x="2" y="2.5" width="12" height="11" rx="1.2" />
+        <path d="M6 2.5v11" />
+      </>
+    ),
     columns: (
       <>
         <path d="M6 2.5h4v11H6z" {...wash} stroke="none" />

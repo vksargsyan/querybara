@@ -117,3 +117,9 @@ deb:
 rpm:
   packageName: querybara
   artifactName: querybara-${version}.${arch}.${ext}
+  # rpm runs the old package's %postun after the new one's %post: the stock after-remove would
+  # delete /usr/bin/querybara and the AppArmor profile on every upgrade, auto-updates included.
+  afterRemove: build/linux/rpm-after-remove.tpl
+  # %posttrans runs last and repairs upgrades from releases whose %postun still does that.
+  # electron-builder runs fpm in this directory, as the package workflow does.
+  fpm: ['--rpm-posttrans', 'build/linux/rpm-posttrans.sh']

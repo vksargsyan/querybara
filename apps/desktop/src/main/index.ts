@@ -459,6 +459,7 @@ function startUpdates(settings: UpdateSettings): UpdateController {
     log: (message) => console.info(`[updates] ${message}`),
     // Restarting into the update is the user's own choice: it does not ask again.
     beforeInstall: () => quitGuard?.bypass(),
+    installFailed: () => quitGuard?.resume(),
   });
   return updates;
 }

@@ -39,9 +39,16 @@ export const updateStateSchema = z.discriminatedUnion('state', [
   }),
   /**
    * Downloaded and verified: it installs on restart, and also when the app next quits unless
-   * installing needs an administrator's password (deb and rpm packages).
+   * installing needs an administrator's password (deb and rpm packages). `installError` says
+   * why the last "Restart now" did not install it (the password prompt was dismissed, the
+   * package manager failed); restarting may be tried again.
    */
-  z.object({ state: z.literal('ready'), version: versionSchema, installsOnQuit: z.boolean() }),
+  z.object({
+    state: z.literal('ready'),
+    version: versionSchema,
+    installsOnQuit: z.boolean(),
+    installError: z.string().max(500).optional(),
+  }),
   z.object({ state: z.literal('error'), message: z.string().max(500) }),
 ]);
 export type UpdateState = z.infer<typeof updateStateSchema>;
