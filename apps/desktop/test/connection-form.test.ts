@@ -9,6 +9,7 @@ import {
   passwordFromUri,
   profileToForm,
   type ConnectionFormValues,
+  storageForTyped,
 } from '../src/renderer/src/state/connection-form';
 import { selectStatementFor } from '../src/renderer/src/state/explorer';
 import { profileInput } from './helpers';
@@ -133,6 +134,19 @@ describe('form ↔ profile', () => {
     expect(passwordFromUri('postgresql://app@db/app')).toBeUndefined();
     expect(passwordFromUri('postgresql://db/app?user=app&password=p%20w')).toBe('p w');
     expect(passwordFromUri('not a uri')).toBeUndefined();
+  });
+});
+
+describe('secret storage', () => {
+  it('keeps a password typed into a field set to "Ask every time"', () => {
+    // An imported connection whose password Navicat had not saved comes in set to "ask".
+    expect(storageForTyped('ask', 'new-password', true)).toBe('save');
+    expect(storageForTyped('ask', 'new-password', false)).toBe('session');
+    // Nothing typed, or a storage that keeps it already: unchanged.
+    expect(storageForTyped('ask', '', true)).toBe('ask');
+    expect(storageForTyped('session', 'new-password', true)).toBe('session');
+    expect(storageForTyped('save', 'new-password', true)).toBe('save');
+    expect(storageForTyped('none', '', true)).toBe('none');
   });
 });
 

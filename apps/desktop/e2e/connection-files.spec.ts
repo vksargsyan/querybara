@@ -10,7 +10,8 @@ import { launchApp, openNewConnection, type LaunchedApp } from './app';
 /**
  * Import and export of connections, with no server: connections export to an encrypted file
  * from the side bar's menu, the file imports into a fresh app with its passphrase, and a Navicat
- * `.ncx` file imports with its saved password. Native file dialogs are stubbed.
+ * `.ncx` file imports with its saved password; a password typed later for an imported connection
+ * whose password Navicat had not saved is kept. Native file dialogs are stubbed.
  */
 
 const SHOTS = process.env['QUERYBARA_E2E_SHOTS'];
@@ -141,7 +142,7 @@ test('imports a Navicat connections file', async () => {
     `<?xml version="1.0" encoding="UTF-8"?>
 <Connections Ver="1.5">
   <Connection ConnectionName="E2E Orders" ConnType="MYSQL" Host="mysql.example.com" Port="3306" UserName="app" Password="${saved}" SavePassword="true" SSL="false" SSH="true" SSH_Host="bastion.example.com" SSH_Port="22" SSH_UserName="ops" SSH_AuthenMethod="PUBLICKEY" SSH_PrivateKey="/home/ops/.ssh/id_ed25519" HTTP="false"/>
-  <Connection ConnectionName="E2E Reports" ConnType="POSTGRESQL" Host="pg.example.com" Port="5432" UserName="reports" Password="" SavePassword="false" HTTP="true"/>
+  <Connection ConnectionName="E2E Reports" ConnType="POSTGRESQL" Host="127.0.0.1" Port="1" UserName="reports" Password="" SavePassword="false" HTTP="true"/>
   <Connection ConnectionName="E2E Legacy" ConnType="ORACLE" Host="ora.example.com" Port="1521"/>
 </Connections>
 `,
@@ -155,7 +156,8 @@ test('imports a Navicat connections file', async () => {
   await page.keyboard.press('Enter');
   const importing = page.getByRole('dialog', { name: 'Import connections' });
   await importing.getByRole('button', { name: 'Choose file…' }).click();
-  await expect(importing.getByText('Navicat connections')).toBeVisible();
+  // The file's summary, not the dialog's description, which also names Navicat.
+  await expect(importing.getByText('Navicat connections · 2 connections')).toBeVisible();
   await expect(importing.getByText('1 saved password')).toBeVisible();
   await expect(importing.getByText('HTTP tunnels are not supported')).toBeVisible();
   await expect(
@@ -166,6 +168,36 @@ test('imports a Navicat connections file', async () => {
   await expect(importing).toBeHidden();
   await expect(page.getByRole('treeitem', { name: 'E2E Orders', exact: true })).toBeVisible();
   await expect(page.getByRole('treeitem', { name: 'E2E Reports', exact: true })).toBeVisible();
+});
+
+test('keeps a password typed for an imported connection that asked for it', async () => {
+  const page = opened.at(-1)!.page;
+  const reports = page.getByRole('treeitem', { name: 'E2E Reports', exact: true });
+  const edit = async () => {
+    await reports.locator('[data-tree-row]').first().click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Edit…' }).click();
+    return page.getByRole('dialog', { name: 'Edit E2E Reports' });
+  };
+  // Navicat had not saved its password: it came in as "Ask every time".
+  let dialog = await edit();
+  const storage = dialog.getByLabel('Password storage');
+  await expect(storage).toHaveValue('ask');
+  // Typing a password moves the storage to one that keeps it.
+  await dialog.getByLabel('Password', { exact: true }).fill('typed-after-import');
+  await expect(storage).not.toHaveValue('ask');
+  const kept = await storage.inputValue();
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog).toBeHidden();
+
+  dialog = await edit();
+  await expect(dialog.getByLabel('Password storage')).toHaveValue(kept);
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+
+  // Connecting uses the kept password instead of asking (the server refuses the connection).
+  await reports.locator('[data-tree-row]').first().dblclick();
+  await expect(reports.getByTitle('Failed to connect')).toBeAttached();
+  await expect(page.getByRole('dialog', { name: 'Connect to E2E Reports' })).toHaveCount(0);
 });
 
 test('the Compare menu shows a glyph for each item', async () => {

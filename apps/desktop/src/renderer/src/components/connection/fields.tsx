@@ -1,8 +1,12 @@
 import type { ReactNode } from 'react';
-import { useWatch, type UseFormReturn } from 'react-hook-form';
+import { useWatch, type Path, type UseFormReturn } from 'react-hook-form';
 
 import { mainApi } from '../../lib/main-client';
-import type { ConnectionFormValues } from '../../state/connection-form';
+import {
+  storageForTyped,
+  type ConnectionFormValues,
+  type PasswordMode,
+} from '../../state/connection-form';
 import { Button, Field, Input, Select, cx } from '../ui';
 
 /** Inputs the connection dialog's sections share. */
@@ -14,6 +18,25 @@ export function Note(props: { readonly children: ReactNode; readonly className?:
   return (
     <p className={cx('col-span-2 -mt-1 text-xs text-muted', props.className)}>{props.children}</p>
   );
+}
+
+/**
+ * Registers a secret's input. Typing into it while its storage (`modeField`) is "Ask every time"
+ * changes the storage, so the value is kept (`storageForTyped`).
+ */
+export function registerSecret(
+  form: ConnectionForm,
+  field: Path<ConnectionFormValues>,
+  modeField: Path<ConnectionFormValues>,
+  canSave: boolean,
+) {
+  return form.register(field, {
+    onChange: (event: { readonly target: { readonly value: string } }) => {
+      const mode = form.getValues(modeField) as PasswordMode;
+      const next = storageForTyped(mode, event.target.value, canSave);
+      if (next !== mode) form.setValue(modeField, next, { shouldDirty: true });
+    },
+  });
 }
 
 /** Save / remember for this session / ask every time (and "none" for an optional secret). */
@@ -67,7 +90,7 @@ export function PasswordFields(props: {
           type="password"
           autoComplete="new-password"
           disabled={mode === 'none'}
-          {...register('password')}
+          {...registerSecret(props.form, 'password', 'passwordMode', props.canSave)}
         />
       </Field>
       <Field
