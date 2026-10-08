@@ -69,7 +69,12 @@ export function statusText(status: UpdateStatus): string {
 }
 
 export type UpdateNotice =
-  | { readonly kind: 'ready'; readonly version: string; readonly installsOnQuit: boolean }
+  | {
+      readonly kind: 'ready';
+      readonly version: string;
+      readonly installsOnQuit: boolean;
+      readonly installError?: string;
+    }
   | { readonly kind: 'busy'; readonly text: string }
   | { readonly kind: 'answer'; readonly text: string; readonly tone: 'info' | 'error' };
 
@@ -87,7 +92,12 @@ export function noticeFor(
   if (state.state === 'ready') {
     return state.version === dismissedVersion
       ? undefined
-      : { kind: 'ready', version: state.version, installsOnQuit: state.installsOnQuit };
+      : {
+          kind: 'ready',
+          version: state.version,
+          installsOnQuit: state.installsOnQuit,
+          ...(state.installError !== undefined ? { installError: state.installError } : {}),
+        };
   }
   if (status.requestId <= seenRequestId) return undefined;
   switch (state.state) {

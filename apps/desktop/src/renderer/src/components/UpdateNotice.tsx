@@ -31,6 +31,9 @@ export function UpdateNotice() {
 
   if (!notice || (aboutOpen && notice.kind !== 'ready')) return null;
   const notesUrl = status?.releaseNotesUrl;
+  const installError = notice.kind === 'ready' ? notice.installError : undefined;
+  const failure =
+    error ?? (installError !== undefined ? `It was not installed: ${installError}` : undefined);
   return (
     <div
       role="status"
@@ -90,9 +93,9 @@ export function UpdateNotice() {
           </Button>
         </div>
       )}
-      {error !== undefined && (
+      {failure !== undefined && (
         <p role="alert" className="text-xs text-danger">
-          {error}
+          {failure}
         </p>
       )}
     </div>

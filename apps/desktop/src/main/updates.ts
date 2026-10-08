@@ -93,6 +93,8 @@ export interface UpdateControllerOptions {
   readonly log?: (message: string) => void;
   /** Called just before the app quits to install a downloaded update. */
   readonly beforeInstall?: () => void;
+  /** Called when that install failed and the app goes on running. */
+  readonly installFailed?: () => void;
 }
 
 /** The page-facing side of the updater, as the main contract's handlers use it. */
@@ -141,6 +143,8 @@ export class UpdateController implements UpdatesService {
   #updater: Promise<UpdaterPort> | undefined;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #disposed = false;
+  /** An install is running: an updater error now is its failure, not a late check's. */
+  #installing = false;
 
   constructor(options: UpdateControllerOptions) {
     this.#options = options;
@@ -215,8 +219,21 @@ export class UpdateController implements UpdatesService {
     if (this.#state.state !== 'ready' || !this.#updater) {
       throw new QuerybaraError({ code: 'NOT_FOUND', message: 'No update is ready to install' });
     }
+    const { version, installsOnQuit } = this.#state;
+    this.#set({ state: 'ready', version, installsOnQuit });
     this.#options.beforeInstall?.();
-    void this.#updater.then((updater) => updater.quitAndInstall());
+    void this.#updater.then((updater) => {
+      // electron-updater reports a failed install (deb and rpm: the package manager run with
+      // pkexec) as an error event while it runs, and then does not quit.
+      this.#installing = true;
+      try {
+        updater.quitAndInstall();
+      } catch (error) {
+        this.#failed(error);
+      } finally {
+        this.#installing = false;
+      }
+    });
   }
 
   dispose(): void {
@@ -291,7 +308,16 @@ export class UpdateController implements UpdatesService {
   }
 
   #failed(error: unknown): void {
-    if (this.#state.state === 'ready') return;
+    if (this.#state.state === 'ready') {
+      // A late check error does not hide the ready update; a failed install is shown on it.
+      if (!this.#installing) return;
+      const message = updateErrorMessage(error);
+      this.#log(`install failed: ${message}`);
+      const { version, installsOnQuit } = this.#state;
+      this.#set({ state: 'ready', version, installsOnQuit, installError: message });
+      this.#options.installFailed?.();
+      return;
+    }
     const message = updateErrorMessage(error);
     this.#log(`check failed: ${message}`);
     this.#set({ state: 'error', message });
@@ -458,6 +484,7 @@ export function createUpdates(options: {
   readonly settings: UpdateSettings;
   readonly log: (message: string) => void;
   readonly beforeInstall?: () => void;
+  readonly installFailed?: () => void;
 }): UpdateController {
   const quiet = (): void => undefined;
   return new UpdateController({
@@ -479,6 +506,7 @@ export function createUpdates(options: {
     }),
     log: options.log,
     ...(options.beforeInstall !== undefined ? { beforeInstall: options.beforeInstall } : {}),
+    ...(options.installFailed !== undefined ? { installFailed: options.installFailed } : {}),
   });
 }
 

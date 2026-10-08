@@ -198,6 +198,61 @@ describe('UpdateController', () => {
     expect(fake.installs).toBe(1);
   });
 
+  it('shows a failed install on the ready update, and lets the restart be tried again', async () => {
+    const { fake, factory } = fakeUpdater((events) => {
+      events.available('1.1.0');
+      events.downloaded('1.1.0');
+    });
+    const calls: string[] = [];
+    const updates = new UpdateController({
+      currentVersion: '1.0.0',
+      settings: { updateChannel: 'stable', updateAutoCheck: false },
+      environment: Promise.resolve({ ...ON, install: 'rpm' }),
+      createUpdater: async (events, environment) => {
+        const port = await factory(events, environment);
+        return {
+          ...port,
+          // As electron-updater's RpmUpdater does when pkexec or dnf fails: an error event
+          // while installing, and no quit.
+          quitAndInstall: () => {
+            port.quitAndInstall();
+            events.error(new Error('Command pkexec exited with code 126'));
+          },
+        };
+      },
+      beforeInstall: () => calls.push('before'),
+      installFailed: () => calls.push('failed'),
+    });
+    await updates.start();
+    await updates.check();
+    expect(updates.status().state).toEqual({
+      state: 'ready',
+      version: '1.1.0',
+      installsOnQuit: false,
+    });
+
+    updates.install();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.installs).toBe(1);
+    expect(calls).toEqual(['before', 'failed']);
+    expect(updates.status().state).toEqual({
+      state: 'ready',
+      version: '1.1.0',
+      installsOnQuit: false,
+      installError: 'Command pkexec exited with code 126',
+    });
+
+    // Trying again clears the error while it runs.
+    fake.events?.error(new Error('a late check error'));
+    expect(updates.status().state).toMatchObject({
+      installError: 'Command pkexec exited with code 126',
+    });
+    updates.install();
+    expect(updates.status().state).not.toHaveProperty('installError');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.installs).toBe(2);
+  });
+
   it('reports a failed check in one line and tries again later', async () => {
     const { fake, factory } = fakeUpdater(() => {
       throw Object.assign(new Error('net::ERR_INTERNET_DISCONNECTED\n    at stack'), {
