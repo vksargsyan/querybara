@@ -1,3 +1,4 @@
+import { isSqlEngine } from '@querybara/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -24,6 +25,7 @@ import { SidebarPane } from './components/SidebarPane';
 import { TitleBar } from './components/TitleBar';
 import { useTheme } from './components/theme';
 import { UpdateNotice } from './components/UpdateNotice';
+import { runCommand } from './state/commands';
 import { useConnections } from './state/connections';
 import { keys, useProfiles, useSettings } from './state/data';
 import { startKeybindings, useKeybindings } from './state/keybindings';
@@ -70,6 +72,10 @@ export function App() {
         .filter((c) => c.status === 'ready')
         .map((c) => c.profileId),
     ),
+  );
+
+  const sqlProfileIds = new Set(
+    profiles.data?.filter((p) => isSqlEngine(p.engine)).map((p) => p.id),
   );
 
   useEffect(() => {
@@ -136,8 +142,11 @@ export function App() {
         sidebarVisible={sidebarVisible}
         onToggleSidebar={() => showSidebar(!sidebarVisible)}
         onToggleTheme={() => void toggleTheme()}
+        onNewConnection={() => setDialog({ kind: 'create' })}
         onNewQuery={newQuery}
         newQueryDisabled={!activeTab && readyProfiles.length === 0}
+        onCreateTable={() => void runCommand('table.create')}
+        createTableDisabled={!readyProfiles.some((id) => sqlProfileIds.has(id))}
         historyOpen={historyOpen}
         onToggleHistory={() => setHistoryOpen(!historyOpen)}
         onSchedules={() => openSchedulesPanel()}

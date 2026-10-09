@@ -26,7 +26,7 @@ import { comparisonDraft, editSchedule } from '../../state/schedules';
 
 export const SAVED_COMPARISONS_KEY = ['sync', 'saved'] as const;
 
-/** `trigger` is the button that opens the menu (the title bar's Compare icon). */
+/** `trigger` is the button that opens the menu (the window toolbar's Compare tool). */
 export function SyncMenu(props: { readonly trigger: ReactElement }) {
   return (
     <>
