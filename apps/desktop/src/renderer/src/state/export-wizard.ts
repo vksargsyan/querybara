@@ -41,6 +41,8 @@ export type ExportSource =
       readonly kind: 'query';
       readonly text: string;
       readonly params?: readonly CellValue[];
+      /** PostgreSQL: the tab's SET search_path when the statement ran; the default if absent. */
+      readonly searchPath?: readonly string[];
     });
 
 export interface ExportWizardApi {
@@ -234,6 +236,7 @@ export function buildExportJob(state: ExportWizardState): ExportJob {
             ...(source.params !== undefined && source.params.length > 0
               ? { params: [...source.params] }
               : {}),
+            ...(source.searchPath !== undefined ? { searchPath: [...source.searchPath] } : {}),
           }
         : {
             kind: 'tables',

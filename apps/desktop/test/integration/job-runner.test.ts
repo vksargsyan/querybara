@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -23,7 +23,8 @@ import type { RunnerToMain } from '../../src/shared/job-protocol';
  * The job runner against the real servers (spec §3, §12): the wizard's preview and new table
  * plan, an import into a new table and an upsert into it, a cancelled import that rolls back,
  * a failed import that takes its new table back out, an export to SQL with DDL run into another
- * database as a SQL file, and a read-only profile's SQL file stopped at its first write.
+ * database as a SQL file, a read-only profile's SQL file stopped at its first write, and a
+ * query result exported in the database and search path it ran in.
  */
 
 const ENGINES = [
@@ -328,5 +329,30 @@ describe.each(ENGINES)('%s', (dialect: SqlDialect, url: string | undefined) => {
       'This connection is read-only, so statement 2 was not run: it writes',
     );
     expect(await rows(check!, 'SELECT COUNT(*) FROM people WHERE id = 99')).toEqual([[0]]);
+  });
+
+  it.skipIf(!url)('exports a query result in the database and search path it ran in', async () => {
+    // Unqualified, as typed in a query tab after USE or SET search_path.
+    const pg = dialect === 'postgres';
+    const table = pg ? 'jr_sales.jr_regions' : 'jr_regions';
+    if (pg) await rows(check!, 'CREATE SCHEMA jr_sales');
+    await rows(check!, `CREATE TABLE ${table} (name varchar(20))`);
+    await rows(check!, `INSERT INTO ${table} (name) VALUES ('north'), ('south')`);
+    const path = join(work, `regions-${dialect}.csv`);
+    const done = await job({
+      kind: 'export',
+      profileId: 'p',
+      database: source,
+      source: {
+        kind: 'query',
+        text: 'SELECT name FROM jr_regions ORDER BY name',
+        ...(pg ? { searchPath: ['jr_sales'] } : {}),
+      },
+      format: 'csv',
+      output: { kind: 'file', path },
+    });
+    expect(done.error).toBeUndefined();
+    expect(done.summary).toMatchObject({ status: 'completed', rowsWritten: 2 });
+    expect(readFileSync(path, 'utf8')).toBe('name\r\nnorth\r\nsouth\r\n');
   });
 });

@@ -457,6 +457,18 @@ export async function runExport(job: ExportJob, context: JobContext): Promise<Jo
         hint: 'Export the rows with a SELECT instead.',
       });
     }
+    const { searchPath } = job.source;
+    if (dialect === 'postgres' && searchPath !== undefined) {
+      // The tab ran the statement after a SET search_path: the job's session needs it too.
+      const path = searchPath.map((name) => quoteIdent(name, dialect)).join(', ');
+      for await (const _chunk of session.execute(`SET search_path TO ${path}`, {
+        executionId: newId(),
+        signal,
+      })) {
+        // drained
+      }
+      context.log('info', `Set the search path to ${searchPath.join(', ')}`);
+    }
     context.log('info', `Exporting a query result to ${job.output.path}`);
     summary = await exportRows({
       ...common,

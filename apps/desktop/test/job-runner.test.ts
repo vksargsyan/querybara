@@ -332,6 +332,27 @@ describe('JobRunner exports', () => {
     });
   });
 
+  it("re-runs a query result in the tab's database and search path", async () => {
+    const { runner, session, connects, done } = setup();
+    session.result = { columns: [{ name: 'n', nativeType: 'int4', kind: 'integer' }], rows: [[1]] };
+    runner.handle({
+      type: 'start',
+      jobId: 'e5',
+      job: exportJob({
+        database: 'erp',
+        source: { kind: 'query', text: 'SELECT n FROM regions', searchPath: ['sales', '$user'] },
+        output: { kind: 'file', path: join(dir, 'regions.csv') },
+      }),
+      resolved: resolved(),
+    });
+    expect((await done('e5')).summary?.status).toBe('completed');
+    expect(connects.at(-1)?.profile.options.defaultDatabase).toBe('erp');
+    expect(session.statements.map((s) => s.text)).toEqual([
+      'SET search_path TO "sales", "$user"',
+      'SELECT n FROM regions',
+    ]);
+  });
+
   it('will not run a writing statement again to export its rows', async () => {
     const { runner, session, done } = setup();
     runner.handle({
