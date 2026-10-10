@@ -18,6 +18,7 @@ import { askParameters, confirm, confirmRun } from './dialogs';
 import { rememberResultSource } from './result-sources';
 import { StatementResult, summarise } from './results';
 import { buildRunPlan, parameterValues, type PlannedStatement, type RunMode } from './run-plan';
+import { sessionChangeOf } from './session-facts';
 import {
   addMessage,
   dropBuffers,
@@ -234,6 +235,8 @@ interface StatementRun {
   readonly sessionId: string;
   readonly statement: PlannedStatement;
   readonly answers: ReadonlyMap<string, CellValue>;
+  /** The database the statement runs in: the tab's, or a USE earlier in the run. */
+  readonly database: string | undefined;
   readonly last: boolean;
   readonly many: boolean;
 }
@@ -261,7 +264,7 @@ async function runStatement(run: StatementRun): Promise<boolean> {
     return false;
   }
 
-  rememberResultSource(run.runId, statement.index, bound.text, bound.values);
+  rememberResultSource(run.runId, statement.index, bound.text, bound.values, run.database);
   const executionId = newId();
   const controller = new AbortController();
   const runtime = runtimeOf(tabId);
@@ -464,6 +467,8 @@ export async function runQuery(tabId: string, mode: RunMode): Promise<void> {
       await host.begin({ sessionId });
       patchTab(tabId, { inTransaction: true });
     }
+    // A USE moves the tab's selector only once the run ends, so the run follows it itself.
+    let database = getTab(tabId)?.database;
     for (const statement of plan.statements) {
       if (getTab(tabId)?.cancelling) break;
       const ok = await runStatement({
@@ -475,11 +480,14 @@ export async function runQuery(tabId: string, mode: RunMode): Promise<void> {
         sessionId,
         statement,
         answers,
+        database,
         last: statement.index === plan.statements.length - 1,
         many: plan.statements.length > 1,
       });
       if (!ok) break;
       ran.push(statement);
+      const change = sessionChangeOf(statement.text, dialect);
+      if (change?.kind === 'database') database = change.database;
     }
   } catch (error) {
     if (errorInfo(error).code !== 'CANCELLED') {

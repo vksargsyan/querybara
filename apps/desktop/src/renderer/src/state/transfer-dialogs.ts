@@ -107,10 +107,17 @@ export function openExportTables(
   });
 }
 
-/** Opens the export wizard on a query result, which the job runner runs again. */
+/**
+ * Opens the export wizard on a query result, which the job runner runs again in the database
+ * the statement ran in (MySQL's `USE`, PostgreSQL's connected database).
+ */
 export function openExportQuery(
   profile: StoredProfile,
-  query: { readonly text: string; readonly params?: readonly CellValue[] },
+  query: {
+    readonly text: string;
+    readonly params?: readonly CellValue[];
+    readonly database?: string | undefined;
+  },
 ): void {
   if (!isSqlEngine(profile.engine)) return;
   useTransferDialogs.setState({
@@ -121,7 +128,7 @@ export function openExportQuery(
         profileId: profile.id,
         profileName: profile.name,
         dialect: profile.engine,
-        database: undefined,
+        database: query.database,
         text: query.text,
         ...(query.params !== undefined ? { params: query.params } : {}),
       },
