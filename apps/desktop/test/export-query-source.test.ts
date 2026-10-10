@@ -1,4 +1,4 @@
-import type { StoredProfile } from '@querybara/ipc';
+import { scheduleTaskSchema, type StoredProfile } from '@querybara/ipc';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -43,6 +43,40 @@ describe('export of a query result', () => {
       database: 'erp',
       source: { kind: 'query', text: 'SELECT * FROM orders' },
     });
+  });
+
+  it('carries the PostgreSQL search path the statement ran with', async () => {
+    const shop = { id: 'p2', name: 'Shop', engine: 'postgres' } as unknown as StoredProfile;
+    rememberResultSource('run3', 0, 'SELECT * FROM regions', [], 'shop', ['sales', 'public']);
+    openExportQuery(shop, resultSource('run3:0:0')!);
+    expect(exportSource()).toMatchObject({ searchPath: ['sales', 'public'] });
+    const wizard = new ExportWizard(exportSource(), {
+      saveFile: async (options) => `/out/${options.defaultName}`,
+      openDirectory: async () => '/out',
+      start: async () => 'job-2',
+    });
+    wizard.next();
+    await wizard.chooseDestination();
+    expect(buildExportJob(wizard.state)).toMatchObject({
+      database: 'shop',
+      source: { kind: 'query', text: 'SELECT * FROM regions', searchPath: ['sales', 'public'] },
+    });
+  });
+
+  it('keeps the search path in a scheduled export', () => {
+    const task = scheduleTaskSchema.parse({
+      kind: 'export',
+      job: {
+        kind: 'export',
+        profileId: 'p2',
+        database: 'shop',
+        source: { kind: 'query', text: 'SELECT * FROM regions', searchPath: ['sales'] },
+        format: 'csv',
+      },
+      outputKind: 'file',
+      output: { folder: '/out', fileName: 'regions-{date}.csv', keep: 14 },
+    });
+    expect(task).toMatchObject({ job: { source: { searchPath: ['sales'] } } });
   });
 
   it("leaves the connection's default database when the tab had none", () => {

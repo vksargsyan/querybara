@@ -353,6 +353,8 @@ export const exportJobSchema = z.object({
       kind: z.literal('query'),
       text: z.string().min(1).max(10_000_000),
       params: z.array(cellValueSchema).max(65_535).optional(),
+      /** PostgreSQL: the search path the statement ran with (the tab's SET search_path). */
+      searchPath: z.array(nameSchema).min(1).max(64).optional(),
     }),
   ]),
   format: transferExportFormatSchema,

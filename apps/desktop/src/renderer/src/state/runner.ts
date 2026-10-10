@@ -11,7 +11,7 @@ import { bindParameters, safetyPolicyFor } from '@querybara/sql-tools';
 
 import { errorInfo, errorMessage } from '../lib/errors';
 import { mainApi, type HostClient } from '../lib/main-client';
-import { noteStatementsRun, noteTransactionEnd } from './autocomplete';
+import { noteStatementsRun, noteTransactionEnd, tabSearchPath } from './autocomplete';
 import { connect } from './connections';
 import { profileById, queryClient } from './data';
 import { askParameters, confirm, confirmRun } from './dialogs';
@@ -121,6 +121,7 @@ export async function closeOpenResult(
 
 function recordHistory(
   profile: StoredProfile,
+  database: string | undefined,
   text: string,
   status: 'success' | 'error' | 'cancelled',
   durationMs: number,
@@ -130,7 +131,7 @@ function recordHistory(
   void mainApi()
     .history.add({
       profileId: profile.id,
-      database: profile.options.defaultDatabase ?? null,
+      database: database ?? profile.options.defaultDatabase ?? null,
       text,
       status,
       durationMs: Math.max(0, durationMs),
@@ -237,6 +238,8 @@ interface StatementRun {
   readonly answers: ReadonlyMap<string, CellValue>;
   /** The database the statement runs in: the tab's, or a USE earlier in the run. */
   readonly database: string | undefined;
+  /** PostgreSQL: the search path the tab or the run set; undefined for the connection's. */
+  readonly searchPath: readonly string[] | undefined;
   readonly last: boolean;
   readonly many: boolean;
 }
@@ -264,7 +267,14 @@ async function runStatement(run: StatementRun): Promise<boolean> {
     return false;
   }
 
-  rememberResultSource(run.runId, statement.index, bound.text, bound.values, run.database);
+  rememberResultSource(
+    run.runId,
+    statement.index,
+    bound.text,
+    bound.values,
+    run.database,
+    run.searchPath,
+  );
   const executionId = newId();
   const controller = new AbortController();
   const runtime = runtimeOf(tabId);
@@ -289,6 +299,7 @@ async function runStatement(run: StatementRun): Promise<boolean> {
     const rows = result.sets.length > 0 ? result.loadedRows : (result.status?.rowsAffected ?? null);
     recordHistory(
       profile,
+      run.database,
       statement.text,
       status,
       result.end?.durationMs ?? performance.now() - startedAt,
@@ -467,8 +478,10 @@ export async function runQuery(tabId: string, mode: RunMode): Promise<void> {
       await host.begin({ sessionId });
       patchTab(tabId, { inTransaction: true });
     }
-    // A USE moves the tab's selector only once the run ends, so the run follows it itself.
+    // A USE or SET search_path moves the tab's context only once the run ends, so the run
+    // follows them itself.
     let database = getTab(tabId)?.database;
+    let searchPath = tabSearchPath(tabId);
     for (const statement of plan.statements) {
       if (getTab(tabId)?.cancelling) break;
       const ok = await runStatement({
@@ -481,6 +494,7 @@ export async function runQuery(tabId: string, mode: RunMode): Promise<void> {
         statement,
         answers,
         database,
+        searchPath,
         last: statement.index === plan.statements.length - 1,
         many: plan.statements.length > 1,
       });
@@ -488,6 +502,9 @@ export async function runQuery(tabId: string, mode: RunMode): Promise<void> {
       ran.push(statement);
       const change = sessionChangeOf(statement.text, dialect);
       if (change?.kind === 'database') database = change.database;
+      if (change?.kind === 'search-path') {
+        searchPath = change.searchPath === 'default' ? undefined : change.searchPath;
+      }
     }
   } catch (error) {
     if (errorInfo(error).code !== 'CANCELLED') {

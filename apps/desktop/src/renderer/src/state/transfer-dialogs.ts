@@ -109,7 +109,8 @@ export function openExportTables(
 
 /**
  * Opens the export wizard on a query result, which the job runner runs again in the database
- * the statement ran in (MySQL's `USE`, PostgreSQL's connected database).
+ * the statement ran in (MySQL's `USE`, PostgreSQL's connected database) and, on PostgreSQL,
+ * with the search path it ran with.
  */
 export function openExportQuery(
   profile: StoredProfile,
@@ -117,6 +118,7 @@ export function openExportQuery(
     readonly text: string;
     readonly params?: readonly CellValue[];
     readonly database?: string | undefined;
+    readonly searchPath?: readonly string[] | undefined;
   },
 ): void {
   if (!isSqlEngine(profile.engine)) return;
@@ -131,6 +133,7 @@ export function openExportQuery(
         database: query.database,
         text: query.text,
         ...(query.params !== undefined ? { params: query.params } : {}),
+        ...(query.searchPath !== undefined ? { searchPath: query.searchPath } : {}),
       },
     },
   });

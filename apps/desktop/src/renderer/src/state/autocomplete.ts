@@ -29,6 +29,15 @@ function tabSession(tabId: string): TabSessionState | undefined {
   return entry;
 }
 
+/**
+ * PostgreSQL: the search path the tab's session set (SET search_path), or undefined while it
+ * has the connection's own.
+ */
+export function tabSearchPath(tabId: string): readonly string[] | undefined {
+  const searchPath = tabSession(tabId)?.searchPath;
+  return searchPath === 'default' ? undefined : searchPath;
+}
+
 /** The database the tab chose (its selector), then what its session changed since. */
 function tabState(tab: QueryTab): TabSessionState | undefined {
   const session = tabSession(tab.id);

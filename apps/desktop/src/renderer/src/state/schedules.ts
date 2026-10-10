@@ -309,7 +309,13 @@ export function exportDraft(
 ): ScheduleDraft {
   const { output, ...rest } = job;
   const source =
-    rest.source.kind === 'query' ? { kind: 'query' as const, text: rest.source.text } : rest.source;
+    rest.source.kind === 'query'
+      ? {
+          kind: 'query' as const,
+          text: rest.source.text,
+          ...(rest.source.searchPath !== undefined ? { searchPath: rest.source.searchPath } : {}),
+        }
+      : rest.source;
   const extension = output.kind === 'directory' ? '' : fileExtension(output.path);
   const task: ScheduleTask = {
     kind: 'export',
