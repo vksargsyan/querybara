@@ -1,14 +1,16 @@
 import type { CellValue } from '@querybara/core';
 
 /**
- * The statement behind each query result (its text and bound values), so "Export results…"
- * can run it again in the job runner (spec §12) instead of exporting only the rows loaded into
+ * The statement behind each query result (its text, bound values and the database it ran in),
+ * so "Export results…" can run it again in the job runner (spec §12) instead of exporting only the rows loaded into
  * the grid. Keyed like the result views: `${runId}:${statementIndex}`.
  */
 
 export interface ResultSource {
   readonly text: string;
   readonly params: readonly CellValue[];
+  /** The tab's database when the statement ran (after any USE before it); the default if absent. */
+  readonly database: string | undefined;
 }
 
 const MAX_SOURCES = 500;
@@ -20,10 +22,11 @@ export function rememberResultSource(
   statementIndex: number,
   text: string,
   params: readonly CellValue[],
+  database: string | undefined,
 ): void {
   const key = `${runId}:${statementIndex}`;
   sources.delete(key);
-  sources.set(key, { text, params });
+  sources.set(key, { text, params, database });
   while (sources.size > MAX_SOURCES) sources.delete(sources.keys().next().value!);
 }
 
