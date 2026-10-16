@@ -12,6 +12,7 @@ import {
   type SqlDialect,
 } from '@querybara/core';
 import type { JobProgress, SyncSideInfo } from '@querybara/ipc';
+import { runMongoCommand, type SyncDialect } from '@querybara/sync';
 
 import type { JobSide, SyncJobResult } from '../shared/sync-jobs';
 import type { JobOutcome } from './tasks';
@@ -42,13 +43,18 @@ export function sqlDialect(session: Session): SqlDialect {
   if (isSqlEngine(session.engine)) return session.engine;
   throw new QuerybaraError({
     code: 'NOT_SUPPORTED',
-    message: `Sync works with MySQL, MariaDB and PostgreSQL, not ${session.engine}`,
+    message: `Sync works with MySQL, MariaDB, PostgreSQL and MongoDB, not ${session.engine}`,
   });
 }
 
-/** PostgreSQL, or the MySQL family (MySQL and MariaDB). */
-export function family(dialect: SqlDialect): 'postgres' | 'mysql' {
-  return dialect === 'postgres' ? 'postgres' : 'mysql';
+/** The statements a session runs: its SQL dialect, or MongoDB command documents. */
+export function syncDialect(session: Session): SyncDialect {
+  return session.engine === 'mongodb' ? 'mongodb' : sqlDialect(session);
+}
+
+/** PostgreSQL, the MySQL family (MySQL and MariaDB), or MongoDB. */
+export function family(dialect: SyncDialect): 'postgres' | 'mysql' | 'mongodb' {
+  return dialect === 'postgres' || dialect === 'mongodb' ? dialect : 'mysql';
 }
 
 /** Both sessions of a compare; an apply job has no source. */
@@ -66,7 +72,7 @@ export function scopeFor(
   include?: readonly SchemaObjectKind[],
 ): IntrospectScope {
   return {
-    ...(sqlDialect(session) === 'postgres' && side.schemas !== undefined && side.schemas.length > 0
+    ...(syncDialect(session) === 'postgres' && side.schemas !== undefined && side.schemas.length > 0
       ? { schemas: side.schemas }
       : {}),
     ...(include !== undefined ? { include } : {}),
@@ -117,13 +123,17 @@ export function isCancelled(error: unknown, signal: AbortSignal): boolean {
   return signal.aborted || (error instanceof QuerybaraError && error.code === 'CANCELLED');
 }
 
-/** Runs one statement to completion; returns the rows it affected, when the server said. */
+/**
+ * Runs one statement to completion; returns the rows it affected, when the server said.
+ * MongoDB statements are command documents, whose write errors fail the statement.
+ */
 export async function runStatement(
   session: Session,
   sql: string,
   signal: AbortSignal,
 ): Promise<number> {
   if (signal.aborted) throw cancelledError();
+  if (session.engine === 'mongodb') return (await runMongoCommand(session, sql, signal)).n;
   let affected = 0;
   for await (const chunk of session.execute(sql, { executionId: newId(), signal })) {
     if (chunk.type === 'status' && chunk.rowsAffected !== null) affected += chunk.rowsAffected;

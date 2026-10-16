@@ -700,10 +700,16 @@ importers:
       '@querybara/core':
         specifier: workspace:*
         version: link:../core
+      '@querybara/mongo-tools':
+        specifier: workspace:*
+        version: link:../mongo-tools
       '@querybara/sql-tools':
         specifier: workspace:*
         version: link:../sql-tools
     devDependencies:
+      '@querybara/driver-mongodb':
+        specifier: workspace:*
+        version: link:../drivers/mongodb
       '@querybara/driver-mysql':
         specifier: workspace:*
         version: link:../drivers/mysql

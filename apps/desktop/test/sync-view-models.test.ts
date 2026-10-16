@@ -353,7 +353,21 @@ describe('comparison sides', () => {
     expect(pairProblem(side('dev'), side('gone'), lookup, 'structure')).toBe(
       'The target connection was deleted; choose another',
     );
-    expect(pairProblem(side('mongo'), side('dev'), lookup, 'data')).toMatch(/cannot be compared/);
+    expect(pairProblem(side('mongo'), side('dev'), lookup, 'data')).toBe(
+      'Choose the source database',
+    );
+    expect(pairProblem(side('mongo', 'app'), side('dev'), lookup, 'data')).toMatch(
+      /MongoDB compares with MongoDB/,
+    );
+    expect(pairProblem(side('mongo', 'app'), side('mongo', 'app'), lookup, 'structure')).toBe(
+      'The source and the target are the same database',
+    );
+    expect(
+      pairProblem(side('mongo', 'app'), side('mongo', 'app_test'), lookup, 'structure'),
+    ).toBeUndefined();
+    expect(
+      pairProblem(side('mongo', 'app'), side('mongo', 'app_test'), lookup, 'data'),
+    ).toBeUndefined();
     expect(pairProblem(side('my'), side('maria'), lookup, 'structure')).toBe(
       'Choose the source database',
     );
@@ -659,6 +673,36 @@ describe('data compare', () => {
       'Applied 3 row changes to 1 table. Compared again: no differences remain in the synced tables.',
     );
     expect(compare.state.checked).toEqual([]);
+  });
+
+  it('sends the MongoDB options for a MongoDB pair', async () => {
+    const fake = fakeApi();
+    const compare = new DataCompare(
+      {
+        source: { profileId: 'mongo', database: 'app' },
+        target: { profileId: 'mongo', database: 'app_test' },
+      },
+      fake.api,
+      lookup,
+    );
+    expect(compare.isMongo()).toBe(true);
+    expect(compare.problem()).toBeUndefined();
+    expect(compare.state.options).toMatchObject({
+      ignoreFieldOrder: true,
+      ignoreNumericTypes: false,
+    });
+    compare.setOptions({
+      ignoreColumns: 'updatedAt',
+      ignoreFieldOrder: false,
+      ignoreNumericTypes: true,
+    });
+    await compare.compare();
+    expect(fake.calls.compareData[0]?.options).toEqual({
+      actions: { insert: true, update: true, delete: true },
+      ignoreColumns: ['updatedAt'],
+      ignoreFieldOrder: false,
+      ignoreNumericTypes: true,
+    });
   });
 
   it('refuses a bad tolerance, exports the script and saves the settings', async () => {

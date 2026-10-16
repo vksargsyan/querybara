@@ -14,8 +14,9 @@ import { startSshServer, type TestSshServer } from '../ssh-server';
 /**
  * The BUILT binary against the MongoDB replica set (spec §9): `test` for URIs and profiles,
  * directly and through an SSH tunnel; `query` running command documents with relaxed Extended
- * JSON output (canonical with --format json); the write rules; and the SQL-only commands
- * refusing a MongoDB target. Gated on QUERYBARA_TEST_MONGODB_URL; every run uses its own database
+ * JSON output (canonical with --format json); the write rules; structure and data compare
+ * between two databases, scripted for mongosh and applied; and the SQL-only commands refusing a
+ * MongoDB target. Gated on QUERYBARA_TEST_MONGODB_URL; every run uses its own database
  * and drops it afterwards.
  */
 
@@ -258,8 +259,6 @@ describe.skipIf(!MONGO_URL)('querybara-cli with MongoDB', () => {
     expect(write.stderr).toContain('production connection');
 
     const sqlOnly: string[][] = [
-      ['compare', 'orders-mongo', url()],
-      ['data-compare', url(), 'orders-mongo', '--table', 'orders'],
       ['ddl', url()],
       ['import', url(), '--table', 'orders', '--file', join(workDir, 'commands.json')],
       ['export', url(), '--table', 'orders', '--format', 'csv', '--out', join(workDir, 'out.csv')],
@@ -271,6 +270,88 @@ describe.skipIf(!MONGO_URL)('querybara-cli with MongoDB', () => {
       expect(refused.stderr, args[0]).toContain(
         'is a MongoDB connection; this command works with PostgreSQL, MySQL and MariaDB',
       );
+    }
+  });
+
+  it('compares two databases, writes mongosh scripts and applies them', async () => {
+    const copy = `${DB}_copy`;
+    const at = (database: string): string => {
+      const parsed = new URL(url());
+      parsed.pathname = `/${database}`;
+      return parsed.toString();
+    };
+    const run = (database: string, command: string) =>
+      querybara(['query', url(), '--database', database, '--yes', '-q', '-e', command]);
+    try {
+      await run(
+        DB,
+        `{ createIndexes: 'orders', indexes: [{ key: { total: -1 }, name: 'total_-1' }] }`,
+      );
+      await run(copy, `{ create: 'orders' }`);
+      await run(copy, `{ create: 'stale' }`);
+      await run(copy, `{ insert: 'orders', documents: [{ _id: 1, total: 0 }, { _id: 99 }] }`);
+
+      const missingDb = await querybara(['compare', url(), at(copy)]);
+      expect(missingDb.code).toBe(2);
+      expect(missingDb.stderr).toContain('Name the database to compare');
+      const mixed = await querybara(['compare', at(DB), 'postgres://localhost/app']);
+      expect(mixed.code).toBe(2);
+      expect(mixed.stderr).toContain('Cannot compare PostgreSQL with MongoDB');
+
+      const compared = await querybara(['compare', at(DB), at(copy), '--out', 'deploy.js']);
+      expect(compared.code, compared.stderr).toBe(1);
+      expect(compared.stdout).toMatch(/\+ index\s+orders\.total_-1/);
+      expect(compared.stdout).toMatch(/- collection\s+stale\s+\[destructive, not selected\]/);
+      const applied = await querybara(['compare', at(DB), at(copy), '--apply']);
+      expect(applied.code).toBe(2);
+      expect(applied.stderr).toContain('Pass --yes');
+      const done = await querybara([
+        'compare',
+        at(DB),
+        at(copy),
+        '--apply',
+        '--yes',
+        '--include-destructive',
+      ]);
+      expect(done.code, done.stderr).toBe(0);
+      expect(done.stderr).toContain('the target now matches the source');
+
+      const data = await querybara([
+        'data-compare',
+        at(DB),
+        at(copy),
+        '--table',
+        'orders',
+        '--out',
+        'sync.js',
+        '--json',
+      ]);
+      expect(data.code, data.stderr).toBe(1);
+      const report = JSON.parse(data.stdout) as { summary: Record<string, number> };
+      expect(report.summary).toMatchObject({ inserts: 2, updates: 1, deletes: 1 });
+      const refused = await querybara([
+        'data-compare',
+        at(DB),
+        at(copy),
+        '--table',
+        'orders',
+        '--key',
+        'id',
+      ]);
+      expect(refused.stderr).toContain('--key applies to SQL tables');
+      const synced = await querybara([
+        'data-compare',
+        at(DB),
+        at(copy),
+        '--table',
+        'orders',
+        '--apply',
+        '--yes',
+      ]);
+      expect(synced.code, synced.stderr).toBe(0);
+      expect(synced.stderr).toContain('the target now matches the source');
+    } finally {
+      await run(copy, '{ dropDatabase: 1 }');
     }
   });
 });

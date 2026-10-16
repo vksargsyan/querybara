@@ -25,7 +25,7 @@ import {
   scopeFor,
   sha256,
   sideInfo,
-  sqlDialect,
+  syncDialect,
   type SyncJobContext,
   type SyncJobOutcome,
 } from './sync-common';
@@ -104,13 +104,13 @@ export async function runStructureCompare(
 ): Promise<SyncJobOutcome> {
   const started = performance.now();
   const { source, target } = bothSides(context);
-  const sourceDialect = sqlDialect(source);
-  const targetDialect = sqlDialect(target);
+  const sourceDialect = syncDialect(source);
+  const targetDialect = syncDialect(target);
   if (family(sourceDialect) !== family(targetDialect)) {
     throw new QuerybaraError({
       code: 'NOT_SUPPORTED',
       message: `Cannot compare the structure of ${ENGINES[source.engine].displayName} with ${ENGINES[target.engine].displayName}`,
-      hint: 'Structure sync pairs PostgreSQL with PostgreSQL and MySQL or MariaDB with MySQL or MariaDB.',
+      hint: 'Structure sync pairs PostgreSQL with PostgreSQL, MySQL or MariaDB with MySQL or MariaDB, and MongoDB with MongoDB.',
     });
   }
   if (source.engine !== target.engine) {
@@ -186,7 +186,9 @@ export async function runStructureApply(
   if (!script.transactional) {
     context.log(
       'warning',
-      `${ENGINES[target.engine].displayName} runs DDL outside transactions: a failed statement leaves the ones before it applied`,
+      target.engine === 'mongodb'
+        ? 'MongoDB runs the commands one by one: a failed command leaves the ones before it applied'
+        : `${ENGINES[target.engine].displayName} runs DDL outside transactions: a failed statement leaves the ones before it applied`,
     );
   }
   for (let i = 0; i < statements.length; i++) {

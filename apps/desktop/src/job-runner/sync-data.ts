@@ -1,4 +1,4 @@
-import { createReadStream, createWriteStream, type WriteStream } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -17,10 +17,11 @@ import type {
   DataRowDiff,
   DataTableResult,
   JobRowError,
-  JobSummary,
 } from '@querybara/ipc';
 import {
   DataSyncScriptBuilder,
+  MONGO_SYNC_PRELUDE,
+  mongoSyncLine,
   columnIndex,
   compareTableData,
   dataSyncOrder,
@@ -59,9 +60,12 @@ import {
   scopeFor,
   sideInfo,
   sqlDialect,
+  syncDialect,
   type SyncJobContext,
   type SyncJobOutcome,
 } from './sync-common';
+import { LineWriter, dataSummary } from './sync-files';
+import { runMongoDataCompare } from './sync-mongo-data';
 
 /**
  * Data sync in the job runner (spec §13, data sync algorithm): pair the tables, compare each
@@ -136,32 +140,6 @@ function builderOptions(
     batchSize: BATCH_ROWS,
     ...extra,
   };
-}
-
-/** Appends lines to a file, waiting for the stream to drain. */
-class LineWriter {
-  readonly #stream: WriteStream;
-
-  constructor(path: string) {
-    this.#stream = createWriteStream(path);
-  }
-
-  async write(line: string): Promise<void> {
-    if (!this.#stream.write(`${line}\n`)) {
-      await new Promise<void>((resolve) => this.#stream.once('drain', resolve));
-    }
-  }
-
-  close(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.#stream.once('error', reject);
-      this.#stream.end(() => resolve());
-    });
-  }
-
-  destroy(): void {
-    this.#stream.destroy();
-  }
 }
 
 /** One table's spool: row pages for the grid and sync statements per action. */
@@ -257,23 +235,6 @@ function tablePair(pair: DataTablePair, job: DataCompareJob): TablePair {
   };
 }
 
-function dataSummary(
-  status: JobSummary['status'],
-  durationMs: number,
-  outcome: string,
-  extra: Partial<JobSummary> = {},
-): JobSummary {
-  return {
-    status,
-    rowsRead: 0,
-    rowsWritten: 0,
-    rowsSkipped: 0,
-    durationMs: Math.round(durationMs),
-    outcome: outcome.length > 500 ? `${outcome.slice(0, 499)}…` : outcome,
-    ...extra,
-  };
-}
-
 /**
  * Compares the data of every paired table (spec §13, data sync steps 1-6) and spools the
  * differences. A table whose compare fails (a key the two servers order differently, say) is
@@ -283,6 +244,9 @@ export async function runDataCompare(
   job: DataCompareJob,
   context: SyncJobContext,
 ): Promise<SyncJobOutcome> {
+  if (context.target.engine === 'mongodb' || context.source?.engine === 'mongodb') {
+    return runMongoDataCompare(job, context);
+  }
   const started = performance.now();
   const { source, target } = bothSides(context);
   const { signal } = context;
@@ -511,6 +475,10 @@ export function syncPlan(
   const unit = (table: SpoolTable, unitActions: DataRowAction[]): SyncUnit | undefined => {
     const count = unitActions.reduce((sum, a) => sum + table.statements[a], 0);
     if (count === 0) return undefined;
+    // MongoDB commands need no session settings around them, and run outside transactions.
+    if (manifest.dialect === 'mongodb') {
+      return { table, actions: unitActions, prologue: [], epilogue: [], count };
+    }
     const builder = new DataSyncScriptBuilder(
       builderOptions(manifest.dialect, table, {
         transaction: true,
@@ -560,7 +528,7 @@ export async function* unitStatements(spoolDir: string, unit: SyncUnit): AsyncGe
   yield* unit.epilogue;
 }
 
-function unitComment(unit: SyncUnit): string {
+function unitComment(unit: SyncUnit, mongo: boolean): string {
   const parts = unit.actions
     .filter((a) => unit.table.statements[a] > 0)
     .map((a) => {
@@ -572,7 +540,7 @@ function unitComment(unit: SyncUnit): string {
             : unit.table.counts.deletes;
       return `${rows} ${a === 'delete' ? 'deletes' : a === 'update' ? 'updates' : 'inserts'}`;
     });
-  return `-- ${unit.table.name}: ${parts.join(', ')}`;
+  return `${mongo ? '//' : '--'} ${unit.table.name}: ${parts.join(', ')}`;
 }
 
 /**
@@ -606,16 +574,27 @@ export async function dataSyncScript(input: {
     bytes += Buffer.byteLength(line, 'utf8') + 1;
     await out.write(line);
   };
+  const mongo = manifest.dialect === 'mongodb';
   try {
-    await write('-- Querybara data sync');
-    await write(
-      `-- ${plural(total, 'statement')}; each table's changes run in their own transaction`,
-    );
-    if (units.length === 0) await write('-- No differences to sync');
+    if (mongo) {
+      await write('// Querybara data sync');
+      await write(`// ${plural(total, 'command')}; each runs on its own (no transaction)`);
+      await write(`db = db.getSiblingDB(${JSON.stringify(manifest.database ?? '')});`);
+      for (const line of MONGO_SYNC_PRELUDE) await write(line);
+      if (units.length === 0) await write('// No differences to sync');
+    } else {
+      await write('-- Querybara data sync');
+      await write(
+        `-- ${plural(total, 'statement')}; each table's changes run in their own transaction`,
+      );
+      if (units.length === 0) await write('-- No differences to sync');
+    }
     for (const unit of units) {
       await write('');
-      await write(unitComment(unit));
-      for await (const sql of unitStatements(input.spoolDir, unit)) await write(`${sql};`);
+      await write(unitComment(unit, mongo));
+      for await (const sql of unitStatements(input.spoolDir, unit)) {
+        await write(mongo ? mongoSyncLine(sql) : `${sql};`);
+      }
     }
     await out.close();
   } catch (error) {
@@ -638,7 +617,8 @@ export async function runDataApply(
   const { target, signal } = context;
   checkTargetWrite(context.targetProfile, job.confirmed);
   const manifest = await readManifest(job.spoolDir);
-  if (manifest.dialect !== sqlDialect(target)) {
+  const mongo = manifest.dialect === 'mongodb';
+  if (manifest.dialect !== syncDialect(target)) {
     throw new QuerybaraError({
       code: 'VALIDATION_FAILED',
       message: 'The target connection is not the one that was compared',
@@ -654,7 +634,9 @@ export async function runDataApply(
   }
   context.log(
     'info',
-    `Applying ${plural(total, 'statement')} in ${plural(units.length, 'transaction')}`,
+    mongo
+      ? `Applying ${plural(total, 'command')} to ${plural(new Set(units.map((u) => u.table.name)).size, 'collection')}`
+      : `Applying ${plural(total, 'statement')} in ${plural(units.length, 'transaction')}`,
   );
   let done = 0;
   let rowsAffected = 0;
@@ -678,12 +660,20 @@ export async function runDataApply(
       await rollbackQuietly(target);
       if (isCancelled(error, signal)) throw cancelledError();
       const message = error instanceof Error ? error.message : String(error);
-      const kept =
-        committed.size > 0
+      const kept = mongo
+        ? done > 0
+          ? `The ${plural(done, 'command')} before it stay applied (MongoDB writes are not rolled back).`
+          : 'Nothing was applied.'
+        : committed.size > 0
           ? `The changes to ${[...committed].join(', ')} stay committed.`
           : 'Nothing was committed.';
       context.log('error', `${unit.table.name}: ${message}`);
-      context.log('error', `The ${unit.table.name} transaction was rolled back. ${kept}`);
+      context.log(
+        'error',
+        mongo
+          ? `Stopped at ${unit.table.name}. ${kept}`
+          : `The ${unit.table.name} transaction was rolled back. ${kept}`,
+      );
       const errors: JobRowError[] = [
         { statement: done + 1, message, text: `${unit.table.name} (statement ${inUnit + 1})` },
       ];
@@ -691,14 +681,18 @@ export async function runDataApply(
         summary: dataSummary(
           'failed',
           performance.now() - started,
-          `Stopped at ${unit.table.name}: its transaction was rolled back. ${kept}`,
+          mongo
+            ? `Stopped at ${unit.table.name}. ${kept}`
+            : `Stopped at ${unit.table.name}: its transaction was rolled back. ${kept}`,
           { statements: done, failed: 1, rowsWritten: rowsAffected, rowsAffected },
         ),
         errors,
       };
     }
   }
-  const outcome = `Applied ${plural(rowsAffected, 'row change')} to ${plural(committed.size, 'table')}`;
+  const outcome = mongo
+    ? `Applied ${plural(rowsAffected, 'document change')} to ${plural(committed.size, 'collection')}`
+    : `Applied ${plural(rowsAffected, 'row change')} to ${plural(committed.size, 'table')}`;
   context.log('info', outcome);
   return {
     summary: dataSummary('completed', performance.now() - started, outcome, {

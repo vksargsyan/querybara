@@ -1130,6 +1130,28 @@ export function routineArguments(definition: string): string {
   return '';
 }
 
+const indexNamesByRef = new WeakMap<DiffContext, Map<string, string[]>>();
+
+/** Names of the target's table indexes whose definition mentions `ref`, indexed once a diff. */
+function targetIndexesUsing(ctx: DiffContext, ref: string): readonly string[] {
+  let byRef = indexNamesByRef.get(ctx);
+  if (byRef === undefined) {
+    byRef = new Map();
+    for (const pair of ctx.state.tables) {
+      for (const index of pair.target?.indexes ?? []) {
+        const text = index.definition ?? index.columns.map((c) => c.expression ?? '').join(' ');
+        for (const k of ctx.refs.resolve(text, 'postgres')) {
+          let names = byRef.get(k);
+          if (names === undefined) byRef.set(k, (names = []));
+          names.push(index.name);
+        }
+      }
+    }
+    indexNamesByRef.set(ctx, byRef);
+  }
+  return byRef.get(ref) ?? [];
+}
+
 function routineKey(ctx: DiffContext, routine: RoutineDef, side: 'source' | 'target'): string {
   if (!ctx.pg)
     return `${routine.kind === 'procedure' ? 'procedure' : 'function'}:${nameKey(routine.name, ctx.options)}`;
@@ -1307,18 +1329,7 @@ export function diffRoutines(ctx: DiffContext, schema: SchemaPair): void {
       source.kind !== 'aggregate'
     ) {
       // PostgreSQL does not rebuild indexes when a function they compute changes.
-      const indexes = ctx.state.tables.flatMap((pair) =>
-        (pair.target?.indexes ?? [])
-          .filter((i) =>
-            ctx.refs
-              .resolve(
-                i.definition ?? i.columns.map((c) => c.expression ?? '').join(' '),
-                'postgres',
-              )
-              .includes(fnKey),
-          )
-          .map((i) => i.name),
-      );
+      const indexes = targetIndexesUsing(ctx, fnKey);
       ctx.builder.add({
         ...base,
         id: `routine:${display}:alter`,

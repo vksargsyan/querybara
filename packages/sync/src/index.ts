@@ -17,6 +17,27 @@ export * from './model';
 export * from './options';
 export { compareSchemas, summarizeDiff } from './compare';
 export { diffSchemas } from './diff/index';
+export { diffMongoSchemas } from './mongo/structure';
+export { canonicalBson, compareBson } from './mongo/bson';
+export {
+  DOCUMENT_COLUMNS,
+  MongoDataSyncScriptBuilder,
+  compareCollectionData,
+  MONGO_SYNC_PRELUDE,
+  idDisplay,
+  mongoScript,
+  mongoSyncLine,
+} from './mongo/data';
+export { runMongoCommand } from './mongo/run';
+export type { MongoCommandResult } from './mongo/run';
+export type {
+  CollectionPair,
+  MongoDataCompareEvent,
+  MongoDataCompareOptions,
+  MongoDataSyncOptions,
+  MongoFindSession,
+} from './mongo/data';
+export type { BsonCanonicalOptions } from './mongo/bson';
 export { generateScript, formatStatements, isCompoundStatement } from './script';
 export type { GeneratedScript, ScriptOptions, ScriptStatement } from './script';
 export { setOperationSelected, setAllSelected, missingDependencies } from './selection';
@@ -85,8 +106,16 @@ export {
   tableName,
 } from './data/sql';
 export type { KeyRange, SqlQuery, TableRef } from './data/sql';
-export { columnIndex, mergeSortedRows, planMerge } from './data/merge';
-export type { MergeOptions, MergePlan, MergeSummary, Row, RowAction, RowDiff } from './data/merge';
+export { columnIndex, mergeSortedBatches, mergeSortedRows, planMerge } from './data/merge';
+export type {
+  MergeOptions,
+  MergePlan,
+  MergeSummary,
+  Row,
+  RowAction,
+  RowBatches,
+  RowDiff,
+} from './data/merge';
 export { DataSyncScriptBuilder, generateDataSyncScript } from './data/script';
 export type { DataSyncOptions, DataSyncScript } from './data/script';
 export { compareTableData } from './data/compare';

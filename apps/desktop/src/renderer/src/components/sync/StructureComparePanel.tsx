@@ -7,6 +7,7 @@ import { RENAME_OBJECT_KINDS } from '@querybara/ipc';
 import { pairWarnings, sideTitle } from '../../state/sync/sides';
 import { appProfileLookup } from '../../state/sync/panels';
 import {
+  MONGO_STRUCTURE_OPTIONS,
   STRUCTURE_OPTIONS,
   groupOperations,
   type StructureCompare,
@@ -30,6 +31,7 @@ export function StructureComparePanel(props: { readonly model: StructureCompare 
   const [applying, setApplying] = useState(false);
   const busy = state.running !== undefined;
   const problem = model.problem();
+  const mongo = model.isMongo();
   const warnings = pairWarnings(state.source, state.target, appProfileLookup);
   const showSetup = setupOpen || !state.result;
   const compare = async (): Promise<void> => {
@@ -86,11 +88,22 @@ export function StructureComparePanel(props: { readonly model: StructureCompare 
             <details className="rounded border border-border p-2" open>
               <summary className="cursor-pointer text-xs font-semibold">Options</summary>
               <div className="mt-2 grid grid-cols-3 gap-x-4 gap-y-1.5">
-                {STRUCTURE_OPTIONS.map((option) => (
+                {(mongo
+                  ? STRUCTURE_OPTIONS.filter((o) => MONGO_STRUCTURE_OPTIONS.has(o.key))
+                  : STRUCTURE_OPTIONS
+                ).map((option) => (
                   <Check
                     key={option.key}
-                    label={option.label}
-                    hint={option.hint}
+                    label={
+                      mongo && option.key === 'ignoreNames' ? 'Ignore index names' : option.label
+                    }
+                    hint={
+                      mongo
+                        ? option.key === 'ignoreNames'
+                          ? 'Match indexes by keys and options'
+                          : 'Collection, index and view collations'
+                        : option.hint
+                    }
                     checked={state.options[option.key]}
                     disabled={busy}
                     onChange={(checked) => model.setOption(option.key, checked)}
@@ -98,7 +111,7 @@ export function StructureComparePanel(props: { readonly model: StructureCompare 
                 ))}
               </div>
             </details>
-            <RenameRules model={model} renames={state.renames} disabled={busy} />
+            {!mongo && <RenameRules model={model} renames={state.renames} disabled={busy} />}
             {warnings.map((warning) => (
               <Banner key={warning} tone="warning">
                 {warning}

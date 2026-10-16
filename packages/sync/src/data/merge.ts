@@ -2,7 +2,7 @@ import type { CellValue, ColumnKind } from '@querybara/core';
 import { QuerybaraError } from '@querybara/core';
 
 import type { CanonicalOptions } from './canonical';
-import { compareKeys, compareKind, valuesEqual } from './canonical';
+import { compareKeyValues, compareKind, valuesEqual } from './canonical';
 
 /** One row as the server returned it, in the order of its side's column list. */
 export type Row = readonly CellValue[];
@@ -67,6 +67,8 @@ export interface MergePlan {
     target: number;
     sourceKind: ColumnKind;
     targetKind: ColumnKind;
+    /** The kind both values are compared as (`compareKind` of the two). */
+    kind: ColumnKind;
   }[];
 }
 
@@ -101,12 +103,15 @@ export function planMerge(options: MergeOptions): MergePlan {
     const source = columnIndex(options.sourceColumns, name);
     const target = columnIndex(options.targetColumns, name);
     if (source === -1 || target === -1) continue;
+    const sourceKind = kindOf(options.sourceKinds, name);
+    const targetKind = kindOf(options.targetKinds, options.targetColumns[target]!);
     compared.push({
       name,
       source,
       target,
-      sourceKind: kindOf(options.sourceKinds, name),
-      targetKind: kindOf(options.targetKinds, options.targetColumns[target]!),
+      sourceKind,
+      targetKind,
+      kind: compareKind(sourceKind, targetKind),
     });
   }
   return {
@@ -121,66 +126,131 @@ export function planMerge(options: MergeOptions): MergePlan {
 
 type AnyRows = Iterable<Row> | AsyncIterable<Row>;
 
-function iterate(rows: AnyRows): AsyncIterator<Row> | Iterator<Row> {
-  return Symbol.asyncIterator in rows
-    ? (rows as AsyncIterable<Row>)[Symbol.asyncIterator]()
-    : (rows as Iterable<Row>)[Symbol.iterator]();
+/** Rows in batches, e.g. one batch per fetched page; empty batches are allowed. */
+export type RowBatches = Iterable<readonly Row[]> | AsyncIterable<readonly Row[]>;
+
+const SYNC_BATCH = 1000;
+
+/** Single rows as batches: sync input in groups, async input one row per batch. */
+async function* batched(rows: AnyRows): AsyncGenerator<readonly Row[]> {
+  if (Symbol.asyncIterator in rows) {
+    for await (const row of rows) yield [row];
+    return;
+  }
+  let batch: Row[] = [];
+  for (const row of rows) {
+    batch.push(row);
+    if (batch.length === SYNC_BATCH) {
+      yield batch;
+      batch = [];
+    }
+  }
+  if (batch.length > 0) yield batch;
+}
+
+function iterate(batches: RowBatches): AsyncIterator<readonly Row[]> | Iterator<readonly Row[]> {
+  return Symbol.asyncIterator in batches
+    ? batches[Symbol.asyncIterator]()
+    : batches[Symbol.iterator]();
 }
 
 /**
  * Reads one side's key-ordered stream, checking the order: a key that goes backwards means the
  * servers sort differently (collation); a repeated key with an identical row (overlapping
  * ranges) is skipped; a repeated key with a different row means the key is not unique.
+ *
+ * Rows are taken from the current batch synchronously (`take`) and only the batch boundaries
+ * wait (`pull`), so the merge does not pay a promise per row.
  */
 class OrderedStream {
-  private readonly iterator: AsyncIterator<Row> | Iterator<Row>;
+  private readonly iterator: AsyncIterator<readonly Row[]> | Iterator<readonly Row[]>;
+  private batch: readonly Row[] = [];
+  private position = 0;
   private previous: Row | undefined;
   count = 0;
 
   constructor(
-    rows: AnyRows,
+    batches: RowBatches,
     private readonly keyIndexes: readonly number[],
     private readonly keyKinds: readonly ColumnKind[],
     private readonly side: 'source' | 'target',
   ) {
-    this.iterator = iterate(rows);
+    this.iterator = iterate(batches);
   }
 
   key(row: Row): CellValue[] {
     return this.keyIndexes.map((i) => row[i] ?? null);
   }
 
-  async next(): Promise<Row | undefined> {
+  /** The next row of the current batch, or undefined when the batch is used up. */
+  take(): Row | undefined {
+    while (this.position < this.batch.length) {
+      const row = this.batch[this.position++]!;
+      if (this.accept(row)) return row;
+    }
+    return undefined;
+  }
+
+  /** The next row, reading further batches as needed; undefined at the end of the stream. */
+  async pull(): Promise<Row | undefined> {
     for (;;) {
+      const row = this.take();
+      if (row !== undefined) return row;
       const result = await this.iterator.next();
       if (result.done) return undefined;
-      const row = result.value;
-      if (this.previous !== undefined) {
-        const order = compareKeys(this.key(this.previous), this.key(row), this.keyKinds);
-        if (order > 0) {
-          throw new QuerybaraError({
-            code: 'VALIDATION_FAILED',
-            message: `The ${this.side} rows are not sorted by key (at ${JSON.stringify(this.key(row), stringifyCell)})`,
-            hint: 'The two servers order the key differently; compare with a binary collation on string keys.',
-          });
-        }
-        if (order === 0) {
-          if (sameRow(this.previous, row)) continue;
-          throw new QuerybaraError({
-            code: 'VALIDATION_FAILED',
-            message: `Key ${JSON.stringify(this.key(row), stringifyCell)} is not unique in the ${this.side}`,
-          });
-        }
-      }
-      this.previous = row;
-      this.count++;
-      return row;
+      this.batch = result.value;
+      this.position = 0;
     }
+  }
+
+  /** Checks a row against the previous one; false for a repeated identical row. */
+  private accept(row: Row): boolean {
+    if (this.previous !== undefined) {
+      const order = compareRowKeys(
+        this.previous,
+        this.keyIndexes,
+        row,
+        this.keyIndexes,
+        this.keyKinds,
+      );
+      if (order > 0) {
+        throw new QuerybaraError({
+          code: 'VALIDATION_FAILED',
+          message: `The ${this.side} rows are not sorted by key (at ${JSON.stringify(this.key(row), stringifyCell)})`,
+          hint: 'The two servers order the key differently; compare with a binary collation on string keys.',
+        });
+      }
+      if (order === 0) {
+        if (sameRow(this.previous, row)) return false;
+        throw new QuerybaraError({
+          code: 'VALIDATION_FAILED',
+          message: `Key ${JSON.stringify(this.key(row), stringifyCell)} is not unique in the ${this.side}`,
+        });
+      }
+    }
+    this.previous = row;
+    this.count++;
+    return true;
   }
 
   async close(): Promise<void> {
     await this.iterator.return?.();
   }
+}
+
+/** `compareKeys` over the key cells of two rows, without copying the keys out. */
+function compareRowKeys(
+  a: Row,
+  aKey: readonly number[],
+  b: Row,
+  bKey: readonly number[],
+  kinds: readonly ColumnKind[],
+): number {
+  for (let i = 0; i < kinds.length; i++) {
+    const result = compareKeyValues(a[aKey[i]!] ?? null, b[bKey[i]!] ?? null, kinds[i]!);
+    if (result !== 0) return result;
+  }
+  return 0;
 }
 
 function stringifyCell(_key: string, value: unknown): unknown {
@@ -207,12 +277,22 @@ function sameRow(a: Row, b: Row): boolean {
  * `rowsQuery` ORDER BY produces. Streams are consumed lazily, so memory stays flat. Returns the
  * counts when the iteration completes.
  */
-export async function* mergeSortedRows(
+export function mergeSortedRows(
   source: AnyRows,
   target: AnyRows,
   options: MergeOptions,
 ): AsyncGenerator<RowDiff, MergeSummary, undefined> {
+  return mergeSortedBatches(batched(source), batched(target), options);
+}
+
+/** `mergeSortedRows` over rows that arrive in batches, such as fetched pages. */
+export async function* mergeSortedBatches(
+  source: RowBatches,
+  target: RowBatches,
+  options: MergeOptions,
+): AsyncGenerator<RowDiff, MergeSummary, undefined> {
   const plan = planMerge(options);
+  const canonical = options.canonical ?? {};
   const left = new OrderedStream(source, plan.sourceKey, plan.keyKinds, 'source');
   const right = new OrderedStream(target, plan.targetKey, plan.keyKinds, 'target');
   let inserts = 0;
@@ -220,36 +300,30 @@ export async function* mergeSortedRows(
   let deletes = 0;
   let equal = 0;
   try {
-    let a = await left.next();
-    let b = await right.next();
+    let a = left.take() ?? (await left.pull());
+    let b = right.take() ?? (await right.pull());
     while (a !== undefined || b !== undefined) {
       const order =
         a === undefined
           ? 1
           : b === undefined
             ? -1
-            : compareKeys(left.key(a), right.key(b), plan.keyKinds);
+            : compareRowKeys(a, plan.sourceKey, b, plan.targetKey, plan.keyKinds);
       if (order < 0) {
         inserts++;
         yield { action: 'insert', key: left.key(a!), sourceRow: a! };
-        a = await left.next();
+        a = left.take() ?? (await left.pull());
       } else if (order > 0) {
         deletes++;
         yield { action: 'delete', key: right.key(b!), targetRow: b! };
-        b = await right.next();
+        b = right.take() ?? (await right.pull());
       } else {
-        const changed = plan.compared
-          .filter(
-            (c) =>
-              !valuesEqual(
-                a![c.source] ?? null,
-                b![c.target] ?? null,
-                c.sourceKind,
-                c.targetKind,
-                options.canonical,
-              ),
-          )
-          .map((c) => c.name);
+        const changed: string[] = [];
+        for (const c of plan.compared) {
+          if (!valuesEqual(a![c.source] ?? null, b![c.target] ?? null, c.kind, c.kind, canonical)) {
+            changed.push(c.name);
+          }
+        }
         if (changed.length > 0) {
           updates++;
           yield {
@@ -262,8 +336,8 @@ export async function* mergeSortedRows(
         } else {
           equal++;
         }
-        a = await left.next();
-        b = await right.next();
+        a = left.take() ?? (await left.pull());
+        b = right.take() ?? (await right.pull());
       }
     }
   } finally {

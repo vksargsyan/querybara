@@ -74,7 +74,9 @@ What works today:
 - **Structure sync**: compare two databases, review create / alter / drop operations with
   destructive ones unselected, generate a dependency-ordered script, apply it, and re-compare
   to zero differences. Data compare with server-side range checksums and sync scripts.
-  Comparisons can be saved and re-run.
+  Comparisons can be saved and re-run. MongoDB databases compare too: collections with their
+  options and validators, indexes and views, scripted for mongosh; documents compared by
+  `_id`, with the fields that differ shown and synced in batched commands.
 - **Data transfer**: copy tables, collections or keys between connections in one streaming job:
   SQL to SQL across engines (an editable type mapping; create, drop and create, truncate or
   append; keys, indexes and foreign keys after the data), SQL to MongoDB (child rows embedded
@@ -153,7 +155,8 @@ What works today:
   differences; closing Querybara with schedules on asks first.
 - **querybara-cli**: the same engine headless — test, query, compare, data-compare, ddl, import,
   export, run-file, transfer and profile management; test and query for MongoDB, Redis and
-  Elasticsearch too; backup and restore for every engine.
+  Elasticsearch too, and compare and data-compare for MongoDB; backup and restore for every
+  engine.
 
 ### Moving from version 0.1.0
 
@@ -179,7 +182,7 @@ pnpm workspaces with Turborepo ([ADR 0001](docs/adr/0001-monorepo-and-source-pac
 | `packages/ipc`                   | `@querybara/ipc`                  | Typed RPC over MessagePort with zod-validated contracts                                           |
 | `packages/storage`               | `@querybara/storage`              | Local SQLite store, migrations, sealed secrets, URI/pgpass import                                 |
 | `packages/sql-tools`             | `@querybara/sql-tools`            | Lexer, statement splitter, parameters, safety checks, formatter, diagnostics, query builder model |
-| `packages/sync`                  | `@querybara/sync`                 | Structure diff and script generation, data compare                                                |
+| `packages/sync`                  | `@querybara/sync`                 | Structure diff and script generation, data compare (SQL engines and MongoDB)                      |
 | `packages/table-data`            | `@querybara/table-data`           | Table data paging, filters, staged changes and apply, cell parsing, copy/paste                    |
 | `packages/drivers/sql-base`      | `@querybara/driver-sql-base`      | Shared endpoint, TLS, error mapping and Test Connection logic                                     |
 | `packages/drivers/postgres`      | `@querybara/driver-postgres`      | PostgreSQL adapter (pg, pg-cursor)                                                                |

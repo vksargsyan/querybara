@@ -72,4 +72,5 @@ rename mapping and data settings as a JSON definition the app validates.
 - Schemas pair by name on PostgreSQL, so comparing schema `a` with schema `b` is out of scope;
   compare two databases instead. Data compare also crosses engine families (no checksums then),
   with one PostgreSQL schema.
-- MongoDB and Elasticsearch sync (spec §13) are not covered here.
+- MongoDB and Elasticsearch sync (spec §13) are not covered here; ADR 0035 adds MongoDB through
+  the same job kinds and results.

@@ -109,9 +109,10 @@ export function StructureApplyDialog(props: {
         )}
         {script?.backupRecommended && (
           <Banner tone="warning" testId="non-transactional">
-            {result.target.engine === 'mariadb' ? 'MariaDB' : 'MySQL'} runs DDL outside
-            transactions: if a statement fails, the ones before it stay applied. Back up the target
-            first.
+            {result.target.engine === 'mongodb'
+              ? 'MongoDB runs these commands one by one: if a command fails, the ones before it stay applied.'
+              : `${result.target.engine === 'mariadb' ? 'MariaDB' : 'MySQL'} runs DDL outside transactions: if a statement fails, the ones before it stay applied.`}{' '}
+            Back up the target first.
           </Banner>
         )}
         {destructive.length > 0 && (
@@ -175,6 +176,8 @@ export function DataApplyDialog(props: {
     delete: actions.delete ? sum((t) => t.counts.deletes) : 0,
   };
   const needsTick = rules.mustConfirm || counts.delete > 0;
+  const mongo = result.target.engine === 'mongodb';
+  const unit = mongo ? 'collection' : 'table';
   const apply = async (): Promise<void> => {
     props.onClose();
     await model.apply(confirmed);
@@ -184,7 +187,7 @@ export function DataApplyDialog(props: {
       open
       onOpenChange={(open) => !open && props.onClose()}
       title="Review and apply the data changes"
-      description={`${countOf(counts.insert, 'insert')}, ${countOf(counts.update, 'update')} and ${countOf(counts.delete, 'delete')} in ${countOf(tables.length, 'table')}.`}
+      description={`${countOf(counts.insert, 'insert')}, ${countOf(counts.update, 'update')} and ${countOf(counts.delete, 'delete')} in ${countOf(tables.length, unit)}.`}
       width="w-[820px]"
       role="alertdialog"
       footer={
@@ -211,26 +214,36 @@ export function DataApplyDialog(props: {
             This connection is read-only, so nothing can be applied to it.
           </Banner>
         )}
-        <p className="text-xs text-muted">
-          Each table’s changes run in their own transaction, deletes first (child tables before
-          their parents), then updates and inserts (parents first). A failing statement rolls its
-          table back and stops; tables before it stay changed.
-          {state.options.disableForeignKeyChecks
-            ? ' Foreign key checks are off while applying.'
-            : ''}
-        </p>
+        {mongo ? (
+          <p className="text-xs text-muted">
+            Each collection’s deletes run first, then its updates (whole documents replaced by _id)
+            and inserts, in batches of commands. A failing command stops the apply; the commands
+            before it stay applied, as MongoDB writes here run outside transactions.
+          </p>
+        ) : (
+          <p className="text-xs text-muted">
+            Each table’s changes run in their own transaction, deletes first (child tables before
+            their parents), then updates and inserts (parents first). A failing statement rolls its
+            table back and stops; tables before it stay changed.
+            {state.options.disableForeignKeyChecks
+              ? ' Foreign key checks are off while applying.'
+              : ''}
+          </p>
+        )}
         <section aria-label="Sync script">
           <h3 className="mb-1 text-xs font-semibold">
             Script
             {preview?.truncated
-              ? ` (the first ${preview.statements.length} of ${formatCount(preview.total)} statements)`
+              ? ` (the first ${preview.statements.length} of ${formatCount(preview.total)} ${mongo ? 'commands' : 'statements'})`
               : ''}
           </h3>
           <pre
             data-testid="data-apply-script"
             className="max-h-[45vh] overflow-auto rounded border border-border bg-panel-2 p-2 font-mono text-xs whitespace-pre-wrap select-text"
           >
-            {preview ? preview.statements.map((s) => `${s};`).join('\n') : 'Generating the script…'}
+            {preview
+              ? preview.statements.map((s) => (mongo ? `db.runCommand(${s});` : `${s};`)).join('\n')
+              : 'Generating the script…'}
           </pre>
         </section>
         {needsTick && !rules.readOnly && (
@@ -239,7 +252,7 @@ export function DataApplyDialog(props: {
               rules.production
                 ? 'I reviewed these changes and want to apply them to production'
                 : counts.delete > 0
-                  ? `I want to delete ${formatCount(counts.delete)} ${counts.delete === 1 ? 'row' : 'rows'} from the target`
+                  ? `I want to delete ${formatCount(counts.delete)} ${mongo ? (counts.delete === 1 ? 'document' : 'documents') : counts.delete === 1 ? 'row' : 'rows'} from the target`
                   : 'I reviewed these changes and want to apply them'
             }
             checked={confirmed}

@@ -23,6 +23,7 @@ import { openServerTools } from '../../state/server-tools/panels';
 import { openTransferFrom } from '../../state/transfer-db/api';
 import { BackupMenuItems } from '../backup/BackupDialogs';
 import { MenuItem } from '../MenuItem';
+import { CompareItems } from '../ObjectMenu';
 import { Row } from '../Sidebar';
 import { Icon } from '../ui';
 import { MongoCreateDialogs } from './CreateDialogs';
@@ -521,6 +522,9 @@ export function MongoNodeMenu(props: {
         <MenuItem icon="refresh" onSelect={() => void loadChildren(profile.id, node.path)}>
           Refresh
         </MenuItem>
+      )}
+      {node.kind === 'database' && database !== undefined && (
+        <CompareItems source={{ profileId: profile.id, database }} />
       )}
       {object && command && (
         <>

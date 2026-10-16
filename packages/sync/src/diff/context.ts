@@ -41,7 +41,7 @@ type RefKind = 'rel' | 'type' | 'fn';
 /** Every relation, type and routine name in both snapshots, for resolving definition references. */
 export class ReferenceIndex {
   private readonly byName = new Map<string, Set<string>>();
-  private readonly cache = new Map<string, string[]>();
+  private readonly cache = new Map<SqlDialect, Map<string, string[]>>();
   private readonly columns = new Map<string, Set<string>>();
 
   constructor(
@@ -92,11 +92,13 @@ export class ReferenceIndex {
    */
   resolve(text: string | undefined, dialect: SqlDialect): string[] {
     if (text === undefined || text === '') return [];
-    const cacheKey = `${dialect}\u0000${text}`;
-    const cached = this.cache.get(cacheKey);
+    // Keyed by the text itself, whose hash V8 keeps, not a concatenation hashed per lookup.
+    let cache = this.cache.get(dialect);
+    if (!cache) this.cache.set(dialect, (cache = new Map()));
+    const cached = cache.get(text);
     if (cached !== undefined) return cached;
     const result = this.resolveUncached(text, dialect);
-    this.cache.set(cacheKey, result);
+    cache.set(text, result);
     return result;
   }
 

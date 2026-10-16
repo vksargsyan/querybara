@@ -247,14 +247,22 @@ function rebuildDependents(ctx: DiffContext): void {
   const queue = [...ctx.state.blockers];
   const rebuiltViews = new Set<string>();
   const rebuiltTriggers = new Set<unknown>();
-  while (queue.length > 0) {
-    const blocker = queue.shift()!;
+  // Target views and triggers by the object keys their definitions mention, resolved once, so
+  // each blocker visits only its dependents (in registration order) rather than every view.
+  const views = [...ctx.state.views];
+  const viewsByRef = dependentsByRef(ctx, views, ([, entry]) => entry.pair.target?.definition);
+  const triggersByRef = dependentsByRef(
+    ctx,
+    ctx.state.triggers,
+    (entry) => entry.target?.definition,
+  );
+  for (let next = 0; next < queue.length; next++) {
+    const blocker = queue[next]!;
     const keys = new Set(blocker.keys);
-    for (const [viewKey, entry] of ctx.state.views) {
+    for (const position of dependentsOf(viewsByRef, keys)) {
+      const [viewKey, entry] = views[position]!;
       const view = entry.pair.target;
       if (view === undefined || entry.op === blocker.op) continue;
-      const refs = ctx.refs.resolve(view.definition, 'postgres');
-      if (!refs.some((r) => keys.has(r))) continue;
       const display = displayName(ctx, entry.pair.schema.name, entry.pair.after);
       if (entry.op !== undefined && entry.dropStep !== undefined) {
         ctx.builder.order(entry.op, entry.dropStep, blocker.op, blocker.step);
@@ -313,10 +321,10 @@ function rebuildDependents(ctx: DiffContext): void {
     }
     if (![...keys].some((k) => k.startsWith('fn:'))) continue;
     rebuildRoutineDependents(ctx, blocker);
-    for (const entry of ctx.state.triggers) {
+    for (const position of dependentsOf(triggersByRef, keys)) {
+      const entry = ctx.state.triggers[position]!;
       const trigger = entry.target;
       if (trigger === undefined || rebuiltTriggers.has(entry)) continue;
-      if (!ctx.refs.resolve(trigger.definition, 'postgres').some((r) => keys.has(r))) continue;
       rebuiltTriggers.add(entry);
       if (entry.op !== undefined && entry.dropStep !== undefined) {
         ctx.builder.order(entry.op, entry.dropStep, blocker.op, blocker.step);
@@ -348,4 +356,31 @@ function rebuildDependents(ctx: DiffContext): void {
       blocker.op.requires.add(entry.op.id);
     }
   }
+}
+
+/** Positions of `items` by each object key their definition mentions (PostgreSQL). */
+function dependentsByRef<T>(
+  ctx: DiffContext,
+  items: readonly T[],
+  definition: (item: T) => string | undefined,
+): Map<string, number[]> {
+  const byRef = new Map<string, number[]>();
+  items.forEach((item, position) => {
+    for (const ref of ctx.refs.resolve(definition(item), 'postgres')) {
+      let positions = byRef.get(ref);
+      if (!positions) byRef.set(ref, (positions = []));
+      positions.push(position);
+    }
+  });
+  return byRef;
+}
+
+/** The positions that mention any of `keys`, ascending and without repeats. */
+function dependentsOf(
+  byRef: ReadonlyMap<string, readonly number[]>,
+  keys: ReadonlySet<string>,
+): number[] {
+  const hits = new Set<number>();
+  for (const k of keys) for (const position of byRef.get(k) ?? []) hits.add(position);
+  return [...hits].sort((a, b) => a - b);
 }

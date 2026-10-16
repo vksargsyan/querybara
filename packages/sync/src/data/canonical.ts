@@ -34,8 +34,10 @@ function toHex(bytes: Uint8Array): string {
   return out;
 }
 
+const UTF8 = new TextDecoder();
+
 function textOf(value: Exclude<CellValue, null>): string {
-  if (value instanceof Uint8Array) return new TextDecoder().decode(value);
+  if (value instanceof Uint8Array) return UTF8.decode(value);
   if (isHandle(value)) return value.preview;
   return String(value);
 }
@@ -279,8 +281,11 @@ export function valuesEqual(
   kindB: ColumnKind = kindA,
   options: CanonicalOptions = {},
 ): boolean {
-  if (a === null || b === null) return a === b;
-  const kind = compareKind(kindA, kindB);
+  // Canonical forms are a function of the value, so identical cells are always equal (NaN is
+  // not === itself and takes the slow path).
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  const kind = kindA === kindB ? kindA : compareKind(kindA, kindB);
   if (kind === 'float' && (options.floatTolerance ?? 0) > 0) {
     const x = floatValue(a);
     const y = floatValue(b);
@@ -317,6 +322,13 @@ export function compareCodePoints(a: string, b: string): number {
 export function compareKeyValues(a: CellValue, b: CellValue, kind: ColumnKind): number {
   if (a === null || b === null) return a === b ? 0 : a === null ? -1 : 1;
   if (NUMERIC_KINDS.has(kind) || kind === 'boolean') {
+    // Finite numbers and bigints order the same natively as by their decimal text.
+    if (
+      (typeof a === 'bigint' || (typeof a === 'number' && Number.isFinite(a))) &&
+      (typeof b === 'bigint' || (typeof b === 'number' && Number.isFinite(b)))
+    ) {
+      return a < b ? -1 : a > b ? 1 : 0;
+    }
     const x = canonicalValue(a, kind === 'boolean' ? 'boolean' : 'decimal');
     const y = canonicalValue(b, kind === 'boolean' ? 'boolean' : 'decimal');
     if (x !== null && y !== null && canonicalDecimal(x) !== null && canonicalDecimal(y) !== null) {
@@ -339,6 +351,7 @@ export function compareKeyValues(a: CellValue, b: CellValue, kind: ColumnKind): 
   }
   if (kind === 'uuid')
     return compareCodePoints(canonicalValue(a, 'uuid') ?? '', canonicalValue(b, 'uuid') ?? '');
+  if (typeof a === 'string' && typeof b === 'string') return a === b ? 0 : compareCodePoints(a, b);
   return compareCodePoints(textOf(a), textOf(b));
 }
 

@@ -1,9 +1,9 @@
-import { ENGINES, isSqlEngine } from '@querybara/core';
+import { ENGINES } from '@querybara/core';
 import { useId } from 'react';
 
 import { useProfiles } from '../../state/data';
 import { loadChildren, pathKey, useExplorer } from '../../state/explorer';
-import type { SideDraft, SideRole } from '../../state/sync/sides';
+import { isComparableEngine, type SideDraft, type SideRole } from '../../state/sync/sides';
 import { SelectField, TextField } from '../designer/fields';
 import { Button, EnvironmentBadge } from '../ui';
 
@@ -20,8 +20,8 @@ export function SideFields(props: {
   const id = useId();
   const profiles = useProfiles();
   const { draft } = props;
-  const sql = (profiles.data ?? []).filter((p) => isSqlEngine(p.engine));
-  const profile = sql.find((p) => p.id === draft.profileId);
+  const comparable = (profiles.data ?? []).filter((p) => isComparableEngine(p.engine));
+  const profile = comparable.find((p) => p.id === draft.profileId);
   const databases = useExplorer((state) =>
     draft.profileId !== undefined ? state.children[draft.profileId]?.[pathKey([])] : undefined,
   );
@@ -52,7 +52,7 @@ export function SideFields(props: {
           }
         >
           <option value="">Choose a connection…</option>
-          {sql.map((p) => (
+          {comparable.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name} · {ENGINES[p.engine].displayName}
             </option>

@@ -1,6 +1,7 @@
 import type { SchemaSnapshot } from '@querybara/core';
 
 import { diffSchemas } from './diff/index';
+import { diffMongoSchemas } from './mongo/structure';
 import type { DiffSummary, SchemaComparison, SchemaDiff, SyncObjectKind } from './model';
 import type { CompareOptions } from './options';
 
@@ -32,7 +33,8 @@ export function summarizeDiff(diff: SchemaDiff): DiffSummary {
 
 /**
  * Compares two schema snapshots (spec §13): the source is the desired state, the target the
- * database to change. Returns the ordered operations and summary counts; pass the diff to
+ * database to change. MongoDB snapshots compare with `diffMongoSchemas`, SQL ones with
+ * `diffSchemas`. Returns the ordered operations and summary counts; pass the diff to
  * `generateScript` for the deployment script and to `renderHtmlReport` for the report.
  */
 export function compareSchemas(
@@ -40,6 +42,9 @@ export function compareSchemas(
   target: SchemaSnapshot,
   options: CompareOptions = {},
 ): SchemaComparison {
-  const diff = diffSchemas(source, target, options);
+  const mongo = source.engine === 'mongodb' || target.engine === 'mongodb';
+  const diff = mongo
+    ? diffMongoSchemas(source, target, options)
+    : diffSchemas(source, target, options);
   return { diff, summary: summarizeDiff(diff) };
 }

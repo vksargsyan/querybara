@@ -79,6 +79,25 @@ const TARGET = snapshot([
   { name: 'old', columns: [{ name: 'id', ordinal: 1, dataType: 'integer', nullable: true }] },
 ]);
 
+function mongoSnapshot(collections: string[]): SchemaSnapshot {
+  return schemaSnapshotSchema.parse({
+    engine: 'mongodb',
+    database: 'app',
+    capturedAt: '2026-09-29T10:00:00.000Z',
+    schemas: [
+      {
+        name: 'app',
+        tables: collections.map((name) => ({
+          name,
+          columns: [],
+          primaryKey: { name: '_id_', columns: ['_id'] },
+          options: {},
+        })),
+      },
+    ],
+  });
+}
+
 const info = (profileId: string, name: string): SyncSideInfo => ({
   profileId,
   profileName: name,
@@ -104,6 +123,8 @@ class SyncRunner implements JobRunnerProcess {
   readonly sent: MainToRunner[] = [];
   /** Set to make the next data compare fail. */
   failNext = false;
+  /** Set to answer structure compares with a MongoDB comparison. */
+  mongo = false;
   #listener: (message: unknown) => void = () => undefined;
 
   send(message: MainToRunner): void {
@@ -140,7 +161,19 @@ class SyncRunner implements JobRunnerProcess {
         errors: [],
         ...(result ? { result } : {}),
       });
-    if (job.kind === 'structure-compare') {
+    if (job.kind === 'structure-compare' && this.mongo) {
+      const source = mongoSnapshot(['users', 'orders']);
+      const { diff } = compareSchemas(source, mongoSnapshot(['users', 'old']));
+      done({
+        kind: 'structure',
+        source: { ...info(job.sourceProfileId, 'Dev'), engine: 'mongodb' },
+        target: { ...info(job.profileId, 'Prod'), engine: 'mongodb' },
+        diff,
+        summary: summarizeDiff(diff),
+        sourceSnapshot: source,
+        script: structureScript(diff, defaultSelection(diff)),
+      });
+    } else if (job.kind === 'structure-compare') {
       const { diff } = compareSchemas(SOURCE, TARGET);
       done({
         kind: 'structure',
@@ -357,6 +390,44 @@ describe('structure compare in main', () => {
     await expect(main.sync.structure.result({ jobId })).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
+  });
+
+  it('compares two MongoDB databases and scripts the commands for mongosh', async () => {
+    const { main, jobs, runner } = setup();
+    runner.mongo = true;
+    const endpoint = { kind: 'host' as const, host: 'localhost', port: 27017 };
+    const dev = await saveProfile(main, { name: 'Mongo dev', engine: 'mongodb', endpoint });
+    const prod = await saveProfile(main, { name: 'Mongo prod', engine: 'mongodb', endpoint });
+    const { jobId } = await main.sync.structure.compare({
+      source: { profileId: dev.saved.id, database: 'app' },
+      target: { profileId: prod.saved.id, database: 'app' },
+      options: {},
+    });
+    await finished(jobs, jobId);
+    const result = await main.sync.structure.result({ jobId });
+    expect(result.diff.dialect).toBe('mongodb');
+    expect(result.diff.operations.map((op) => [op.objectKind, op.kind])).toEqual([
+      ['collection', 'drop'],
+      ['collection', 'create'],
+    ]);
+    const all = result.diff.operations.map((op) => op.id);
+    const script = await main.sync.structure.script({ jobId, selected: all });
+    expect(script.text).toContain("db.runCommand({ drop: 'old' });");
+    expect(script.text).toContain("db.runCommand({ create: 'orders' });");
+    expect(script.transactional).toBe(false);
+
+    const redis = await saveProfile(main, {
+      name: 'Cache',
+      engine: 'redis',
+      endpoint: { kind: 'host', host: 'localhost', port: 6379 },
+    });
+    await expect(
+      main.sync.structure.compare({
+        source: { profileId: dev.saved.id },
+        target: { profileId: redis.saved.id },
+        options: {},
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_SUPPORTED' });
   });
 
   it('refuses what cannot be compared', async () => {

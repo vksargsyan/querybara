@@ -12,7 +12,13 @@ import { z } from 'zod';
  * - `rows-<table>-<action>-<page>.json`: up to `SPOOL_PAGE_SIZE` row differences, as display
  *   text, for the first `SPOOL_MAX_ROWS` differences of each table and action;
  * - `sql-<table>-<action>.jsonl`: every sync statement, one JSON string per line.
+ *
+ * A MongoDB compare spools collections as tables keyed by `_id`; its row pages show the `_id`,
+ * the top-level fields concerned and their values, and its statements are command documents.
  */
+
+/** The grid columns of a MongoDB collection's row differences. */
+export const MONGO_ROW_COLUMNS = ['_id', 'fields', 'values'] as const;
 
 export const SPOOL_PAGE_SIZE = 100;
 /** Row differences kept for the grid per table and action; counts and scripts cover them all. */
@@ -43,8 +49,10 @@ export type SpoolTable = z.infer<typeof spoolTableSchema>;
 
 export const spoolManifestSchema = z.object({
   version: z.literal(1),
-  /** The target's dialect: the statements are written for it. */
-  dialect: z.enum(SQL_ENGINE_IDS),
+  /** The target's dialect: the statements are written for it (MongoDB: command documents). */
+  dialect: z.enum([...SQL_ENGINE_IDS, 'mongodb']),
+  /** MongoDB: the target database the commands run in (scripts switch to it). */
+  database: z.string().optional(),
   pageSize: z.number().int().positive(),
   tables: z.array(spoolTableSchema),
   /** Table indexes, referenced tables first (inserts); deletes run in reverse. */

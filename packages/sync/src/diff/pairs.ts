@@ -101,12 +101,10 @@ export function pairTables(
   options: ResolvedCompareOptions,
   pg: boolean,
 ): TablePair[] {
-  const sourceTables = (schema.source?.tables ?? []).filter(
-    (t) => !(pg && partitionNames(schema.source).has(t.name)),
-  );
-  const targetTables = (schema.target?.tables ?? []).filter(
-    (t) => !(pg && partitionNames(schema.target).has(t.name)),
-  );
+  const sourcePartitions = pg ? partitionNames(schema.source) : new Set<string>();
+  const targetPartitions = pg ? partitionNames(schema.target) : new Set<string>();
+  const sourceTables = (schema.source?.tables ?? []).filter((t) => !sourcePartitions.has(t.name));
+  const targetTables = (schema.target?.tables ?? []).filter((t) => !targetPartitions.has(t.name));
   const schemaName = pg ? schema.name : undefined;
   const pairs = pairByName(
     sourceTables,

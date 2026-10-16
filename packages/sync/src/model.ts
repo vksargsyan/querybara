@@ -2,6 +2,9 @@ import type { EngineId, SqlDialect } from '@querybara/core';
 
 import type { ResolvedCompareOptions } from './options';
 
+/** The language of a diff's statements: the target's SQL dialect, or MongoDB commands. */
+export type SyncDialect = SqlDialect | 'mongodb';
+
 /** What a structure sync operation acts on. */
 export type SyncObjectKind =
   | 'schema'
@@ -9,6 +12,7 @@ export type SyncObjectKind =
   | 'type'
   | 'sequence'
   | 'table'
+  | 'collection'
   | 'column'
   | 'primary-key'
   | 'unique'
@@ -109,8 +113,8 @@ export interface DiffSummary {
 export interface SchemaDiff {
   readonly sourceEngine: EngineId;
   readonly targetEngine: EngineId;
-  /** Dialect of the generated statements: the target's. */
-  readonly dialect: SqlDialect;
+  /** Dialect of the generated statements: the target's (MongoDB: command documents). */
+  readonly dialect: SyncDialect;
   readonly sourceDatabase: string;
   readonly targetDatabase: string;
   /** Operations in execution order of their first step. */
