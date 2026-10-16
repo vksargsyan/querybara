@@ -134,6 +134,11 @@ export function DataComparePanel(props: { readonly model: DataCompare }) {
 function DataOptions(props: { readonly model: DataCompare; readonly disabled: boolean }) {
   const { model } = props;
   const options = useStore(model.store, (state) => state.options);
+  // Re-render when a side's connection changes, which decides the options shown.
+  useStore(model.store, (state) => state.source.profileId);
+  useStore(model.store, (state) => state.target.profileId);
+  const mongo = model.isMongo();
+  const noun = mongo ? 'documents' : 'rows';
   const setAction = (action: DataRowAction, value: boolean): void =>
     model.setOptions({ actions: { ...options.actions, [action]: value } });
   return (
@@ -143,78 +148,116 @@ function DataOptions(props: { readonly model: DataCompare; readonly disabled: bo
         <fieldset className="flex flex-col gap-1" disabled={props.disabled}>
           <legend className="text-[11px] text-muted">Sync these differences</legend>
           <Check
-            label="Insert rows missing from the target"
+            label={`Insert ${noun} missing from the target`}
             checked={options.actions.insert}
             onChange={(v) => setAction('insert', v)}
           />
           <Check
-            label="Update rows that differ"
+            label={`Update ${noun} that differ`}
             checked={options.actions.update}
             onChange={(v) => setAction('update', v)}
           />
           <Check
-            label="Delete rows only in the target"
+            label={`Delete ${noun} only in the target`}
             checked={options.actions.delete}
             onChange={(v) => setAction('delete', v)}
           />
         </fieldset>
-        <div className="flex flex-col gap-1.5">
-          <label className="flex flex-col gap-0.5 text-[11px] text-muted">
-            Ignore columns (every table)
-            <TextField
-              value={options.ignoreColumns}
-              placeholder="updated_at, version"
-              disabled={props.disabled}
-              onChange={(event) => model.setOptions({ ignoreColumns: event.target.value })}
-            />
-          </label>
-          <label className="flex flex-col gap-0.5 text-[11px] text-muted">
-            Float tolerance
-            <TextField
-              value={options.floatTolerance}
-              placeholder="Exact"
-              inputMode="decimal"
-              disabled={props.disabled}
-              onChange={(event) => model.setOptions({ floatTolerance: event.target.value })}
-            />
-          </label>
-          <label className="flex flex-col gap-0.5 text-[11px] text-muted">
-            Trim text
-            <SelectField
-              value={options.trim}
-              disabled={props.disabled}
-              onChange={(event) =>
-                model.setOptions({ trim: event.target.value as 'none' | 'trailing' | 'both' })
-              }
-            >
-              <option value="none">Compare as is</option>
-              <option value="trailing">Trailing spaces (CHAR padding)</option>
-              <option value="both">Leading and trailing spaces</option>
-            </SelectField>
-          </label>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Check
-            label="Compare text case-insensitively"
-            checked={options.caseInsensitive}
-            disabled={props.disabled}
-            onChange={(v) => model.setOptions({ caseInsensitive: v })}
-          />
-          <Check
-            label="Disable foreign key checks while applying"
-            hint="PostgreSQL needs superuser for this"
-            checked={options.disableForeignKeyChecks}
-            disabled={props.disabled}
-            onChange={(v) => model.setOptions({ disableForeignKeyChecks: v })}
-          />
-          <Check
-            label="Disable triggers while applying"
-            hint="PostgreSQL; needs table ownership"
-            checked={options.disableTriggers}
-            disabled={props.disabled}
-            onChange={(v) => model.setOptions({ disableTriggers: v })}
-          />
-        </div>
+        {mongo ? (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <label className="flex flex-col gap-0.5 text-[11px] text-muted">
+                Ignore fields (every collection)
+                <TextField
+                  value={options.ignoreColumns}
+                  placeholder="updatedAt, __v"
+                  disabled={props.disabled}
+                  onChange={(event) => model.setOptions({ ignoreColumns: event.target.value })}
+                />
+              </label>
+              <p className="text-[11px] text-muted">
+                Top-level fields left out of the comparison; a changed document is still copied
+                whole.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Check
+                label="Ignore field order"
+                hint="{ a, b } equals { b, a }"
+                checked={options.ignoreFieldOrder}
+                disabled={props.disabled}
+                onChange={(v) => model.setOptions({ ignoreFieldOrder: v })}
+              />
+              <Check
+                label="Ignore number types"
+                hint="1, 1.0 and Long(1) are equal"
+                checked={options.ignoreNumericTypes}
+                disabled={props.disabled}
+                onChange={(v) => model.setOptions({ ignoreNumericTypes: v })}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <label className="flex flex-col gap-0.5 text-[11px] text-muted">
+                Ignore columns (every table)
+                <TextField
+                  value={options.ignoreColumns}
+                  placeholder="updated_at, version"
+                  disabled={props.disabled}
+                  onChange={(event) => model.setOptions({ ignoreColumns: event.target.value })}
+                />
+              </label>
+              <label className="flex flex-col gap-0.5 text-[11px] text-muted">
+                Float tolerance
+                <TextField
+                  value={options.floatTolerance}
+                  placeholder="Exact"
+                  inputMode="decimal"
+                  disabled={props.disabled}
+                  onChange={(event) => model.setOptions({ floatTolerance: event.target.value })}
+                />
+              </label>
+              <label className="flex flex-col gap-0.5 text-[11px] text-muted">
+                Trim text
+                <SelectField
+                  value={options.trim}
+                  disabled={props.disabled}
+                  onChange={(event) =>
+                    model.setOptions({ trim: event.target.value as 'none' | 'trailing' | 'both' })
+                  }
+                >
+                  <option value="none">Compare as is</option>
+                  <option value="trailing">Trailing spaces (CHAR padding)</option>
+                  <option value="both">Leading and trailing spaces</option>
+                </SelectField>
+              </label>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Check
+                label="Compare text case-insensitively"
+                checked={options.caseInsensitive}
+                disabled={props.disabled}
+                onChange={(v) => model.setOptions({ caseInsensitive: v })}
+              />
+              <Check
+                label="Disable foreign key checks while applying"
+                hint="PostgreSQL needs superuser for this"
+                checked={options.disableForeignKeyChecks}
+                disabled={props.disabled}
+                onChange={(v) => model.setOptions({ disableForeignKeyChecks: v })}
+              />
+              <Check
+                label="Disable triggers while applying"
+                hint="PostgreSQL; needs table ownership"
+                checked={options.disableTriggers}
+                disabled={props.disabled}
+                onChange={(v) => model.setOptions({ disableTriggers: v })}
+              />
+            </div>
+          </>
+        )}
       </div>
     </details>
   );
@@ -231,19 +274,25 @@ function Results(props: {
   const busy = state.running !== undefined;
   const focused = result.tables.find((t) => t.index === state.focused);
   const pending = model.pendingTotal();
+  const mongo = result.target.engine === 'mongodb';
+  const unit = (n: number): string =>
+    mongo ? (n === 1 ? 'collection' : 'collections') : n === 1 ? 'table' : 'tables';
   const allChecked =
     result.tables.length > 0 &&
     result.tables.filter((t) => !t.error).every((t) => state.checked.includes(t.index));
   return (
     <section aria-label="Comparison" className="flex flex-col gap-2" data-testid="sync-results">
       <div className="overflow-auto rounded border border-border bg-panel">
-        <table className="w-full text-xs" aria-label="Compared tables">
+        <table
+          className="w-full text-xs"
+          aria-label={mongo ? 'Compared collections' : 'Compared tables'}
+        >
           <thead className="bg-panel-2 text-left text-[11px] text-muted">
             <tr>
               <th className="w-8 px-2 py-1">
                 <input
                   type="checkbox"
-                  aria-label="Sync every table"
+                  aria-label={mongo ? 'Sync every collection' : 'Sync every table'}
                   checked={allChecked}
                   onChange={(event) => {
                     for (const t of result.tables) {
@@ -252,7 +301,7 @@ function Results(props: {
                   }}
                 />
               </th>
-              <th className="px-2 py-1 font-medium">Table</th>
+              <th className="px-2 py-1 font-medium">{mongo ? 'Collection' : 'Table'}</th>
               <th className="px-2 py-1 font-medium">Key</th>
               <th className="px-2 py-1 text-right font-medium">Inserts</th>
               <th className="px-2 py-1 text-right font-medium">Updates</th>
@@ -266,6 +315,7 @@ function Results(props: {
               <TableRow
                 key={table.index}
                 table={table}
+                mongo={mongo}
                 checked={state.checked.includes(table.index)}
                 focused={state.focused === table.index}
                 onCheck={(checked) => model.toggleTable(table.index, checked)}
@@ -275,7 +325,9 @@ function Results(props: {
             {result.tables.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-2 py-3 text-center text-muted">
-                  No table pairs with a key both sides share.
+                  {mongo
+                    ? 'No collection is in both databases.'
+                    : 'No table pairs with a key both sides share.'}
                 </td>
               </tr>
             )}
@@ -285,7 +337,7 @@ function Results(props: {
       {result.skipped.length > 0 && (
         <details className="rounded border border-border p-2 text-xs" data-testid="skipped-tables">
           <summary className="cursor-pointer">
-            {result.skipped.length} {result.skipped.length === 1 ? 'table' : 'tables'} not compared
+            {result.skipped.length} {unit(result.skipped.length)} not compared
           </summary>
           <ul className="mt-1 flex flex-col gap-0.5">
             {result.skipped.map((skip) => (
@@ -309,7 +361,7 @@ function Results(props: {
         <span className="flex-1" />
         <span className="text-xs text-muted">
           {formatCount(pending)} {pending === 1 ? 'change' : 'changes'} in {state.checked.length}{' '}
-          {state.checked.length === 1 ? 'table' : 'tables'}
+          {unit(state.checked.length)}
         </span>
         <Button variant="primary" onClick={props.onApply} disabled={busy || pending === 0}>
           Apply…
@@ -321,6 +373,7 @@ function Results(props: {
 
 function TableRow(props: {
   readonly table: DataTableResult;
+  readonly mongo: boolean;
   readonly checked: boolean;
   readonly focused: boolean;
   readonly onCheck: (checked: boolean) => void;
@@ -363,7 +416,9 @@ function TableRow(props: {
       <td className="px-2 py-1 text-[11px] text-muted">
         {table.checksums
           ? `${table.matchedRanges} of ${table.ranges} ranges matched by checksum`
-          : 'rows streamed'}{' '}
+          : props.mongo
+            ? 'documents streamed in _id order'
+            : 'rows streamed'}{' '}
         · {formatDuration(table.durationMs)}
       </td>
     </tr>
@@ -384,6 +439,7 @@ function TableDetails(props: {
   );
   const rows = state.rows;
   const pageSize = state.result?.pageSize ?? 1;
+  const mongo = state.result?.target.engine === 'mongodb';
   return (
     <section
       aria-label={`Rows of ${table.name}`}
@@ -395,11 +451,15 @@ function TableDetails(props: {
           <span className="font-mono">{table.name}</span>
         </h3>
         <span className="text-muted">
-          Compares {table.compared.length > 0 ? table.compared.join(', ') : 'the key only'}
+          {mongo
+            ? 'Compares whole documents by _id; updates show only the fields that differ'
+            : `Compares ${table.compared.length > 0 ? table.compared.join(', ') : 'the key only'}`}
         </span>
-        <Button size="sm" variant="ghost" onClick={() => setEditing(!editing)}>
-          {editing ? 'Done' : 'Columns…'}
-        </Button>
+        {!mongo && (
+          <Button size="sm" variant="ghost" onClick={() => setEditing(!editing)}>
+            {editing ? 'Done' : 'Columns…'}
+          </Button>
+        )}
         <span className="flex-1" />
         <div role="tablist" aria-label="Differences" className="flex gap-1">
           {(['insert', 'update', 'delete'] as const).map((action) => {
@@ -427,7 +487,7 @@ function TableDetails(props: {
           })}
         </div>
       </div>
-      {editing && (
+      {editing && !mongo && (
         <div className="flex flex-col gap-1 rounded border border-border p-2 text-xs">
           <p className="text-muted">
             Columns to compare besides the key ({table.keyColumns.join(', ')}). Takes effect on the
@@ -498,7 +558,11 @@ function TableDetails(props: {
         </Button>
       </div>
       {!differs(table) && !table.error && (
-        <p className="text-xs text-muted">The rows of this table are identical.</p>
+        <p className="text-xs text-muted">
+          {mongo
+            ? 'The documents of this collection are identical.'
+            : 'The rows of this table are identical.'}
+        </p>
       )}
     </section>
   );

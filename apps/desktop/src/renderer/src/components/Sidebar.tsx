@@ -703,7 +703,7 @@ function ProfileItem(props: {
                 Connect
               </MenuItem>
             )}
-            {isSqlEngine(profile.engine) && (
+            {(isSqlEngine(profile.engine) || profile.engine === 'mongodb') && (
               <CompareItems
                 source={{
                   profileId: profile.id,

@@ -11,7 +11,10 @@ export type SideRole = 'source' | 'target';
 
 export interface SideDraft {
   readonly profileId: string | undefined;
-  /** PostgreSQL: the database to connect to; MySQL and MariaDB: the database to compare. */
+  /**
+   * PostgreSQL: the database to connect to; MySQL, MariaDB and MongoDB: the database to
+   * compare.
+   */
   readonly database: string;
   /** PostgreSQL schemas, comma-separated; empty for every non-system schema. */
   readonly schemas: string;
@@ -59,12 +62,18 @@ export function sideInput(draft: SideDraft, profile: SideProfile | undefined): S
   };
 }
 
-const family = (engine: EngineId): string => (engine === 'postgres' ? 'postgres' : 'mysql');
+/** Engines that structure and data compare work with. */
+export function isComparableEngine(engine: EngineId): boolean {
+  return isSqlEngine(engine) || engine === 'mongodb';
+}
+
+const family = (engine: EngineId): string =>
+  engine === 'postgres' || engine === 'mongodb' ? engine : 'mysql';
 
 /**
  * Why the pair cannot be compared yet, or undefined. Structure compare pairs PostgreSQL with
- * PostgreSQL and MySQL or MariaDB with either; data compare also crosses families, with one
- * PostgreSQL schema.
+ * PostgreSQL, MySQL or MariaDB with either, and MongoDB with MongoDB; data compare also
+ * crosses the SQL families, with one PostgreSQL schema.
  */
 export function pairProblem(
   source: SideDraft,
@@ -80,7 +89,7 @@ export function pairProblem(
     if (draft.profileId === undefined) return `Choose the ${role} connection`;
     const profile = lookup(draft.profileId);
     if (!profile) return `The ${role} connection was deleted; choose another`;
-    if (!isSqlEngine(profile.engine)) {
+    if (!isComparableEngine(profile.engine)) {
       return `${ENGINES[profile.engine].displayName} connections cannot be compared here`;
     }
     const database = draft.database.trim() || profile.defaultDatabase;
@@ -95,6 +104,9 @@ export function pairProblem(
       (target.database.trim() || to.defaultDatabase) &&
     parseNames(source.schemas).join() === parseNames(target.schemas).join();
   if (sameDatabase) return 'The source and the target are the same database';
+  if ((from.engine === 'mongodb') !== (to.engine === 'mongodb')) {
+    return 'MongoDB compares with MongoDB; move data between MongoDB and SQL databases with data transfer';
+  }
   if (family(from.engine) !== family(to.engine)) {
     if (kind === 'structure') {
       return `The structure of ${ENGINES[from.engine].displayName} and ${ENGINES[to.engine].displayName} cannot be compared; move data across engines with data compare or transfer`;
@@ -116,7 +128,7 @@ export function pairWarnings(
   const from = source.profileId !== undefined ? lookup(source.profileId) : undefined;
   const to = target.profileId !== undefined ? lookup(target.profileId) : undefined;
   if (!from || !to || from.engine === to.engine) return [];
-  if (from.engine !== 'postgres' && to.engine !== 'postgres') {
+  if (family(from.engine) === 'mysql' && family(to.engine) === 'mysql') {
     return [
       `${ENGINES[from.engine].displayName} and ${ENGINES[to.engine].displayName} differ in places (types, defaults, JSON); the comparison warns where a script may not carry over.`,
     ];

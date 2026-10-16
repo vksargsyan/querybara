@@ -46,6 +46,10 @@ export interface DataOptionsDraft {
   readonly caseInsensitive: boolean;
   readonly disableForeignKeyChecks: boolean;
   readonly disableTriggers: boolean;
+  /** MongoDB: documents whose fields differ only in order are equal. */
+  readonly ignoreFieldOrder: boolean;
+  /** MongoDB: Int32 1, Long 1 and Double 1.0 are equal. */
+  readonly ignoreNumericTypes: boolean;
 }
 
 export const DEFAULT_DATA_OPTIONS: DataOptionsDraft = {
@@ -56,6 +60,8 @@ export const DEFAULT_DATA_OPTIONS: DataOptionsDraft = {
   caseInsensitive: false,
   disableForeignKeyChecks: false,
   disableTriggers: false,
+  ignoreFieldOrder: true,
+  ignoreNumericTypes: false,
 };
 
 export interface DataCompareState {
@@ -105,6 +111,8 @@ function draftOf(settings: DataComparisonSettings | undefined): {
       caseInsensitive: options?.caseInsensitive ?? false,
       disableForeignKeyChecks: options?.disableForeignKeyChecks ?? false,
       disableTriggers: options?.disableTriggers ?? false,
+      ignoreFieldOrder: options?.ignoreFieldOrder ?? true,
+      ignoreNumericTypes: options?.ignoreNumericTypes ?? false,
     },
     tableColumns,
   };
@@ -226,7 +234,20 @@ export class DataCompare {
       ...(options.caseInsensitive ? { caseInsensitive: true } : {}),
       ...(options.disableForeignKeyChecks ? { disableForeignKeyChecks: true } : {}),
       ...(options.disableTriggers ? { disableTriggers: true } : {}),
+      ...(!options.ignoreFieldOrder ? { ignoreFieldOrder: false } : {}),
+      ...(options.ignoreNumericTypes ? { ignoreNumericTypes: true } : {}),
     };
+  }
+
+  /** The pair is two MongoDB databases: documents and collections, not rows and tables. */
+  isMongo(): boolean {
+    const { source, target, result } = this.state;
+    if (result) return result.target.engine === 'mongodb';
+    for (const draft of [source, target]) {
+      const profile = draft.profileId !== undefined ? this.#lookup(draft.profileId) : undefined;
+      if (profile?.engine === 'mongodb') return true;
+    }
+    return false;
   }
 
   #tableSettings(): DataTableSettings[] | undefined {
@@ -434,14 +455,16 @@ export class DataCompare {
     const result = this.state.result;
     if (!selection || !result) return;
     try {
+      const mongo = result.target.engine === 'mongodb';
       const path = await this.#api.saveFile({
         title: 'Save the sync script',
-        defaultName: `${result.source.database}-to-${result.target.database}-data.sql`.replace(
-          /[<>:"/\\|?*\s]/g,
-          '_',
-        ),
-        extension: 'sql',
-        label: 'SQL script',
+        defaultName:
+          `${result.source.database}-to-${result.target.database}-data.${mongo ? 'js' : 'sql'}`.replace(
+            /[<>:"/\\|?*\s]/g,
+            '_',
+          ),
+        extension: mongo ? 'js' : 'sql',
+        label: mongo ? 'mongosh script' : 'SQL script',
       });
       if (path === null) return;
       const bytes = await this.#api.exportData({ ...selection, path });

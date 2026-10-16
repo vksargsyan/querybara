@@ -75,6 +75,12 @@ export const STRUCTURE_OPTIONS: readonly {
 
 export type StructureOptionsDraft = Readonly<Record<StructureOptionKey, boolean>>;
 
+/** The options a MongoDB compare honours (collections and indexes have no other settings). */
+export const MONGO_STRUCTURE_OPTIONS: ReadonlySet<StructureOptionKey> = new Set([
+  'ignoreCollation',
+  'ignoreNames',
+]);
+
 export const OBJECT_KIND_LABELS: Readonly<Record<SyncObjectKind, string>> = {
   schema: 'Schemas',
   extension: 'Extensions',
@@ -497,10 +503,22 @@ export class StructureCompare {
     }
   }
 
-  /** Writes the selection's script (.sql) or the HTML report where the user picks. */
+  /** The pair is two MongoDB databases: collections, indexes and views, in mongosh commands. */
+  isMongo(): boolean {
+    const { source, target, result } = this.state;
+    if (result) return result.diff.dialect === 'mongodb';
+    for (const draft of [source, target]) {
+      const profile = draft.profileId !== undefined ? this.#lookup(draft.profileId) : undefined;
+      if (profile?.engine === 'mongodb') return true;
+    }
+    return false;
+  }
+
+  /** Writes the selection's script (.sql, or .js for mongosh) or the HTML report. */
   async export(format: 'sql' | 'html'): Promise<void> {
     const result = this.state.result;
     if (!result) return;
+    const mongo = result.diff.dialect === 'mongodb';
     const base = `${result.source.database}-to-${result.target.database}`.replace(
       /[<>:"/\\|?*\s]/g,
       '_',
@@ -508,9 +526,9 @@ export class StructureCompare {
     try {
       const path = await this.#api.saveFile({
         title: format === 'sql' ? 'Save the script' : 'Save the report',
-        defaultName: `${base}${format === 'sql' ? '.sql' : '.html'}`,
-        extension: format,
-        label: format === 'sql' ? 'SQL script' : 'HTML report',
+        defaultName: `${base}${format === 'html' ? '.html' : mongo ? '.js' : '.sql'}`,
+        extension: format === 'html' ? 'html' : mongo ? 'js' : 'sql',
+        label: format === 'html' ? 'HTML report' : mongo ? 'mongosh script' : 'SQL script',
       });
       if (path === null) return;
       const bytes = await this.#api.exportStructure({
