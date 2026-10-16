@@ -2284,10 +2284,28 @@ export function dropForeignKeysBetweenDroppedTables(
  * dropped first and re-added after (PostgreSQL refuses otherwise).
  */
 export function rebuildReferencingForeignKeys(ctx: DiffContext): void {
+  if (ctx.state.keyDrops.length === 0) return;
+  const referencedKey = (schema: string, table: string, columns: readonly string[]): string =>
+    `${tableKey(ctx.pg ? schema : '', table)}\u0000${[...columns].sort().join(',')}`;
+  const byReferencedKey = positionsBy(ctx.state.foreignKeys, (entry) =>
+    entry.target === undefined
+      ? []
+      : [
+          referencedKey(
+            entry.target.refSchema ?? entry.table.schema.name,
+            entry.target.refTable,
+            entry.target.refColumns,
+          ),
+        ],
+  );
   for (const drop of ctx.state.keyDrops) {
     const refSchema = drop.table.schema.name;
     const columns = [...drop.columns].sort().join(',');
-    for (const entry of ctx.state.foreignKeys) {
+    const candidates = byReferencedKey.get(
+      referencedKey(refSchema, drop.table.before, drop.columns),
+    );
+    for (const position of candidates ?? []) {
+      const entry = ctx.state.foreignKeys[position]!;
       const fk = entry.target;
       if (fk === undefined) continue;
       const fkRefSchema = ctx.pg ? (fk.refSchema ?? entry.table.schema.name) : '';
@@ -2341,6 +2359,22 @@ export function rebuildReferencingForeignKeys(ctx: DiffContext): void {
   }
 }
 
+/** Positions of `items` by each of their keys, ascending and without repeats per key. */
+function positionsBy<T>(
+  items: readonly T[],
+  keys: (item: T) => readonly string[],
+): Map<string, number[]> {
+  const byKey = new Map<string, number[]>();
+  items.forEach((item, position) => {
+    for (const k of keys(item)) {
+      let positions = byKey.get(k);
+      if (positions === undefined) byKey.set(k, (positions = []));
+      if (positions[positions.length - 1] !== position) positions.push(position);
+    }
+  });
+  return byKey;
+}
+
 /**
  * MySQL and MariaDB refuse to change the type of a column a foreign key uses, on either end
  * ("Cannot change column used in a foreign key constraint"), even with FOREIGN_KEY_CHECKS = 0.
@@ -2348,8 +2382,34 @@ export function rebuildReferencingForeignKeys(ctx: DiffContext): void {
  */
 export function rebuildForeignKeysOfRetypedColumns(ctx: DiffContext): void {
   const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+  if (ctx.state.retypedColumns.length === 0) return;
+  // Foreign keys by the columns they use on either end, so each retyped column visits only
+  // its own foreign keys (a charset migration retypes most columns of a database).
+  const tableIds = new Map<TablePair, number>();
+  const tableId = (table: TablePair): number => {
+    let id = tableIds.get(table);
+    if (id === undefined) tableIds.set(table, (id = tableIds.size));
+    return id;
+  };
+  const referencingKey = (table: TablePair, column: string): string =>
+    `${tableId(table)}\u0000${column.toLowerCase()}`;
+  const referencedKey = (table: string, column: string): string =>
+    `${table.toLowerCase()}\u0000${column.toLowerCase()}`;
+  const byReferencing = positionsBy(ctx.state.foreignKeys, (entry) =>
+    (entry.target?.columns ?? []).map((c) => referencingKey(entry.table, c)),
+  );
+  const byReferenced = positionsBy(ctx.state.foreignKeys, (entry) =>
+    entry.target === undefined || entry.target.refSchema !== undefined
+      ? []
+      : entry.target.refColumns.map((c) => referencedKey(entry.target!.refTable, c)),
+  );
   for (const retype of ctx.state.retypedColumns) {
-    for (const entry of ctx.state.foreignKeys) {
+    const candidates = new Set([
+      ...(byReferencing.get(referencingKey(retype.table, retype.column)) ?? []),
+      ...(byReferenced.get(referencedKey(retype.table.before, retype.column)) ?? []),
+    ]);
+    for (const position of [...candidates].sort((a, b) => a - b)) {
+      const entry = ctx.state.foreignKeys[position]!;
       const fk = entry.target;
       if (fk === undefined) continue;
       const referencing =

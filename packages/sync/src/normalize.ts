@@ -108,7 +108,32 @@ export function nameKey(
   return options.ignoreNameCase ? name.toLowerCase() : name;
 }
 
+/** Normalised texts per context; the same definitions are canonicalised several times a diff. */
+interface TextCache {
+  readonly plain: Map<string, string>;
+  readonly withComments: Map<string, string>;
+  readonly expressions: Map<string, string>;
+}
+
+const textCaches = new WeakMap<NormalizeContext, TextCache>();
+
+function textCache(ctx: NormalizeContext): TextCache {
+  let cache = textCaches.get(ctx);
+  if (cache === undefined) {
+    cache = { plain: new Map(), withComments: new Map(), expressions: new Map() };
+    textCaches.set(ctx, cache);
+  }
+  return cache;
+}
+
 function sqlText(text: string, ctx: NormalizeContext, keepComments = false): string {
+  const cache = textCache(ctx)[keepComments ? 'withComments' : 'plain'];
+  let result = cache.get(text);
+  if (result === undefined) cache.set(text, (result = sqlTextUncached(text, ctx, keepComments)));
+  return result;
+}
+
+function sqlTextUncached(text: string, ctx: NormalizeContext, keepComments: boolean): string {
   return normalizeSql(text, ctx.dialect, {
     foldIdentifiers: ctx.options.ignoreNameCase,
     keepComments,
@@ -120,7 +145,12 @@ function sqlText(text: string, ctx: NormalizeContext, keepComments = false): str
 
 /** Canonical expression: normalised text without enclosing parentheses. */
 export function canonicalExpression(text: string, ctx: NormalizeContext): string {
-  return stripOuterParens(sqlText(text, ctx), ctx.dialect);
+  const cache = textCache(ctx).expressions;
+  let result = cache.get(text);
+  if (result === undefined) {
+    cache.set(text, (result = stripOuterParens(sqlText(text, ctx), ctx.dialect)));
+  }
+  return result;
 }
 
 function comment(value: string | undefined, ctx: NormalizeContext): string | undefined {
