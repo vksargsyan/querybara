@@ -56,7 +56,7 @@ describe('compareSchemas', () => {
     const my = snapshot('mysql', 'b', []);
     expect(() => compareSchemas(pg, my)).toThrow(/Cannot sync structure from postgres to mysql/);
     expect(() => compareSchemas({ ...pg, engine: 'mongodb' }, pg)).toThrow(
-      /does not support mongodb/,
+      /Cannot sync structure from mongodb to postgres/,
     );
   });
 

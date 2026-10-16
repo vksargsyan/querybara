@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "Structure diff, data compare and sync script generation.",
+  "description": "Structure diff, data compare and sync script generation for SQL engines and MongoDB.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -15,9 +15,11 @@
   },
   "dependencies": {
     "@querybara/core": "workspace:*",
+    "@querybara/mongo-tools": "workspace:*",
     "@querybara/sql-tools": "workspace:*"
   },
   "devDependencies": {
+    "@querybara/driver-mongodb": "workspace:*",
     "@querybara/driver-mysql": "workspace:*",
     "@querybara/driver-postgres": "workspace:*",
     "@querybara/driver-sql-base": "workspace:*",

@@ -1,6 +1,6 @@
 import type { SqlDialect } from '@querybara/core';
 
-import type { SchemaDiff, SyncOperation, SyncWarning } from './model';
+import type { SchemaDiff, SyncDialect, SyncOperation, SyncWarning } from './model';
 import { missingDependencies } from './selection';
 import { tokenizeSql } from './sql-text';
 
@@ -30,11 +30,17 @@ export interface ScriptStatement {
 
 /** A deployment script, as plain statements for drivers and as runnable text. */
 export interface GeneratedScript {
-  readonly dialect: SqlDialect;
-  /** Plain statements in execution order: no terminators, no DELIMITER. Drivers run these. */
+  readonly dialect: SyncDialect;
+  /**
+   * Plain statements in execution order: no terminators, no DELIMITER. Drivers run these
+   * (MongoDB: command documents, which a session's execute runs).
+   */
   readonly statements: readonly string[];
   readonly steps: readonly ScriptStatement[];
-  /** A runnable script with terminators, comments and (MySQL) DELIMITER blocks. */
+  /**
+   * A runnable script with terminators, comments and (MySQL) DELIMITER blocks; for MongoDB a
+   * mongosh script of `db.runCommand(...)` calls.
+   */
   readonly text: string;
   /** The script runs in one transaction (PostgreSQL). */
   readonly transactional: boolean;
@@ -59,8 +65,10 @@ const DELIMITERS = ['$$', ';;', '//', '$$$', '@@'];
 /**
  * Joins statements into a script. MySQL/MariaDB compound statements go inside a DELIMITER block
  * whose delimiter does not occur in them; PostgreSQL needs none (bodies are dollar-quoted).
+ * MongoDB command documents become mongosh `db.runCommand(...)` calls.
  */
-export function formatStatements(statements: readonly string[], dialect: SqlDialect): string {
+export function formatStatements(statements: readonly string[], dialect: SyncDialect): string {
+  if (dialect === 'mongodb') return statements.map((s) => `db.runCommand(${s});`).join('\n');
   if (dialect === 'postgres') return statements.map((s) => `${s};`).join('\n');
   const out: string[] = [];
   let delimiter: string | null = null;
@@ -85,8 +93,8 @@ export function formatStatements(statements: readonly string[], dialect: SqlDial
   return out.join('\n');
 }
 
-function commentLine(text: string): string {
-  return `-- ${text.replace(/[\r\n]+/g, ' ')}`;
+function commentLine(text: string, dialect?: SyncDialect): string {
+  return `${dialect === 'mongodb' ? '//' : '--'} ${text.replace(/[\r\n]+/g, ' ')}`;
 }
 
 function describe(op: SyncOperation, include: 'selected' | 'all'): string {
@@ -113,8 +121,10 @@ function describe(op: SyncOperation, include: 'selected' | 'all'): string {
 export function generateScript(diff: SchemaDiff, options: ScriptOptions = {}): GeneratedScript {
   const include = options.include ?? 'selected';
   const pg = diff.dialect === 'postgres';
+  const mongo = diff.dialect === 'mongodb';
+  const comment = (line: string): string => commentLine(line, diff.dialect);
   const transactional = pg && options.transaction !== false;
-  const fkChecks = !pg && options.disableForeignKeyChecks !== false;
+  const fkChecks = !pg && !mongo && options.disableForeignKeyChecks !== false;
   const included = (op: SyncOperation): boolean => include === 'all' || op.selected;
 
   const pre: { op: SyncOperation; sql: string }[] = [];
@@ -136,13 +146,17 @@ export function generateScript(diff: SchemaDiff, options: ScriptOptions = {}): G
     const count = diff.operations.filter(included).length;
     const destructive = diff.operations.filter((op) => included(op) && op.destructive).length;
     text.push(
-      commentLine('Querybara structure sync'),
-      commentLine(`Source: ${diff.sourceEngine} ${diff.sourceDatabase}`),
-      commentLine(`Target: ${diff.targetEngine} ${diff.targetDatabase}`),
-      commentLine(`Operations: ${count}${destructive > 0 ? ` (${destructive} destructive)` : ''}`),
+      comment('Querybara structure sync'),
+      comment(`Source: ${diff.sourceEngine} ${diff.sourceDatabase}`),
+      comment(`Target: ${diff.targetEngine} ${diff.targetDatabase}`),
+      comment(`Operations: ${count}${destructive > 0 ? ` (${destructive} destructive)` : ''}`),
     );
-    for (const warning of diff.warnings) text.push(commentLine(`Warning: ${warning.message}`));
+    for (const warning of diff.warnings) text.push(comment(`Warning: ${warning.message}`));
     text.push('');
+  }
+  if (mongo && main.length > 0) {
+    // mongosh runs the commands against `db`; a script loaded with load() cannot `use`.
+    text.push(`db = db.getSiblingDB(${JSON.stringify(diff.targetDatabase)});`, '');
   }
 
   const described = new Set<string>();
@@ -160,11 +174,11 @@ export function generateScript(diff: SchemaDiff, options: ScriptOptions = {}): G
           if (text.length > 0 && text[text.length - 1] !== '') text.push('');
           const first = !described.has(entry.op.id);
           described.add(entry.op.id);
-          text.push(commentLine(`${describe(entry.op, include)}${first ? '' : ' (continued)'}`));
-          if (first && entry.op.reason !== undefined) text.push(commentLine(entry.op.reason));
+          text.push(comment(`${describe(entry.op, include)}${first ? '' : ' (continued)'}`));
+          if (first && entry.op.reason !== undefined) text.push(comment(entry.op.reason));
           for (const warning of first ? entry.op.warnings : []) {
             if (warning.code !== 'rebuild')
-              text.push(commentLine(`  ${warning.code}: ${warning.message}`));
+              text.push(comment(`  ${warning.code}: ${warning.message}`));
           }
         }
         current = entry.op;
@@ -184,7 +198,7 @@ export function generateScript(diff: SchemaDiff, options: ScriptOptions = {}): G
   if (pre.length > 0) {
     if (options.comments !== false) {
       text.push(
-        commentLine(
+        comment(
           'New enum labels must be committed before they can be used, so they are added first.',
         ),
       );
@@ -203,10 +217,10 @@ export function generateScript(diff: SchemaDiff, options: ScriptOptions = {}): G
 
   const unscripted = diff.operations.filter((op) => included(op) && op.statements.length === 0);
   if (unscripted.length > 0 && options.comments !== false) {
-    text.push(commentLine('Not scripted (change these manually):'));
+    text.push(comment('Not scripted (change these manually):'));
     for (const op of unscripted) {
       const why = op.warnings.find((w) => w.code === 'unsupported')?.message ?? 'no statements';
-      text.push(commentLine(`  ${describe(op, include)}: ${why}`));
+      text.push(comment(`  ${describe(op, include)}: ${why}`));
     }
   }
 
