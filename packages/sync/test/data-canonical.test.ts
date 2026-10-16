@@ -1,3 +1,4 @@
+import type { CellValue } from '@querybara/core';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -108,6 +109,15 @@ describe('value canonicalisation', () => {
   });
 });
 
+describe('value equality', () => {
+  it('treats identical cells as equal without canonicalising, except NaN', () => {
+    expect(valuesEqual('2024-01-01 10:00', '2024-01-01 10:00', 'timestamp')).toBe(true);
+    expect(valuesEqual('1.50', '1.5', 'decimal')).toBe(true);
+    expect(valuesEqual(Number.NaN, Number.NaN, 'float')).toBe(true);
+    expect(valuesEqual(null, '', 'string')).toBe(false);
+  });
+});
+
 describe('key ordering', () => {
   it('orders decimals numerically, not as text', () => {
     expect(compareDecimals('10', '9')).toBeGreaterThan(0);
@@ -115,6 +125,20 @@ describe('key ordering', () => {
     expect(compareDecimals('1.05', '1.5')).toBeLessThan(0);
     expect(compareKeyValues('10', 9, 'decimal')).toBeGreaterThan(0);
     expect(compareKeyValues(2n ** 63n, 2 ** 53, 'bigint')).toBeGreaterThan(0);
+  });
+
+  it('orders native numbers and bigints as their decimal text does', () => {
+    const values: CellValue[] = [-1.5, -0, 0, 0.1, 1, 1n, 2 ** 53, 2n ** 53n + 1n, 1e21, '7.25'];
+    for (const a of values) {
+      for (const b of values) {
+        const text = compareDecimals(
+          canonicalValue(a, 'decimal') ?? '',
+          canonicalValue(b, 'decimal') ?? '',
+        );
+        expect(Math.sign(compareKeyValues(a, b, 'decimal')) === Math.sign(text)).toBe(true);
+      }
+    }
+    expect(compareKeyValues(Number.NaN, 1, 'float')).not.toBe(0);
   });
 
   it('orders strings by code point like binary collations', () => {

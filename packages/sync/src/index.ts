@@ -85,8 +85,16 @@ export {
   tableName,
 } from './data/sql';
 export type { KeyRange, SqlQuery, TableRef } from './data/sql';
-export { columnIndex, mergeSortedRows, planMerge } from './data/merge';
-export type { MergeOptions, MergePlan, MergeSummary, Row, RowAction, RowDiff } from './data/merge';
+export { columnIndex, mergeSortedBatches, mergeSortedRows, planMerge } from './data/merge';
+export type {
+  MergeOptions,
+  MergePlan,
+  MergeSummary,
+  Row,
+  RowAction,
+  RowBatches,
+  RowDiff,
+} from './data/merge';
 export { DataSyncScriptBuilder, generateDataSyncScript } from './data/script';
 export type { DataSyncOptions, DataSyncScript } from './data/script';
 export { compareTableData } from './data/compare';

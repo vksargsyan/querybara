@@ -2,7 +2,7 @@ import type { CellValue, ColumnKind } from '@querybara/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { compareKeys, mergeSortedRows } from '../src';
+import { compareKeys, mergeSortedBatches, mergeSortedRows } from '../src';
 import type { MergeOptions, MergeSummary, Row, RowDiff } from '../src';
 
 async function collect(
@@ -167,6 +167,26 @@ describe('mergeSortedRows', () => {
     expect(first.value).toMatchObject({ action: 'insert', key: [0] });
     await merge.return(undefined as never);
     expect(closed).toBe(2);
+  });
+
+  it('merges batched streams the same as single rows, across empty and split batches', async () => {
+    const source: Row[] = [1, 2, 3, 3, 5, 8].map((id) => [id, `n${id}`, id]);
+    const target: Row[] = [2, 3, 4, 5, 6].map((id) => [id, `n${id}`, id === 5 ? 0 : id]);
+    async function* pages(rows: Row[], sizes: number[]): AsyncGenerator<Row[]> {
+      let at = 0;
+      for (const size of sizes) {
+        yield rows.slice(at, at + size);
+        at += size;
+      }
+    }
+    const merge = mergeSortedBatches(pages(source, [0, 3, 1, 0, 2]), pages(target, [1, 4]), simple);
+    const diffs: RowDiff[] = [];
+    let next = await merge.next();
+    for (; !next.done; next = await merge.next()) diffs.push(next.value);
+    const single = await collect(source, target, simple);
+    expect(diffs).toEqual(single.diffs);
+    expect(next.value).toEqual(single.summary);
+    expect(next.value).toMatchObject({ sourceRows: 5, targetRows: 5, equal: 2 });
   });
 
   it('reproduces the source from the target (property)', async () => {

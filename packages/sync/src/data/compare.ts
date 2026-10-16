@@ -4,7 +4,7 @@ import { cancelledError, QuerybaraError, newId, rowAt } from '@querybara/core';
 import type { CanonicalOptions } from './canonical';
 import { compareKeys, compareKind } from './canonical';
 import type { MergeSummary, Row, RowDiff } from './merge';
-import { columnIndex, mergeSortedRows } from './merge';
+import { columnIndex, mergeSortedBatches } from './merge';
 import type { KeyRange, SqlQuery, TableRef } from './sql';
 import { boundaryQuery, checksumQuery, columnsQuery, rowsQuery } from './sql';
 
@@ -87,11 +87,12 @@ interface Side {
   readonly keyKinds: readonly ColumnKind[];
 }
 
+/** The rows of a query, one batch per fetched page. */
 async function* streamRows(
   side: Side,
   query: SqlQuery,
   options: DataCompareOptions,
-): AsyncGenerator<Row> {
+): AsyncGenerator<Row[]> {
   for await (const chunk of side.session.execute(query.text, {
     executionId: newId(),
     params: query.params,
@@ -99,7 +100,9 @@ async function* streamRows(
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
   })) {
     if (chunk.type === 'rows') {
-      for (let r = 0; r < chunk.rowCount; r++) yield rowAt(chunk, r);
+      const rows: Row[] = new Array<Row>(chunk.rowCount);
+      for (let r = 0; r < chunk.rowCount; r++) rows[r] = rowAt(chunk, r);
+      yield rows;
     }
   }
 }
@@ -153,7 +156,7 @@ async function boundary(
  * Compares one table's data between two sessions (spec §13, data sync steps 2-5): walks the
  * source key space in ranges, compares per-range checksums computed on each server, bisects
  * mismatched ranges until they are small, and streams those rows from both sides in key order
- * through `mergeSortedRows`. Yields a start event, progress, one event per differing row, and
+ * through `mergeSortedBatches`. Yields a start event, progress, one event per differing row, and
  * a final summary. Runs anywhere a `Session` does: the job runner, querybara-cli and tests.
  *
  * Limitation: both servers must order the key the same way within the range predicates. For
@@ -262,7 +265,7 @@ export async function* compareTableData(
 
   async function* streamRange(range: KeyRange): AsyncGenerator<DataCompareEvent> {
     streamedRanges++;
-    const merge = mergeSortedRows(
+    const merge = mergeSortedBatches(
       streamRows(
         source,
         rowsQuery(
