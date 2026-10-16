@@ -214,6 +214,18 @@ describe('MongoDB structure compare', () => {
     expect(generateScript(capped, { include: 'all' }).text).toContain('// Not scripted');
   });
 
+  it('adds a validator without restating the default level and action', () => {
+    const { diff } = compareSchemas(
+      db('x', [collection('t', { validator: { a: { $exists: true } } })]),
+      db('x', [collection('t')]),
+    );
+    expect(diff.operations[0]!.changes).toEqual(['validator added']);
+    expect(Object.keys(parseShell(diff.operations[0]!.statements[0]!) as object)).toEqual([
+      'collMod',
+      'validator',
+    ]);
+  });
+
   it('removes a validator and resizes capped collections', () => {
     const { diff } = compareSchemas(
       db('x', [collection('log', { capped: true, size: 8192, max: 100 }), collection('t')]),

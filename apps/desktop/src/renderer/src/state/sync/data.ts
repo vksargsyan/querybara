@@ -419,7 +419,12 @@ export class DataCompare {
         this.#set({
           running: undefined,
           ...(job.state === 'cancelled'
-            ? { notice: 'The apply was cancelled; the table it was writing rolled back' }
+            ? {
+                notice:
+                  result.target.engine === 'mongodb'
+                    ? 'The apply was cancelled; the commands before it stay applied'
+                    : 'The apply was cancelled; the table it was writing rolled back',
+              }
             : { error: jobFailure(job) }),
         });
         return false;
@@ -437,7 +442,7 @@ export class DataCompare {
         this.#set({
           notice: `${applied}. Compared again: ${
             left === 0
-              ? 'no differences remain in the synced tables.'
+              ? `no differences remain in the synced ${result.target.engine === 'mongodb' ? 'collections' : 'tables'}.`
               : `${left} ${left === 1 ? 'difference remains' : 'differences remain'}.`
           }`,
         });

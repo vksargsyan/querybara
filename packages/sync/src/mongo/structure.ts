@@ -155,10 +155,10 @@ function collectionShape(table: TableDef, options: ResolvedCompareOptions): Coll
     collation: options.ignoreCollation ? '' : canonicalOption(o['collation'], 'collation'),
     expireAfterSeconds: o['expireAfterSeconds'] ?? '',
     validator: validator === '{}' ? '' : validator,
-    validationLevel:
-      validator === '' || validator === '{}' ? '' : (o['validationLevel'] ?? 'strict'),
-    validationAction:
-      validator === '' || validator === '{}' ? '' : (o['validationAction'] ?? 'error'),
+    // The server's defaults, whether or not a validator is set, so that adding one with the
+    // default level and action changes only the validator.
+    validationLevel: o['validationLevel'] ?? 'strict',
+    validationAction: o['validationAction'] ?? 'error',
     changeStreamImages: images?.['enabled'] === true,
   };
 }
@@ -374,11 +374,11 @@ class MongoDiff {
     }
     if (a.validationLevel !== b.validationLevel && a.validator !== '') {
       mod['validationLevel'] = a.validationLevel;
-      changes.push(`validationLevel: ${b.validationLevel || 'strict'} → ${a.validationLevel}`);
+      changes.push(`validationLevel: ${b.validationLevel} → ${a.validationLevel}`);
     }
     if (a.validationAction !== b.validationAction && a.validator !== '') {
       mod['validationAction'] = a.validationAction;
-      changes.push(`validationAction: ${b.validationAction || 'error'} → ${a.validationAction}`);
+      changes.push(`validationAction: ${b.validationAction} → ${a.validationAction}`);
     }
     if (a.expireAfterSeconds !== b.expireAfterSeconds && a.kind === b.kind) {
       mod['expireAfterSeconds'] =
