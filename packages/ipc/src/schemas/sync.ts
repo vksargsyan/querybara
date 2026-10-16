@@ -124,6 +124,7 @@ export const SYNC_OBJECT_KINDS = [
   'type',
   'sequence',
   'table',
+  'collection',
   'column',
   'primary-key',
   'unique',
@@ -192,7 +193,8 @@ export type SyncOperationInfo = z.infer<typeof syncOperationSchema>;
 const diffFields = {
   sourceEngine: engineIdSchema,
   targetEngine: engineIdSchema,
-  dialect: z.enum(SQL_ENGINE_IDS),
+  /** The target's SQL dialect, or 'mongodb' for MongoDB command documents. */
+  dialect: z.enum([...SQL_ENGINE_IDS, 'mongodb']),
   sourceDatabase: z.string(),
   targetDatabase: z.string(),
   operations: z.array(syncOperationSchema),
@@ -329,7 +331,10 @@ export type DataActions = z.infer<typeof dataActionsSchema>;
 export const dataCompareOptionsSchema = z.object({
   /** Which differences the sync script and apply act on. */
   actions: dataActionsSchema,
-  /** Columns never compared or written, in every table. */
+  /**
+   * Columns never compared or written, in every table. MongoDB: top-level fields not compared
+   * (a changed document is still copied whole).
+   */
   ignoreColumns: z.array(nameSchema).max(1000).optional(),
   /** Absolute tolerance for floating-point columns. */
   floatTolerance: z.number().nonnegative().max(1e15).optional(),
@@ -339,6 +344,10 @@ export const dataCompareOptionsSchema = z.object({
   disableForeignKeyChecks: z.boolean().optional(),
   /** PostgreSQL: disable user triggers on each table while applying (needs ownership). */
   disableTriggers: z.boolean().optional(),
+  /** MongoDB: documents whose fields differ only in order are equal (default true). */
+  ignoreFieldOrder: z.boolean().optional(),
+  /** MongoDB: Int32 1, Long 1 and Double 1.0 are equal (default false). */
+  ignoreNumericTypes: z.boolean().optional(),
 });
 export type DataCompareOptions = z.infer<typeof dataCompareOptionsSchema>;
 

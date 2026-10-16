@@ -81,6 +81,7 @@ export const OBJECT_KIND_LABELS: Readonly<Record<SyncObjectKind, string>> = {
   type: 'Types',
   sequence: 'Sequences',
   table: 'Tables',
+  collection: 'Collections',
   column: 'Columns',
   'primary-key': 'Primary keys',
   unique: 'Unique constraints',

@@ -32,7 +32,18 @@ function unavailable(): QuerybaraError {
 }
 
 const family = (profile: ConnectionProfile): string =>
-  profile.engine === 'postgres' ? 'postgres' : 'mysql';
+  profile.engine === 'postgres' || profile.engine === 'mongodb' ? profile.engine : 'mysql';
+
+/** MongoDB compares with MongoDB only; SQL data compares across SQL engines. */
+function checkMongoPair(from: ConnectionProfile, to: ConnectionProfile): void {
+  if ((from.engine === 'mongodb') !== (to.engine === 'mongodb')) {
+    throw new QuerybaraError({
+      code: 'NOT_SUPPORTED',
+      message: `Cannot compare ${ENGINES[from.engine].displayName} with ${ENGINES[to.engine].displayName}`,
+      hint: 'MongoDB compares with MongoDB; move data between MongoDB and SQL databases with data transfer.',
+    });
+  }
+}
 
 /** The write rules for applying to a target (spec §4). */
 export function checkSyncApply(profile: ConnectionProfile, confirmed: boolean | undefined): void {
@@ -78,7 +89,7 @@ export function syncHandlers(
     if (!services.sync) throw unavailable();
     return services.sync;
   };
-  const sqlProfile = (profileId: string, role: 'source' | 'target'): StoredProfile => {
+  const syncProfile = (profileId: string, role: 'source' | 'target'): StoredProfile => {
     const profile = store.profiles.get(profileId);
     if (!profile) {
       throw new QuerybaraError({
@@ -86,11 +97,11 @@ export function syncHandlers(
         message: `The ${role} connection was deleted`,
       });
     }
-    if (!isSqlEngine(profile.engine)) {
+    if (!isSqlEngine(profile.engine) && profile.engine !== 'mongodb') {
       throw new QuerybaraError({
         code: 'NOT_SUPPORTED',
         message: `${ENGINES[profile.engine].displayName} connections cannot be compared here`,
-        hint: 'Structure and data compare work with MySQL, MariaDB and PostgreSQL.',
+        hint: 'Structure and data compare work with MySQL, MariaDB, PostgreSQL and MongoDB.',
       });
     }
     return profile;
@@ -101,13 +112,13 @@ export function syncHandlers(
   return {
     structure: {
       compare: ({ source, target, options, secrets }) => {
-        const from = sqlProfile(source.profileId, 'source');
-        const to = sqlProfile(target.profileId, 'target');
+        const from = syncProfile(source.profileId, 'source');
+        const to = syncProfile(target.profileId, 'target');
         if (family(from) !== family(to)) {
           throw new QuerybaraError({
             code: 'NOT_SUPPORTED',
             message: `Cannot compare the structure of ${ENGINES[from.engine].displayName} with ${ENGINES[to.engine].displayName}`,
-            hint: 'Pair PostgreSQL with PostgreSQL, and MySQL or MariaDB with MySQL or MariaDB.',
+            hint: 'Pair PostgreSQL with PostgreSQL, MySQL or MariaDB with MySQL or MariaDB, and MongoDB with MongoDB.',
           });
         }
         const jobId = service().startStructureCompare(
@@ -120,7 +131,7 @@ export function syncHandlers(
       script: ({ jobId, selected }) => service().structureScript(jobId, selected),
       apply: ({ jobId, selected, scriptSha256, confirmed, secrets }) => {
         const sync = service();
-        const target = sqlProfile(sync.structureTarget(jobId), 'target');
+        const target = syncProfile(sync.structureTarget(jobId), 'target');
         checkSyncApply(target, confirmed);
         const applyId = sync.startStructureApply(
           { jobId, selected, scriptSha256, confirmed: confirmed === true },
@@ -135,8 +146,9 @@ export function syncHandlers(
     },
     data: {
       compare: ({ source, target, options, tables, secrets }) => {
-        const from = sqlProfile(source.profileId, 'source');
-        const to = sqlProfile(target.profileId, 'target');
+        const from = syncProfile(source.profileId, 'source');
+        const to = syncProfile(target.profileId, 'target');
+        checkMongoPair(from, to);
         const jobId = service().startDataCompare(
           { source, target, options, ...(tables !== undefined ? { tables } : {}) },
           { source: resolve(from, secrets), target: resolve(to, secrets) },
@@ -148,7 +160,7 @@ export function syncHandlers(
       preview: (input) => service().dataPreview(input),
       apply: ({ jobId, tables, actions, confirmed, secrets }) => {
         const sync = service();
-        const target = sqlProfile(sync.dataTarget(jobId), 'target');
+        const target = syncProfile(sync.dataTarget(jobId), 'target');
         checkSyncApply(target, confirmed);
         const applyId = sync.startDataApply(
           { jobId, tables, actions, confirmed: confirmed === true },
