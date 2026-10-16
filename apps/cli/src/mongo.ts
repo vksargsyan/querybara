@@ -142,10 +142,10 @@ async function checkCommand(
 }
 
 /** Connects to a MongoDB target (through its tunnel), asking for a password once if refused. */
-async function openMongo(
+export async function openMongo(
   runtime: Runtime,
   target: Target,
-  options: QueryOptions,
+  options: Pick<QueryOptions, 'tunnel'>,
 ): Promise<TransportSession & { readonly target: Target }> {
   const adapter = runtime.ctx.adapters('mongodb');
   const open = (current: Target): Promise<TransportSession> =>

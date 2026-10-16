@@ -38,6 +38,8 @@ import { singleLine, truncateToWidth } from '../output/width';
 import { formatDuration, openTarget, plural, writeLine, type Runtime } from '../runtime';
 import { confirmOperation } from '../safety';
 import type { TargetOverrides } from '../target';
+import { isMongoPair } from './compare';
+import { mongoDataCompareCommand } from './mongo-data-compare';
 
 export interface DataCompareCommandOptions {
   /** Source table, `schema.table` on PostgreSQL. */
@@ -59,6 +61,10 @@ export interface DataCompareCommandOptions {
   readonly showRows: number;
   readonly batchSize?: number;
   readonly disableForeignKeyChecks?: boolean;
+  /** MongoDB: documents whose fields differ only in order are different. */
+  readonly fieldOrder?: boolean;
+  /** MongoDB: Int32 1, Long 1 and Double 1.0 are equal. */
+  readonly ignoreNumberTypes?: boolean;
   readonly tls?: TlsMode;
   readonly tunnel?: TargetOverrides['tunnel'];
 }
@@ -91,6 +97,12 @@ export async function dataCompareCommand(
   targetSpec: string,
   options: DataCompareCommandOptions,
 ): Promise<ExitCode> {
+  if (isMongoPair(runtime, sourceSpec, targetSpec)) {
+    return mongoDataCompareCommand(runtime, sourceSpec, targetSpec, options);
+  }
+  if (options.fieldOrder || options.ignoreNumberTypes) {
+    throw new CliError('--field-order and --ignore-number-types apply to MongoDB collections');
+  }
   const overrides: TargetOverrides = {
     ...(options.tls !== undefined ? { tls: options.tls } : {}),
     ...(options.tunnel !== undefined ? { tunnel: options.tunnel } : {}),

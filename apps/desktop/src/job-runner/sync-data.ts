@@ -20,6 +20,8 @@ import type {
 } from '@querybara/ipc';
 import {
   DataSyncScriptBuilder,
+  MONGO_SYNC_PRELUDE,
+  mongoSyncLine,
   columnIndex,
   compareTableData,
   dataSyncOrder,
@@ -578,6 +580,7 @@ export async function dataSyncScript(input: {
       await write('// Querybara data sync');
       await write(`// ${plural(total, 'command')}; each runs on its own (no transaction)`);
       await write(`db = db.getSiblingDB(${JSON.stringify(manifest.database ?? '')});`);
+      for (const line of MONGO_SYNC_PRELUDE) await write(line);
       if (units.length === 0) await write('// No differences to sync');
     } else {
       await write('-- Querybara data sync');
@@ -590,7 +593,7 @@ export async function dataSyncScript(input: {
       await write('');
       await write(unitComment(unit, mongo));
       for await (const sql of unitStatements(input.spoolDir, unit)) {
-        await write(mongo ? `db.runCommand(${sql});` : `${sql};`);
+        await write(mongo ? mongoSyncLine(sql) : `${sql};`);
       }
     }
     await out.close();

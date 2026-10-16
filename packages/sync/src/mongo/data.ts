@@ -323,11 +323,32 @@ function parseId(idText: string): BsonValue {
   return EJSON.deserialize({ v: JSON.parse(idText) }, { relaxed: false })['v'] as BsonValue;
 }
 
-/** The mongosh lines that run `statements` against `database`. */
+/**
+ * mongosh lines defining `sync`, which runs one command and throws on the write errors that
+ * `db.runCommand` only reports (a duplicate key, a document the validator rejects), so a data
+ * script stops at the first failure.
+ */
+export const MONGO_SYNC_PRELUDE: readonly string[] = [
+  '// db.runCommand reports write errors without throwing; sync() stops at the first one.',
+  'function sync(command) {',
+  '  const reply = db.runCommand(command);',
+  '  const error = (reply.writeErrors || [])[0] || reply.writeConcernError;',
+  '  if (error) throw new Error(`${Object.keys(command)[0]} ${command[Object.keys(command)[0]]}: ${error.errmsg}`);',
+  '  return reply;',
+  '}',
+];
+
+/** One data sync command as a mongosh line (see MONGO_SYNC_PRELUDE). */
+export function mongoSyncLine(statement: string): string {
+  return `sync(${statement});`;
+}
+
+/** The mongosh data sync script that runs `statements` against `database`. */
 export function mongoScript(database: string, statements: readonly string[]): string {
   return [
     `db = db.getSiblingDB(${JSON.stringify(database)});`,
-    ...statements.map((s) => `db.runCommand(${s});`),
+    ...MONGO_SYNC_PRELUDE,
+    ...statements.map(mongoSyncLine),
   ].join('\n');
 }
 

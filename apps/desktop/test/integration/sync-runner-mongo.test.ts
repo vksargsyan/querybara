@@ -258,7 +258,8 @@ describe.skipIf(!MONGO_URL)('MongoDB sync in the job runner', () => {
     });
     const text = readFileSync(scriptPath, 'utf8');
     expect(text).toContain(`db = db.getSiblingDB("${targetDb}");`);
-    expect(text).toContain("db.runCommand({ delete: 'customers'");
+    expect(text).toContain("sync({ delete: 'customers'");
+    expect(text).toContain('function sync(command) {');
 
     const applied = await job(
       {

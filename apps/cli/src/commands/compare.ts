@@ -6,6 +6,7 @@ import {
   compareSchemas,
   generateScript,
   renderHtmlReport,
+  runMongoCommand,
   setAllSelected,
   type CompareOptions,
   type GeneratedScript,
@@ -16,9 +17,10 @@ import {
 
 import { cancellable, closeQuietly, drain, type Connection } from '../connect';
 import { CliError, EXIT, formatError, type ExitCode } from '../errors';
+import { engineOf, openMongo } from '../mongo';
 import { compareFlags, type IgnoreName } from '../options';
 import type { Style } from '../reporter';
-import { formatDuration, openTarget, plural, writeLine, type Runtime } from '../runtime';
+import { formatDuration, openTarget, plural, targetFor, writeLine, type Runtime } from '../runtime';
 import { confirmOperation } from '../safety';
 import type { TargetOverrides } from '../target';
 
@@ -43,6 +45,60 @@ export interface CompareCommandOptions {
   readonly tunnel?: TargetOverrides['tunnel'];
 }
 
+/** What compare needs of an open side, SQL or MongoDB. */
+type SyncConnection = Pick<Connection, 'session' | 'target' | 'close'>;
+
+/** Opens a MongoDB side; the other side must be MongoDB too. */
+async function openMongoSide(
+  runtime: Runtime,
+  spec: string,
+  overrides: TargetOverrides,
+): Promise<SyncConnection> {
+  const target = await targetFor(runtime, spec, overrides);
+  if (target.profile.engine !== 'mongodb') {
+    throw new CliError(
+      `Cannot compare ${ENGINES[target.profile.engine].displayName} with MongoDB`,
+      {
+        code: 'NOT_SUPPORTED',
+        hint: 'MongoDB compares with MongoDB; move data between engines with "querybara transfer"',
+      },
+    );
+  }
+  if (!target.profile.options.defaultDatabase) {
+    throw new CliError(`Name the database to compare in "${target.label}"`, {
+      hint: 'Put it in the URI path: mongodb://host/<database>',
+    });
+  }
+  return openMongo(runtime, target, overrides);
+}
+
+/** Opens one side of a compare: MongoDB targets through `openMongo`, SQL ones as usual. */
+export function openSyncSide(
+  runtime: Runtime,
+  spec: string,
+  overrides: TargetOverrides,
+  mongo: boolean,
+): Promise<SyncConnection> {
+  return mongo ? openMongoSide(runtime, spec, overrides) : openTarget(runtime, spec, overrides);
+}
+
+/** Either target names a MongoDB connection. */
+export function isMongoPair(runtime: Runtime, sourceSpec: string, targetSpec: string): boolean {
+  return engineOf(runtime, sourceSpec) === 'mongodb' || engineOf(runtime, targetSpec) === 'mongodb';
+}
+
+/** Runs one script statement: MongoDB command documents fail on their write errors too. */
+export async function runSyncStatement(
+  runtime: Runtime,
+  session: Connection['session'],
+  sql: string,
+): Promise<void> {
+  await cancellable(runtime.interrupts, session, async (execution) => {
+    if (session.engine === 'mongodb') await runMongoCommand(session, sql, execution.signal);
+    else await drain(session, sql, execution);
+  });
+}
+
 /**
  * `querybara compare <source> <target>`: structure compare (spec §13). Introspects both sides,
  * diffs them, prints the operations (or JSON), writes the script and HTML report, and with
@@ -63,11 +119,12 @@ export async function compareCommand(
     ...(options.tls !== undefined ? { tls: options.tls } : {}),
     ...(options.tunnel !== undefined ? { tunnel: options.tunnel } : {}),
   };
-  let source: Connection | undefined;
-  let target: Connection | undefined;
+  const mongo = isMongoPair(runtime, sourceSpec, targetSpec);
+  let source: SyncConnection | undefined;
+  let target: SyncConnection | undefined;
   try {
-    source = await openTarget(runtime, sourceSpec, overrides);
-    target = await openTarget(runtime, targetSpec, overrides);
+    source = await openSyncSide(runtime, sourceSpec, overrides, mongo);
+    target = await openSyncSide(runtime, targetSpec, overrides, mongo);
     return await runCompare(runtime, source, target, options);
   } finally {
     await closeQuietly(source);
@@ -77,25 +134,26 @@ export async function compareCommand(
 
 async function runCompare(
   runtime: Runtime,
-  source: Connection,
-  target: Connection,
+  source: SyncConnection,
+  target: SyncConnection,
   options: CompareCommandOptions,
 ): Promise<ExitCode> {
   const { reporter } = runtime;
-  const family = (engine: string): string => (engine === 'postgres' ? 'postgres' : 'mysql');
+  const family = (engine: string): string =>
+    engine === 'postgres' || engine === 'mongodb' ? engine : 'mysql';
   if (family(source.session.engine) !== family(target.session.engine)) {
     throw new CliError(
       `Cannot compare ${ENGINES[source.session.engine].displayName} with ${ENGINES[target.session.engine].displayName}`,
       {
         code: 'NOT_SUPPORTED',
-        hint: 'Structure sync pairs PostgreSQL with PostgreSQL and MySQL/MariaDB with MySQL/MariaDB',
+        hint: 'Structure sync pairs PostgreSQL with PostgreSQL, MySQL/MariaDB with MySQL/MariaDB and MongoDB with MongoDB',
       },
     );
   }
   const pg = source.session.engine === 'postgres';
   if (!pg && options.schemas.length > 0) {
     reporter.warn(
-      '--schema applies to PostgreSQL; MySQL and MariaDB compare the connected database',
+      '--schema applies to PostgreSQL; MySQL, MariaDB and MongoDB compare the connected database',
     );
   }
   const scope: IntrospectScope =
@@ -226,7 +284,7 @@ async function runCompare(
  */
 async function applyScript(
   runtime: Runtime,
-  connection: Connection,
+  connection: SyncConnection,
   diff: SchemaDiff,
   script: GeneratedScript,
   options: CompareCommandOptions,
@@ -258,7 +316,9 @@ async function applyScript(
   const question = `Apply ${plural(selected.length, 'operation')}${destructive > 0 ? ` (${destructive} destructive)` : ''} to "${target.label}"?`;
   if (!script.transactional) {
     reporter.warn(
-      `${ENGINES[session.engine].displayName} runs DDL outside transactions: if a statement fails, the statements before it stay applied and the target is left part-way. Back up the target first.`,
+      session.engine === 'mongodb'
+        ? 'MongoDB runs the commands one by one: if a command fails, the commands before it stay applied and the target is left part-way. Back up the target first.'
+        : `${ENGINES[session.engine].displayName} runs DDL outside transactions: if a statement fails, the statements before it stay applied and the target is left part-way. Back up the target first.`,
     );
     await confirmOperation(question, {
       yes: options.yes,
@@ -279,7 +339,7 @@ async function applyScript(
     reporter.progress(`Applying ${i + 1}/${statements.length}: ${firstLine(sql)}`);
     reporter.debug(`apply [${i + 1}/${statements.length}] ${firstLine(sql)}`);
     try {
-      await cancellable(interrupts, session, (execution) => drain(session, sql, execution));
+      await runSyncStatement(runtime, session, sql);
     } catch (error) {
       reporter.clearProgress();
       if (session.inTransaction) await drain(session, 'ROLLBACK').catch(() => undefined);
@@ -402,11 +462,11 @@ function operationJson(op: SyncOperation): Record<string, unknown> {
 export function diffJson(
   diff: SchemaDiff,
   script: GeneratedScript,
-  source: Pick<Connection, 'target' | 'session'>,
-  target: Pick<Connection, 'target' | 'session'>,
+  source: Pick<SyncConnection, 'target' | 'session'>,
+  target: Pick<SyncConnection, 'target' | 'session'>,
 ): Record<string, unknown> {
   const side = (
-    c: Pick<Connection, 'target' | 'session'>,
+    c: Pick<SyncConnection, 'target' | 'session'>,
     database: string,
   ): Record<string, unknown> => ({
     label: c.target.label,

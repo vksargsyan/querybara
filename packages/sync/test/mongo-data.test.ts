@@ -275,9 +275,10 @@ describe('MongoDataSyncScriptBuilder', () => {
       delete: 'c',
       deletes: [{ q: { _id: new ObjectId('64b7f0000000000000000001') }, limit: new Int32(1) }],
     });
-    expect(mongoScript('app', statements.slice(2))).toBe(
-      `db = db.getSiblingDB("app");\ndb.runCommand(${statements[2]});`,
-    );
+    const script = mongoScript('app', statements.slice(2));
+    expect(script.startsWith('db = db.getSiblingDB("app");\n')).toBe(true);
+    expect(script).toContain('function sync(command) {');
+    expect(script.endsWith(`\nsync(${statements[2]});`)).toBe(true);
   });
 
   it('makes the target equal to the source (property)', async () => {

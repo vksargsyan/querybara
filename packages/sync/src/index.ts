@@ -23,8 +23,10 @@ export {
   DOCUMENT_COLUMNS,
   MongoDataSyncScriptBuilder,
   compareCollectionData,
+  MONGO_SYNC_PRELUDE,
   idDisplay,
   mongoScript,
+  mongoSyncLine,
 } from './mongo/data';
 export { runMongoCommand } from './mongo/run';
 export type { MongoCommandResult } from './mongo/run';

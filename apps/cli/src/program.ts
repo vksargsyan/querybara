@@ -457,10 +457,15 @@ first error. PostgreSQL scripts run in one transaction and roll back on failure.
 MariaDB DDL is not transactional, so --apply warns and needs --yes. After applying, both
 sides are compared again and the command fails unless no differences remain.
 
+MongoDB targets (name the database in the URI) compare collections with their options and
+validators, indexes and views; the script is a mongosh script of db.runCommand calls, and
+--apply needs --yes.
+
 Examples:
   querybara compare staging prod --out deploy.sql --html report.html
   querybara compare dev "postgres://app@localhost/app_test" --schema public --json
-  querybara compare model-db test-db --include-destructive --apply --yes`,
+  querybara compare model-db test-db --include-destructive --apply --yes
+  querybara compare mongodb://dev/app mongodb://prod/app --out deploy.js`,
     )
     .action((source: string, target: string, options: CompareCliOptions) => {
       schedule((runtime) =>
@@ -485,10 +490,15 @@ Examples:
   // data-compare -----------------------------------------------------------------------------
   program
     .command('data-compare')
-    .description('compare the rows of a table in two databases and optionally sync the target')
+    .description(
+      'compare the rows of a table (or the documents of a MongoDB collection) in two databases and optionally sync the target',
+    )
     .argument('<source>', 'the rows to copy from: profile or URI')
     .argument('<target>', 'the table to change: profile or URI')
-    .requiredOption('--table <name>', 'table to compare (schema.table on PostgreSQL)')
+    .requiredOption(
+      '--table <name>',
+      'table to compare (schema.table on PostgreSQL; the collection on MongoDB)',
+    )
     .option('--target-table <name>', 'table name on the target (default: the same)')
     .option('--key <columns>', 'key columns (default: primary key or unique NOT NULL key)', list)
     .option('--columns <columns>', 'compare only these columns', list)
@@ -503,6 +513,8 @@ Examples:
       ]),
     )
     .option('--case-insensitive', 'compare strings ignoring case')
+    .option('--field-order', 'MongoDB: documents whose fields differ only in order differ')
+    .option('--ignore-number-types', 'MongoDB: 1, 1.0 and NumberLong(1) are equal')
     .option('--show-rows <n>', 'row differences to print', nonNegativeInteger, 10)
     .option(
       '--batch-size <n>',
@@ -522,13 +534,16 @@ Examples:
       'after',
       `
 Ranges of keys are checksummed on both servers; only mismatched ranges are streamed and
-merged. Exit codes: 0 no differences (for the selected actions), 1 differences found or
-remaining after --apply, 2 error.
+merged. MongoDB collections are compared document by document in _id order; the script is a
+mongosh script, and --apply needs --yes (MongoDB writes run outside transactions). Exit codes:
+0 no differences (for the selected actions), 1 differences found or remaining after --apply,
+2 error.
 
 Examples:
   querybara data-compare prod staging --table public.plans
   querybara data-compare prod staging --table plans --actions insert,update --out sync.sql
-  querybara data-compare seed test --table countries --apply --yes`,
+  querybara data-compare seed test --table countries --apply --yes
+  querybara data-compare mongodb://prod/app mongodb://staging/app --table users --out sync.js`,
     )
     .action((source: string, target: string, options: DataCompareCliOptions) => {
       schedule((runtime) =>
@@ -548,6 +563,8 @@ Examples:
             : {}),
           ...(options.trim !== undefined ? { trim: options.trim } : {}),
           ...(options.caseInsensitive ? { caseInsensitive: true } : {}),
+          ...(options.fieldOrder ? { fieldOrder: true } : {}),
+          ...(options.ignoreNumberTypes ? { ignoreNumberTypes: true } : {}),
           ...(options.batchSize !== undefined ? { batchSize: options.batchSize } : {}),
           ...(options.disableFkChecks ? { disableForeignKeyChecks: true } : {}),
           ...(options.out !== undefined ? { out: options.out } : {}),
@@ -1300,6 +1317,8 @@ interface DataCompareCliOptions extends TunnelCliOptions {
   floatTolerance?: number;
   trim?: 'none' | 'trailing' | 'both';
   caseInsensitive?: boolean;
+  fieldOrder?: boolean;
+  ignoreNumberTypes?: boolean;
   showRows: number;
   batchSize?: number;
   disableFkChecks?: boolean;
