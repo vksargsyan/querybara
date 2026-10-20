@@ -110,6 +110,7 @@ function navicatPassword(plain: string): string {
 }
 
 describe('connection files in main', () => {
+  // Sealing and opening the file derive keys with scrypt: about 3 s alone, more on a busy runner.
   it('exports to an encrypted file and imports it into another store', async () => {
     const dir = tempDir();
     const source = setup();
@@ -197,7 +198,7 @@ describe('connection files in main', () => {
 
     expect(source.leaked()).toBe(false);
     expect(target.leaked()).toBe(false);
-  });
+  }, 30_000);
 
   it('imports the chosen connections of a Navicat file', async () => {
     const dir = tempDir();
