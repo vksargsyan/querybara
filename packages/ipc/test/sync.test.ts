@@ -161,6 +161,18 @@ describe('sync schemas', () => {
         actions: { insert: true, update: true, delete: true },
       }).success,
     ).toBe(false);
+    // Row ticks: per table and action, every row but these, or just these.
+    const rows = (mode: string, picked: number[]) =>
+      dataSelectionSchema.safeParse({
+        jobId: 'j1',
+        tables: [0],
+        actions: { insert: true, update: true, delete: true },
+        rows: [{ table: 0, action: 'delete', mode, rows: picked }],
+      }).success;
+    expect(rows('except', [0, 2])).toBe(true);
+    expect(rows('only', [])).toBe(true);
+    expect(rows('some', [1])).toBe(false);
+    expect(rows('only', [-1])).toBe(false);
     expect(
       savedComparisonSaveSchema.parse({
         name: '  Nightly  ',

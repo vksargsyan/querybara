@@ -167,14 +167,7 @@ export function DataApplyDialog(props: {
   }, [model]);
   const rules = rulesFor(result.target.profileId);
   const tables = result.tables.filter((t) => state.checked.includes(t.index));
-  const { actions } = state.options;
-  const sum = (pick: (t: (typeof tables)[number]) => number): number =>
-    tables.reduce((total, t) => total + pick(t), 0);
-  const counts = {
-    insert: actions.insert ? sum((t) => t.counts.inserts) : 0,
-    update: actions.update ? sum((t) => t.counts.updates) : 0,
-    delete: actions.delete ? sum((t) => t.counts.deletes) : 0,
-  };
+  const counts = model.actionTotals();
   const needsTick = rules.mustConfirm || counts.delete > 0;
   const mongo = result.target.engine === 'mongodb';
   const unit = mongo ? 'collection' : 'table';

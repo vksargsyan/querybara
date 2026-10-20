@@ -158,19 +158,19 @@ export function syncHandlers(
       result: ({ jobId }) => service().dataResult(jobId),
       rows: (input) => service().dataRows(input),
       preview: (input) => service().dataPreview(input),
-      apply: ({ jobId, tables, actions, confirmed, secrets }) => {
+      apply: ({ jobId, tables, actions, rows, confirmed, secrets }) => {
         const sync = service();
         const target = syncProfile(sync.dataTarget(jobId), 'target');
         checkSyncApply(target, confirmed);
         const applyId = sync.startDataApply(
-          { jobId, tables, actions, confirmed: confirmed === true },
+          { jobId, tables, actions, rows, confirmed: confirmed === true },
           resolve(target, secrets),
         );
         return { jobId: applyId };
       },
-      export: ({ jobId, tables, actions, path }) => {
+      export: ({ jobId, tables, actions, rows, path }) => {
         grants.checkWrite(path);
-        return service().exportData({ jobId, tables, actions, path });
+        return service().exportData({ jobId, tables, actions, rows, path });
       },
     },
     discard: ({ jobId }) => {

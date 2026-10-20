@@ -11,7 +11,11 @@ import { z } from 'zod';
  * - `manifest.json`: the compared tables, their row layout and the apply order;
  * - `rows-<table>-<action>-<page>.json`: up to `SPOOL_PAGE_SIZE` row differences, as display
  *   text, for the first `SPOOL_MAX_ROWS` differences of each table and action;
- * - `sql-<table>-<action>.jsonl`: every sync statement, one JSON string per line.
+ * - `sql-<table>-<action>.jsonl`: every sync statement, one JSON string per line;
+ * - `diffs-<table>-<action>.jsonl`: the row differences the grid shows, as the compare produced
+ *   them (V8-serialised, base64, one per line), so a sync of only some of them can build its
+ *   statements again. The builder is flushed after the last of them, so the first
+ *   `headStatements` statements cover exactly those rows and the rest cover the rows after.
  *
  * A MongoDB compare spools collections as tables keyed by `_id`; its row pages show the `_id`,
  * the top-level fields concerned and their values, and its statements are command documents.
@@ -35,6 +39,10 @@ export function statementsFile(table: number, action: DataRowAction): string {
   return `sql-${table}-${action}.jsonl`;
 }
 
+export function diffsFile(table: number, action: DataRowAction): string {
+  return `diffs-${table}-${action}.jsonl`;
+}
+
 export const rowPageFileSchema = z.array(dataRowDiffSchema);
 
 /** One compared table, with what applying needs to rebuild its statements' frame. */
@@ -44,6 +52,14 @@ export const spoolTableSchema = dataTableResultSchema.extend({
   /** Column order of the spooled target rows, and the target's names. */
   targetColumns: z.array(z.string()),
   targetKinds: z.record(z.string(), z.enum(COLUMN_KINDS)),
+  /** Statements per action that cover the stored rows (the first ones of the file). */
+  headStatements: z
+    .object({
+      insert: z.number().int().nonnegative(),
+      update: z.number().int().nonnegative(),
+      delete: z.number().int().nonnegative(),
+    })
+    .optional(),
 });
 export type SpoolTable = z.infer<typeof spoolTableSchema>;
 

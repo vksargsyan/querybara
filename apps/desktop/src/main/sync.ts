@@ -16,6 +16,7 @@ import {
   type DataResult,
   type DataRowAction,
   type DataRowPage,
+  type DataRowSelection,
   type DataScriptPreview,
   type JobInfo,
   type StructureCompareInput,
@@ -86,6 +87,11 @@ function sideOf(side: SyncSide): JobSide {
 
 function sideLabel(profile: ConnectionProfile, side: JobSide): string {
   return side.database !== undefined ? `${profile.name} (${side.database})` : profile.name;
+}
+
+/** A selection's row ticks for a runner request: left out when every row syncs. */
+function rowsOf(rows: readonly DataRowSelection[] | undefined): { rows?: DataRowSelection[] } {
+  return rows !== undefined && rows.length > 0 ? { rows: [...rows] } : {};
 }
 
 function gone(): QuerybaraError {
@@ -349,6 +355,7 @@ export class SyncService {
     readonly jobId: string;
     readonly tables: readonly number[];
     readonly actions: DataActions;
+    readonly rows?: readonly DataRowSelection[] | undefined;
   }): Promise<DataScriptPreview> {
     const entry = this.#data(input.jobId);
     const answer = await this.#jobs.request({
@@ -357,6 +364,7 @@ export class SyncService {
         spoolDir: entry.spoolDir,
         tables: [...input.tables],
         actions: input.actions,
+        ...rowsOf(input.rows),
         limit: DATA_PREVIEW_STATEMENTS,
       },
     });
@@ -369,6 +377,7 @@ export class SyncService {
       readonly jobId: string;
       readonly tables: readonly number[];
       readonly actions: DataActions;
+      readonly rows?: readonly DataRowSelection[] | undefined;
       readonly confirmed: boolean;
     },
     target: ResolvedProfile,
@@ -381,6 +390,7 @@ export class SyncService {
       spoolDir: entry.spoolDir,
       tables: [...input.tables],
       actions: input.actions,
+      ...rowsOf(input.rows),
       confirmed: input.confirmed,
     };
     return this.#jobs.start(spec, target, {
@@ -395,6 +405,7 @@ export class SyncService {
     readonly jobId: string;
     readonly tables: readonly number[];
     readonly actions: DataActions;
+    readonly rows?: readonly DataRowSelection[] | undefined;
     readonly path: string;
   }): Promise<{ bytes: number }> {
     const entry = this.#data(input.jobId);
@@ -405,6 +416,7 @@ export class SyncService {
           spoolDir: entry.spoolDir,
           tables: [...input.tables],
           actions: input.actions,
+          ...rowsOf(input.rows),
           path: input.path,
         },
       }),

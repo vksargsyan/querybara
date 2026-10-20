@@ -73,7 +73,8 @@ What works today:
   depends on the table.
 - **Structure sync**: compare two databases, review create / alter / drop operations with
   destructive ones unselected, generate a dependency-ordered script, apply it, and re-compare
-  to zero differences. Data compare with server-side range checksums and sync scripts.
+  to zero differences. Data compare with server-side range checksums and sync scripts; tick or
+  untick single rows to insert, update or delete.
   Comparisons can be saved and re-run. MongoDB databases compare too: collections with their
   options and validators, indexes and views, scripted for mongosh; documents compared by
   `_id`, with the fields that differ shown and synced in batched commands.

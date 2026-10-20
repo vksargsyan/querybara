@@ -5,6 +5,7 @@ import type {
   DataResult,
   DataRowAction,
   DataRowPage,
+  DataRowSelection,
   DataScriptPreview,
   DataTableResult,
   DataTableSettings,
@@ -33,7 +34,8 @@ import type { RunningJob } from './structure';
  * applying) → a compare job over the tables that pair by name and share a key (the others are
  * listed with the reason) → counts per table and a paged row diff grid → the sync script
  * exported, or applied in batched transactions as a job, after which the tables are compared
- * again. Per-table column subsets take effect on the next compare.
+ * again. Per-table column subsets take effect on the next compare. Rows can be unticked in the
+ * grid, per table and action, to leave them out of the script and the apply.
  */
 
 export interface DataOptionsDraft {
@@ -64,6 +66,19 @@ export const DEFAULT_DATA_OPTIONS: DataOptionsDraft = {
   ignoreNumericTypes: false,
 };
 
+/**
+ * Row ticks of one table and action that leave something out: `except` syncs every row but
+ * `rows`, `only` just `rows` (rows numbered from 0 in grid order).
+ */
+export interface RowTicks {
+  readonly mode: DataRowSelection['mode'];
+  readonly rows: readonly number[];
+}
+
+export function rowTicksKey(table: number, action: DataRowAction): string {
+  return `${table}:${action}`;
+}
+
 export interface DataCompareState {
   readonly source: SideDraft;
   readonly target: SideDraft;
@@ -74,6 +89,8 @@ export interface DataCompareState {
   readonly result: DataResult | undefined;
   /** Indexes of the tables ticked for syncing. */
   readonly checked: readonly number[];
+  /** Tables and actions that sync only some rows, by `rowTicksKey`; absent: every row. */
+  readonly rowTicks: Readonly<Record<string, RowTicks>>;
   /** The table whose rows the grid shows. */
   readonly focused: number | undefined;
   readonly rowAction: DataRowAction;
@@ -118,12 +135,37 @@ function draftOf(settings: DataComparisonSettings | undefined): {
   };
 }
 
-/** Rows a table needs changed for the chosen actions. */
-export function pendingChanges(table: DataTableResult, actions: DataActions): number {
-  return (
-    (actions.insert ? table.counts.inserts : 0) +
-    (actions.update ? table.counts.updates : 0) +
-    (actions.delete ? table.counts.deletes : 0)
+export function actionCount(table: DataTableResult, action: DataRowAction): number {
+  return action === 'insert'
+    ? table.counts.inserts
+    : action === 'update'
+      ? table.counts.updates
+      : table.counts.deletes;
+}
+
+/** Rows of a table and action that sync, given the row ticks. */
+export function syncedRows(
+  table: DataTableResult,
+  action: DataRowAction,
+  rowTicks: Readonly<Record<string, RowTicks>> = {},
+): number {
+  const ticks = rowTicks[rowTicksKey(table.index, action)];
+  const total = actionCount(table, action);
+  if (!ticks) return total;
+  return ticks.mode === 'only' ? ticks.rows.length : total - ticks.rows.length;
+}
+
+const ACTIONS: readonly DataRowAction[] = ['insert', 'update', 'delete'];
+
+/** Rows a table needs changed for the chosen actions (and row ticks). */
+export function pendingChanges(
+  table: DataTableResult,
+  actions: DataActions,
+  rowTicks: Readonly<Record<string, RowTicks>> = {},
+): number {
+  return ACTIONS.reduce(
+    (sum, action) => sum + (actions[action] ? syncedRows(table, action, rowTicks) : 0),
+    0,
   );
 }
 
@@ -131,8 +173,6 @@ export function pendingChanges(table: DataTableResult, actions: DataActions): nu
 export function differs(table: DataTableResult): boolean {
   return table.counts.inserts + table.counts.updates + table.counts.deletes > 0;
 }
-
-const ACTIONS: readonly DataRowAction[] = ['insert', 'update', 'delete'];
 
 export class DataCompare {
   readonly store: StoreApi<DataCompareState>;
@@ -153,6 +193,7 @@ export class DataCompare {
       running: undefined,
       result: undefined,
       checked: [],
+      rowTicks: {},
       focused: undefined,
       rowAction: 'insert',
       rows: undefined,
@@ -314,6 +355,7 @@ export class DataCompare {
       this.#set({
         result,
         checked: result.tables.filter((t) => differs(t) && !t.error).map((t) => t.index),
+        rowTicks: {},
         running: undefined,
         stale: false,
         rows: undefined,
@@ -342,6 +384,51 @@ export class DataCompare {
     this.#set({ checked: [...current].sort((a, b) => a - b) });
   }
 
+  /** Whether a row of a table and action syncs (rows numbered from 0 in grid order). */
+  rowTicked(table: number, action: DataRowAction, row: number): boolean {
+    const ticks = this.state.rowTicks[rowTicksKey(table, action)];
+    if (!ticks) return true;
+    return ticks.rows.includes(row) === (ticks.mode === 'only');
+  }
+
+  /** Ticks or unticks one row; ticking a row of an unticked table ticks the table. */
+  tickRow(table: number, action: DataRowAction, row: number, ticked: boolean): void {
+    const entry = this.state.result?.tables.find((t) => t.index === table);
+    if (!entry || row >= entry.stored[action]) return;
+    const key = rowTicksKey(table, action);
+    const current = this.state.rowTicks[key] ?? { mode: 'except', rows: [] };
+    const listed = current.mode === 'only' ? ticked : !ticked;
+    const rows = current.rows.filter((r) => r !== row);
+    if (listed) rows.push(row);
+    rows.sort((a, b) => a - b);
+    // Every row is in the grid: all ticked or all unticked, said the short way.
+    const total = actionCount(entry, action);
+    const all = entry.stored[action] === total && rows.length === total;
+    const next: RowTicks | undefined =
+      current.mode === 'only'
+        ? all
+          ? undefined
+          : { mode: 'only', rows }
+        : all
+          ? { mode: 'only', rows: [] }
+          : rows.length === 0
+            ? undefined
+            : { mode: 'except', rows };
+    this.#setRowTicks(key, next);
+    if (ticked && !this.state.checked.includes(table)) this.toggleTable(table, true);
+  }
+
+  /** Ticks or unticks every row of a table and action, the ones past the grid's included. */
+  tickAllRows(table: number, action: DataRowAction, ticked: boolean): void {
+    this.#setRowTicks(rowTicksKey(table, action), ticked ? undefined : { mode: 'only', rows: [] });
+    if (ticked && !this.state.checked.includes(table)) this.toggleTable(table, true);
+  }
+
+  #setRowTicks(key: string, ticks: RowTicks | undefined): void {
+    const { [key]: _old, ...rest } = this.state.rowTicks;
+    this.#set({ rowTicks: ticks === undefined ? rest : { ...rest, [key]: ticks } });
+  }
+
   /** Shows a table's rows: the first action that has any. */
   async focus(index: number): Promise<void> {
     const table = this.state.result?.tables.find((t) => t.index === index);
@@ -367,20 +454,45 @@ export class DataCompare {
     }
   }
 
-  /** The tables and actions an apply or script covers. */
-  selection(): { jobId: string; tables: number[]; actions: DataActions } | undefined {
-    const { result, checked, options } = this.state;
+  /** The tables, actions and row ticks an apply or script covers. */
+  selection():
+    | { jobId: string; tables: number[]; actions: DataActions; rows?: DataRowSelection[] }
+    | undefined {
+    const { result, checked, options, rowTicks } = this.state;
     if (!result || checked.length === 0) return undefined;
-    return { jobId: result.jobId, tables: [...checked], actions: options.actions };
+    const rows: DataRowSelection[] = [];
+    for (const table of checked) {
+      for (const action of ACTIONS) {
+        const ticks = rowTicks[rowTicksKey(table, action)];
+        if (ticks && options.actions[action])
+          rows.push({ table, action, ...ticks, rows: [...ticks.rows] });
+      }
+    }
+    return {
+      jobId: result.jobId,
+      tables: [...checked],
+      actions: options.actions,
+      ...(rows.length > 0 ? { rows } : {}),
+    };
   }
 
   /** Changes the selection would make, over the ticked tables. */
   pendingTotal(): number {
-    const { result, checked, options } = this.state;
-    if (!result) return 0;
-    return result.tables
-      .filter((t) => checked.includes(t.index))
-      .reduce((sum, t) => sum + pendingChanges(t, options.actions), 0);
+    const totals = this.actionTotals();
+    return totals.insert + totals.update + totals.delete;
+  }
+
+  /** Changes per action the selection would make, over the ticked tables and rows. */
+  actionTotals(): Record<DataRowAction, number> {
+    const { result, checked, options, rowTicks } = this.state;
+    const totals = { insert: 0, update: 0, delete: 0 };
+    for (const table of result?.tables ?? []) {
+      if (!checked.includes(table.index)) continue;
+      for (const action of ACTIONS) {
+        if (options.actions[action]) totals[action] += syncedRows(table, action, rowTicks);
+      }
+    }
+    return totals;
   }
 
   /** The start of the sync script, for the review before applying. */
@@ -439,11 +551,12 @@ export class DataCompare {
         const left = this.state.result.tables
           .filter((t) => synced.has(t.name))
           .reduce((sum, t) => sum + pendingChanges(t, selection.actions), 0);
+        const unticked = selection.rows !== undefined;
         this.#set({
           notice: `${applied}. Compared again: ${
             left === 0
               ? `no differences remain in the synced ${result.target.engine === 'mongodb' ? 'collections' : 'tables'}.`
-              : `${left} ${left === 1 ? 'difference remains' : 'differences remain'}.`
+              : `${left} ${left === 1 ? 'difference remains' : 'differences remain'}${unticked ? ', the unticked rows among them' : ''}.`
           }`,
         });
       }

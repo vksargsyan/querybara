@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import { defaultSelection, structureScript } from '../src/job-runner/sync-structure';
 import type { SyncApi } from '../src/renderer/src/state/sync/api';
-import { DataCompare, pendingChanges } from '../src/renderer/src/state/sync/data';
+import { DataCompare, pendingChanges, syncedRows } from '../src/renderer/src/state/sync/data';
 import {
   jobFailure,
   pairProblem,
@@ -673,6 +673,62 @@ describe('data compare', () => {
       'Applied 3 row changes to 1 table. Compared again: no differences remain in the synced tables.',
     );
     expect(compare.state.checked).toEqual([]);
+  });
+
+  it('syncs only the ticked rows, and sends the ticks with the apply', async () => {
+    const { compare, calls, finish } = model();
+    await compare.compare();
+    compare.setOptions({ actions: { insert: true, update: true, delete: true } });
+    expect(compare.pendingTotal()).toBe(4);
+    // Unticking one of the two inserts leaves the other.
+    compare.tickRow(0, 'insert', 1, false);
+    expect(compare.rowTicked(0, 'insert', 0)).toBe(true);
+    expect(compare.rowTicked(0, 'insert', 1)).toBe(false);
+    expect(syncedRows(compare.state.result!.tables[0]!, 'insert', compare.state.rowTicks)).toBe(1);
+    expect(compare.pendingTotal()).toBe(3);
+    // Unticking the last row says "none" the short way; ticking it back clears the entry.
+    compare.tickRow(0, 'insert', 0, false);
+    expect(compare.state.rowTicks['0:insert']).toEqual({ mode: 'only', rows: [] });
+    compare.tickRow(0, 'insert', 0, true);
+    expect(compare.state.rowTicks['0:insert']).toEqual({ mode: 'only', rows: [0] });
+    compare.tickAllRows(0, 'delete', false);
+    expect(compare.actionTotals()).toEqual({ insert: 1, update: 1, delete: 0 });
+    // Rows past the grid's cannot be named.
+    compare.tickRow(0, 'update', 5, false);
+    expect(compare.state.rowTicks['0:update']).toBeUndefined();
+    // Ticking a row of an unticked table ticks the table.
+    compare.toggleTable(0, false);
+    expect(compare.pendingTotal()).toBe(0);
+    compare.tickRow(0, 'insert', 1, true);
+    expect(compare.state.checked).toEqual([0]);
+    expect(compare.state.rowTicks['0:insert']).toBeUndefined();
+    compare.tickRow(0, 'insert', 1, false);
+    finish.set('data-apply', {
+      state: 'completed',
+      summary: {
+        status: 'completed',
+        rowsRead: 0,
+        rowsWritten: 2,
+        rowsSkipped: 0,
+        durationMs: 2,
+        outcome: 'Applied 2 row changes to 1 table',
+      },
+    });
+    expect(await compare.apply(true)).toBe(true);
+    expect(calls.applyData).toEqual([
+      {
+        jobId: 'data-1',
+        tables: [0],
+        actions: { insert: true, update: true, delete: true },
+        rows: [
+          { table: 0, action: 'insert', mode: 'except', rows: [1] },
+          { table: 0, action: 'delete', mode: 'only', rows: [] },
+        ],
+        confirmed: true,
+      },
+    ]);
+    // The re-compare starts over with every row ticked.
+    expect(compare.state.rowTicks).toEqual({});
   });
 
   it('sends the MongoDB options for a MongoDB pair', async () => {

@@ -365,7 +365,23 @@ describe.each(ENGINES)('%s', (dialect: SqlDialect, url: string | undefined) => {
     });
     expect(readFileSync(scriptPath, 'utf8')).toMatch(/INSERT INTO[\s\S]*five/);
 
-    const applied = await job(
+    // Only the update ticked in the row grid: the insert and the delete stay.
+    const unticked = [
+      { table: items.index, action: 'insert' as const, mode: 'only' as const, rows: [] },
+      { table: items.index, action: 'delete' as const, mode: 'except' as const, rows: [0] },
+    ];
+    const partialPreview = await request<DataScriptPreview>({
+      kind: 'sync-data-script',
+      input: {
+        spoolDir,
+        tables: [items.index],
+        actions: { insert: true, update: true, delete: true },
+        rows: unticked,
+      },
+    });
+    expect(partialPreview.statements.filter((s) => /^(INSERT|DELETE)/.test(s))).toEqual([]);
+    expect(partialPreview.statements.some((s) => s.startsWith('UPDATE'))).toBe(true);
+    const partial = await job(
       {
         kind: 'data-apply',
         profileId: 'target',
@@ -373,12 +389,32 @@ describe.each(ENGINES)('%s', (dialect: SqlDialect, url: string | undefined) => {
         spoolDir,
         tables: [items.index],
         actions: { insert: true, update: true, delete: true },
+        rows: unticked,
+        confirmed: false,
+      },
+      profile(targetDb),
+    );
+    expect(partial.error).toBeUndefined();
+    expect(partial.summary).toMatchObject({ status: 'completed', rowsWritten: 1 });
+    const restDir = mkdtempSync(join(work, `spool-${dialect}-`));
+    const rest = dataJobResultSchema.parse((await compare(restDir)).result);
+    const restItems = rest.tables.find((t) => t.name.endsWith('items'))!;
+    expect(restItems.counts).toMatchObject({ inserts: 1, updates: 0, deletes: 1, equal: 4 });
+
+    const applied = await job(
+      {
+        kind: 'data-apply',
+        profileId: 'target',
+        target: side(targetDb),
+        spoolDir: restDir,
+        tables: [restItems.index],
+        actions: { insert: true, update: true, delete: true },
         confirmed: false,
       },
       profile(targetDb),
     );
     expect(applied.error).toBeUndefined();
-    expect(applied.summary).toMatchObject({ status: 'completed', rowsWritten: 3 });
+    expect(applied.summary).toMatchObject({ status: 'completed', rowsWritten: 2 });
     expect(await rows(checkTarget!, 'SELECT id, name FROM items ORDER BY id')).toEqual([
       [1, 'one'],
       [2, 'two'],

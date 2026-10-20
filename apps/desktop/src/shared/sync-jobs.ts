@@ -3,6 +3,7 @@ import {
   dataActionsSchema,
   dataCompareOptionsSchema,
   dataResultSchema,
+  dataRowSelectionSchema,
   dataTableResultSchema,
   dataTableSettingsSchema,
   diffSummarySchema,
@@ -83,6 +84,8 @@ export const dataApplyJobSchema = z.object({
   spoolDir: pathSchema,
   tables: z.array(z.number().int().nonnegative()).min(1),
   actions: dataActionsSchema,
+  /** Tables and actions that sync only some of their rows. */
+  rows: z.array(dataRowSelectionSchema).optional(),
   confirmed: z.boolean(),
 });
 export type DataApplyJob = z.infer<typeof dataApplyJobSchema>;
@@ -119,6 +122,7 @@ export const syncRunnerRequestSchemas = [
       spoolDir: pathSchema,
       tables: z.array(z.number().int().nonnegative()).min(1),
       actions: dataActionsSchema,
+      rows: z.array(dataRowSelectionSchema).optional(),
       /** Write the script here; without it, answer with its first `limit` statements. */
       path: pathSchema.optional(),
       limit: z.number().int().min(1).max(10_000).optional(),
