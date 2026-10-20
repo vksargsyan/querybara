@@ -13,6 +13,21 @@ case "$redis_image" in
   *) server=redis-server cli=redis-cli ;;
 esac
 
+# On failure, show what the containers said: a server that exits or never listens otherwise
+# leaves only a timeout in the log.
+dump_containers() {
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    docker ps --all --filter name='^(mongo|redis)' --format '{{.Names}}: {{.Status}}' >&2 || true
+    for name in $(docker ps --all --filter name='^(mongo|redis)' --format '{{.Names}}'); do
+      echo "--- docker logs $name" >&2
+      docker logs --tail 200 "$name" >&2 || true
+    done
+  fi
+  return "$status"
+}
+trap dump_containers EXIT
+
 wait_for() {
   for _ in $(seq 1 90); do
     if "$@" >/dev/null 2>&1; then return 0; fi
