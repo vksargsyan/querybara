@@ -178,16 +178,30 @@ test('compares documents, applies an insert, an update and a delete, and compare
   await expect(changed).toContainText('{ seats: 3 }');
   await shot('mongodb-data-compare');
 
+  // The delete unticked in the row grid stays: the insert and the update are applied.
+  await view.getByRole('tab', { name: 'Deletes (1)' }).click();
+  await grid.getByRole('checkbox', { name: 'Sync 4', exact: true }).uncheck();
+  await expect(view.getByRole('tab', { name: 'Deletes (0 of 1)' })).toBeVisible();
+  await expect(grid.locator('tr[data-ticked="false"]')).toHaveCount(1);
+  await expect(view.getByText('2 changes in 1 collection')).toBeVisible();
+  await shot('mongodb-data-compare-row-ticks');
   await view.getByRole('button', { name: 'Apply…' }).click();
   const review = page.getByRole('alertdialog', { name: 'Review and apply the data changes' });
-  await expect(review.getByTestId('data-apply-script')).toContainText(
-    "db.runCommand({ delete: 'customers'",
+  const script = review.getByTestId('data-apply-script');
+  await expect(script).toContainText("db.runCommand({ insert: 'customers'");
+  await expect(script).not.toContainText("delete: 'customers'");
+  await review.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(view.getByTestId('sync-notice')).toContainText(
+    'Applied 2 document changes to 1 collection. Compared again: 1 difference remains, the unticked rows among them.',
   );
+
+  await view.getByRole('button', { name: 'Apply…' }).click();
+  await expect(script).toContainText("db.runCommand({ delete: 'customers'");
   await review
     .getByRole('checkbox', { name: 'I want to delete 1 document from the target' })
     .check();
   await review.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(view.getByTestId('sync-notice')).toContainText(
-    'Applied 3 document changes to 1 collection. Compared again: no differences remain in the synced collections.',
+    'Applied 1 document change to 1 collection. Compared again: no differences remain in the synced collections.',
   );
 });

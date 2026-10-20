@@ -261,7 +261,8 @@ describe.skipIf(!MONGO_URL)('MongoDB sync in the job runner', () => {
     expect(text).toContain("sync({ delete: 'customers'");
     expect(text).toContain('function sync(command) {');
 
-    const applied = await job(
+    // Only the update ticked in the row grid: the insert and the delete stay.
+    const partial = await job(
       {
         kind: 'data-apply',
         profileId: 'target',
@@ -269,12 +270,35 @@ describe.skipIf(!MONGO_URL)('MongoDB sync in the job runner', () => {
         spoolDir,
         tables: [customers.index],
         actions: { insert: true, update: true, delete: true },
+        rows: [
+          { table: customers.index, action: 'insert', mode: 'only', rows: [] },
+          { table: customers.index, action: 'delete', mode: 'except', rows: [0] },
+        ],
+        confirmed: false,
+      },
+      profile(targetDb),
+    );
+    expect(partial.error).toBeUndefined();
+    expect(partial.summary).toMatchObject({ status: 'completed', rowsAffected: 1 });
+    const restDir = mkdtempSync(join(work, 'spool-'));
+    const rest = dataJobResultSchema.parse((await compare(restDir)).result);
+    const restCustomers = rest.tables.find((t) => t.name === 'customers')!;
+    expect(restCustomers.counts).toMatchObject({ inserts: 1, updates: 0, deletes: 1, equal: 2 });
+
+    const applied = await job(
+      {
+        kind: 'data-apply',
+        profileId: 'target',
+        target: { database: targetDb },
+        spoolDir: restDir,
+        tables: [restCustomers.index],
+        actions: { insert: true, update: true, delete: true },
         confirmed: false,
       },
       profile(targetDb),
     );
     expect(applied.error).toBeUndefined();
-    expect(applied.summary).toMatchObject({ status: 'completed', rowsAffected: 3 });
+    expect(applied.summary).toMatchObject({ status: 'completed', rowsAffected: 2 });
 
     const again = dataJobResultSchema.parse(
       (await compare(mkdtempSync(join(work, 'spool-')))).result,

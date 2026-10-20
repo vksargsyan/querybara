@@ -3,7 +3,13 @@ import { useState } from 'react';
 import { useStore } from 'zustand';
 
 import { formatCount, formatDuration } from '../../lib/format';
-import { differs, type DataCompare } from '../../state/sync/data';
+import {
+  actionCount,
+  differs,
+  rowTicksKey,
+  syncedRows,
+  type DataCompare,
+} from '../../state/sync/data';
 import { appProfileLookup } from '../../state/sync/panels';
 import { pairWarnings, sideTitle } from '../../state/sync/sides';
 import { SelectField, TextField } from '../designer/fields';
@@ -15,7 +21,8 @@ import { SideFields } from './SideFields';
 /**
  * The data compare panel (spec §13, data sync): the two sides and options, then counts per
  * table (inserts, updates, deletes, identical) with the tables left out and why, a paged row
- * grid with changed cells highlighted, and the sync script exported or applied.
+ * grid with changed cells highlighted and a tick per row to leave rows out (like the table
+ * ticks), and the sync script exported or applied.
  */
 
 const ACTION_LABELS: Readonly<Record<DataRowAction, string>> = {
@@ -440,6 +447,15 @@ function TableDetails(props: {
   const rows = state.rows;
   const pageSize = state.result?.pageSize ?? 1;
   const mongo = state.result?.target.engine === 'mongodb';
+  const actionOn = state.options.actions[state.rowAction];
+  const ticks = state.rowTicks[rowTicksKey(table.index, state.rowAction)];
+  const allTicks: TickAll = !ticks
+    ? 'all'
+    : ticks.mode === 'only' && ticks.rows.length === 0
+      ? 'none'
+      : 'some';
+  const total = actionCount(table, state.rowAction);
+  const synced = syncedRows(table, state.rowAction, state.rowTicks);
   return (
     <section
       aria-label={`Rows of ${table.name}`}
@@ -463,12 +479,8 @@ function TableDetails(props: {
         <span className="flex-1" />
         <div role="tablist" aria-label="Differences" className="flex gap-1">
           {(['insert', 'update', 'delete'] as const).map((action) => {
-            const n =
-              action === 'insert'
-                ? table.counts.inserts
-                : action === 'update'
-                  ? table.counts.updates
-                  : table.counts.deletes;
+            const n = actionCount(table, action);
+            const synced = syncedRows(table, action, state.rowTicks);
             return (
               <button
                 key={action}
@@ -481,7 +493,8 @@ function TableDetails(props: {
                 )}
                 onClick={() => void model.showRows(action, 0)}
               >
-                {ACTION_LABELS[action]} ({formatCount(n)})
+                {ACTION_LABELS[action]} (
+                {synced === n ? formatCount(n) : `${formatCount(synced)} of ${formatCount(n)}`})
               </button>
             );
           })}
@@ -526,15 +539,28 @@ function TableDetails(props: {
         keyCount={table.keyColumns.length}
         rows={rows?.rows ?? []}
         loading={state.rowsLoading}
+        firstRow={(rows?.page ?? 0) * pageSize}
+        ticks={{
+          all: allTicks,
+          disabled: !actionOn,
+          title: actionOn ? undefined : `${ACTION_LABELS[state.rowAction]} are off in the options`,
+          isTicked: (row) => model.rowTicked(table.index, state.rowAction, row),
+          onTick: (row, ticked) => model.tickRow(table.index, state.rowAction, row, ticked),
+          onTickAll: (ticked) => model.tickAllRows(table.index, state.rowAction, ticked),
+        }}
       />
       <div className="flex items-center gap-2 text-[11px] text-muted">
         {rows && rows.total > 0 ? (
           <span>
             Rows {formatCount(rows.page * pageSize + 1)}–
             {formatCount(rows.page * pageSize + rows.rows.length)} of {formatCount(rows.total)}
-            {rows.total < countFor(table, state.rowAction)
-              ? ` (the first ${formatCount(rows.total)} of ${formatCount(countFor(table, state.rowAction))} are kept for viewing; the script has them all)`
+            {rows.total < total
+              ? ticks?.mode === 'only'
+                ? ` (the first ${formatCount(rows.total)} of ${formatCount(total)} are kept for viewing; only the ticked ones sync)`
+                : ` (the first ${formatCount(rows.total)} of ${formatCount(total)} are kept for viewing; the script has them all)`
               : ''}
+            {synced !== total &&
+              ` · ${formatCount(synced)} of ${formatCount(total)} ticked to sync`}
           </span>
         ) : (
           <span>{state.rowsLoading ? 'Loading…' : 'No rows'}</span>
@@ -568,21 +594,33 @@ function TableDetails(props: {
   );
 }
 
-function countFor(table: DataTableResult, action: DataRowAction): number {
-  return action === 'insert'
-    ? table.counts.inserts
-    : action === 'update'
-      ? table.counts.updates
-      : table.counts.deletes;
+/** Whether every row of a table and action syncs, none, or some. */
+type TickAll = 'all' | 'none' | 'some';
+
+/** The row ticks of the grid's table and action; rows are numbered from 0 in grid order. */
+interface RowGridTicks {
+  readonly all: TickAll;
+  readonly disabled: boolean;
+  readonly title: string | undefined;
+  readonly isTicked: (row: number) => boolean;
+  readonly onTick: (row: number, ticked: boolean) => void;
+  readonly onTickAll: (ticked: boolean) => void;
 }
 
-/** The row differences: inserts show the source row, deletes the target row, updates both. */
+/**
+ * The row differences: inserts show the source row, deletes the target row, updates both. A
+ * tick per row leaves it out of the sync when cleared; the header tick sets them all.
+ */
 function RowGrid(props: {
   readonly columns: readonly string[];
   readonly keyCount: number;
   readonly rows: readonly DataRowDiff[];
   readonly loading: boolean;
+  /** The number of the page's first row. */
+  readonly firstRow: number;
+  readonly ticks: RowGridTicks;
 }) {
+  const { ticks } = props;
   const cell = (value: string | null | undefined) =>
     value === null || value === undefined ? <span className="text-muted">NULL</span> : value;
   return (
@@ -590,6 +628,19 @@ function RowGrid(props: {
       <table className="w-full text-[11px]" data-testid="data-row-grid">
         <thead className="sticky top-0 bg-panel text-left text-muted">
           <tr>
+            <th className="w-6 px-1.5 py-0.5">
+              <input
+                type="checkbox"
+                aria-label="Sync every row"
+                title={ticks.title}
+                checked={ticks.all === 'all'}
+                ref={(input) => {
+                  if (input) input.indeterminate = ticks.all === 'some';
+                }}
+                disabled={ticks.disabled}
+                onChange={(event) => ticks.onTickAll(event.target.checked)}
+              />
+            </th>
             {props.columns.map((column, index) => (
               <th
                 key={column}
@@ -601,40 +652,59 @@ function RowGrid(props: {
           </tr>
         </thead>
         <tbody className="font-mono">
-          {props.rows.map((row, r) => (
-            <tr key={r} className="border-t border-border/60 align-top" data-action={row.action}>
-              {props.columns.map((column, c) => {
-                const changed = row.changed?.includes(column) === true;
-                const values = row.action === 'delete' ? row.target : row.source;
-                return (
-                  <td
-                    key={column}
-                    className={cx(
-                      'max-w-72 px-1.5 py-0.5 break-words',
-                      changed && 'bg-warning/15',
-                      row.action === 'insert' && 'bg-success/5',
-                      row.action === 'delete' && 'bg-danger/5 text-muted line-through',
-                    )}
-                    data-changed={changed || undefined}
-                  >
-                    {changed ? (
-                      <>
-                        <span className="block text-muted line-through">
-                          {cell(row.target?.[c])}
-                        </span>
-                        <span className="block">{cell(row.source?.[c])}</span>
-                      </>
-                    ) : (
-                      cell(values?.[c])
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+          {props.rows.map((row, r) => {
+            const number = props.firstRow + r;
+            const ticked = ticks.isTicked(number);
+            return (
+              <tr
+                key={r}
+                className={cx('border-t border-border/60 align-top', !ticked && 'opacity-50')}
+                data-action={row.action}
+                data-ticked={ticked}
+              >
+                <td className="px-1.5 py-0.5">
+                  <input
+                    type="checkbox"
+                    aria-label={`Sync ${row.key.map((k) => k ?? 'NULL').join(', ')}`}
+                    title={ticks.title}
+                    checked={ticked}
+                    disabled={ticks.disabled}
+                    onChange={(event) => ticks.onTick(number, event.target.checked)}
+                  />
+                </td>
+                {props.columns.map((column, c) => {
+                  const changed = row.changed?.includes(column) === true;
+                  const values = row.action === 'delete' ? row.target : row.source;
+                  return (
+                    <td
+                      key={column}
+                      className={cx(
+                        'max-w-72 px-1.5 py-0.5 break-words',
+                        changed && 'bg-warning/15',
+                        row.action === 'insert' && 'bg-success/5',
+                        row.action === 'delete' && 'bg-danger/5 text-muted line-through',
+                      )}
+                      data-changed={changed || undefined}
+                    >
+                      {changed ? (
+                        <>
+                          <span className="block text-muted line-through">
+                            {cell(row.target?.[c])}
+                          </span>
+                          <span className="block">{cell(row.source?.[c])}</span>
+                        </>
+                      ) : (
+                        cell(values?.[c])
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
           {props.rows.length === 0 && !props.loading && (
             <tr>
-              <td colSpan={props.columns.length} className="px-2 py-2 text-center text-muted">
+              <td colSpan={props.columns.length + 1} className="px-2 py-2 text-center text-muted">
                 Nothing to show for this action.
               </td>
             </tr>

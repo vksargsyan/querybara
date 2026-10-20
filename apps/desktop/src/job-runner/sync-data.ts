@@ -15,12 +15,14 @@ import type {
   DataActions,
   DataRowAction,
   DataRowDiff,
+  DataRowSelection,
   DataTableResult,
   JobRowError,
 } from '@querybara/ipc';
 import {
   DataSyncScriptBuilder,
   MONGO_SYNC_PRELUDE,
+  MongoDataSyncScriptBuilder,
   mongoSyncLine,
   columnIndex,
   compareTableData,
@@ -41,6 +43,7 @@ import {
   SPOOL_MAX_CELL,
   SPOOL_MAX_ROWS,
   SPOOL_PAGE_SIZE,
+  diffsFile,
   rowPageFile,
   spoolManifestSchema,
   statementsFile,
@@ -64,7 +67,7 @@ import {
   type SyncJobContext,
   type SyncJobOutcome,
 } from './sync-common';
-import { LineWriter, dataSummary } from './sync-files';
+import { LineWriter, dataSummary, encodeDiff, readDiffs } from './sync-files';
 import { runMongoDataCompare } from './sync-mongo-data';
 
 /**
@@ -146,8 +149,11 @@ function builderOptions(
 class TableSpool {
   readonly statements = perAction(() => 0);
   readonly stored = perAction(() => 0);
+  /** Statements that cover the stored rows; set once they are all in. */
+  readonly #head = perAction((): number | undefined => undefined);
   readonly #builders: Record<DataRowAction, DataSyncScriptBuilder>;
   readonly #files: Record<DataRowAction, LineWriter>;
+  readonly #diffs: Record<DataRowAction, LineWriter>;
   readonly #pages = perAction((): DataRowDiff[] => []);
   readonly #pageNumbers = perAction(() => 0);
 
@@ -168,6 +174,7 @@ class TableSpool {
         }),
     );
     this.#files = perAction((action) => new LineWriter(join(dir, statementsFile(index, action))));
+    this.#diffs = perAction((action) => new LineWriter(join(dir, diffsFile(index, action))));
   }
 
   async add(diff: RowDiff): Promise<void> {
@@ -175,6 +182,7 @@ class TableSpool {
     for (const sql of this.#builders[action].add(diff)) await this.#statement(action, sql);
     if (this.stored[action] >= SPOOL_MAX_ROWS) return;
     this.stored[action]++;
+    await this.#diffs[action].write(encodeDiff(diff));
     this.#pages[action].push({
       action,
       key: diff.key.map(display),
@@ -184,18 +192,37 @@ class TableSpool {
       ...(diff.changedColumns ? { changed: [...diff.changedColumns] } : {}),
     });
     if (this.#pages[action].length >= SPOOL_PAGE_SIZE) await this.#flushPage(action);
+    if (this.stored[action] === SPOOL_MAX_ROWS) await this.#endHead(action);
+  }
+
+  /** Statements per action that cover the stored rows (the first ones of each file). */
+  heads(): Record<DataRowAction, number> {
+    return perAction((action) => this.#head[action] ?? this.statements[action]);
   }
 
   async finish(): Promise<void> {
     for (const action of ACTIONS) {
-      for (const sql of this.#builders[action].flush()) await this.#statement(action, sql);
+      await this.#endHead(action);
       await this.#flushPage(action);
       await this.#files[action].close();
+      await this.#diffs[action].close();
     }
   }
 
   destroy(): void {
-    for (const action of ACTIONS) this.#files[action].destroy();
+    for (const action of ACTIONS) {
+      this.#files[action].destroy();
+      this.#diffs[action].destroy();
+    }
+  }
+
+  /**
+   * Flushes the batch the stored rows end in, so their statements stand apart from the rest's:
+   * a sync of only some of them builds those statements again and keeps the others.
+   */
+  async #endHead(action: DataRowAction): Promise<void> {
+    for (const sql of this.#builders[action].flush()) await this.#statement(action, sql);
+    this.#head[action] ??= this.statements[action];
   }
 
   async #statement(action: DataRowAction, sql: string): Promise<void> {
@@ -371,6 +398,7 @@ export async function runDataCompare(
     if (spool) {
       entry.stored = { ...spool.stored };
       entry.statements = { ...spool.statements };
+      entry.headStatements = spool.heads();
     }
     entry.durationMs = Math.round(performance.now() - tableStarted);
     tables.push(entry);
@@ -412,7 +440,8 @@ export async function runDataCompare(
       : `${plural(differing.length, 'table')} of ${tables.length} differ: ${totals.inserts} to insert, ${totals.updates} to update, ${totals.deletes} to delete${failed.length > 0 ? `; ${failed.length} failed` : ''}`;
   context.log('info', outcome);
   const result: DataTableResult[] = tables.map(
-    ({ sourceColumns: _s, targetColumns: _t, targetKinds: _k, ...table }) => table,
+    ({ sourceColumns: _s, targetColumns: _t, targetKinds: _k, headStatements: _h, ...table }) =>
+      table,
   );
   return {
     summary: dataSummary('completed', performance.now() - started, outcome, {
@@ -456,29 +485,125 @@ export interface SyncUnit {
   readonly epilogue: readonly string[];
   /** Statements in the body, before prologue and epilogue. */
   readonly count: number;
+  /** Rows the unit changes, per action. */
+  readonly rows: Readonly<Record<DataRowAction, number>>;
+  /** Actions that sync only some of the stored rows, with their statements built again. */
+  readonly rebuilt: Partial<Readonly<Record<DataRowAction, RebuiltStatements>>>;
+}
+
+/** The statements of an action's ticked stored rows, built again from the spooled diffs. */
+interface RebuiltStatements {
+  readonly statements: readonly string[];
+  /** The spooled statements to skip (the stored rows'), keeping the rest; none kept when absent. */
+  readonly after?: number;
+}
+
+/** A builder of one action's statements, batched as the compare batched them. */
+function statementBuilder(
+  manifest: SpoolManifest,
+  table: SpoolTable,
+  action: DataRowAction,
+): { add(diff: RowDiff): string[]; flush(): string[] } {
+  if (manifest.dialect === 'mongodb') {
+    return new MongoDataSyncScriptBuilder({ collection: table.target.name, batchSize: BATCH_ROWS });
+  }
+  return new DataSyncScriptBuilder(
+    builderOptions(manifest.dialect, table, {
+      actions: {
+        insert: action === 'insert',
+        update: action === 'update',
+        delete: action === 'delete',
+      },
+    }),
+  );
+}
+
+/** The row ticks of a table and action that leave something out, with only stored rows named. */
+function rowSelectionFor(
+  rows: readonly DataRowSelection[] | undefined,
+  table: SpoolTable,
+  action: DataRowAction,
+): { readonly mode: DataRowSelection['mode']; readonly rows: ReadonlySet<number> } | undefined {
+  const selection = rows?.find((r) => r.table === table.index && r.action === action);
+  if (!selection) return undefined;
+  const named = new Set(selection.rows.filter((row) => row < table.stored[action]));
+  if (selection.mode === 'except' && named.size === 0) return undefined;
+  return { mode: selection.mode, rows: named };
+}
+
+async function rebuild(
+  spoolDir: string,
+  manifest: SpoolManifest,
+  table: SpoolTable,
+  action: DataRowAction,
+  selection: { readonly mode: DataRowSelection['mode']; readonly rows: ReadonlySet<number> },
+): Promise<RebuiltStatements> {
+  const head = table.headStatements?.[action];
+  if (head === undefined) {
+    throw new QuerybaraError({
+      code: 'NOT_FOUND',
+      message: 'This comparison cannot sync only some rows',
+      hint: 'Compare again.',
+    });
+  }
+  const statements: string[] = [];
+  if (selection.mode === 'except' || selection.rows.size > 0) {
+    const builder = statementBuilder(manifest, table, action);
+    let row = 0;
+    for await (const diff of readDiffs(join(spoolDir, diffsFile(table.index, action)))) {
+      if (selection.rows.has(row++) === (selection.mode === 'only')) {
+        statements.push(...builder.add(diff));
+      }
+    }
+    statements.push(...builder.flush());
+  }
+  return { statements, ...(selection.mode === 'except' ? { after: head } : {}) };
 }
 
 /**
  * The transactions a data sync runs, in order: each table's deletes, child tables first, then
- * each table's updates and inserts, parent tables first.
+ * each table's updates and inserts, parent tables first. Tables and actions with row ticks
+ * sync only the ticked rows: their stored rows' statements are built again.
  */
-export function syncPlan(
+export async function syncPlan(
+  spoolDir: string,
   manifest: SpoolManifest,
   tables: readonly number[],
   actions: DataActions,
-): SyncUnit[] {
+  rows?: readonly DataRowSelection[],
+): Promise<SyncUnit[]> {
   const options = manifest.apply;
   const wanted = new Set(tables);
   const ordered = manifest.order
     .map((index) => manifest.tables[index])
     .filter((t): t is SpoolTable => t !== undefined && wanted.has(t.index) && !t.error);
-  const unit = (table: SpoolTable, unitActions: DataRowAction[]): SyncUnit | undefined => {
-    const count = unitActions.reduce((sum, a) => sum + table.statements[a], 0);
-    if (count === 0) return undefined;
-    // MongoDB commands need no session settings around them, and run outside transactions.
-    if (manifest.dialect === 'mongodb') {
-      return { table, actions: unitActions, prologue: [], epilogue: [], count };
+  const unit = async (
+    table: SpoolTable,
+    unitActions: DataRowAction[],
+  ): Promise<SyncUnit | undefined> => {
+    const rebuilt: Partial<Record<DataRowAction, RebuiltStatements>> = {};
+    const changed = perAction(() => 0);
+    let count = 0;
+    for (const action of unitActions) {
+      const total = countFor(table, action);
+      const selection = rowSelectionFor(rows, table, action);
+      if (!selection) {
+        count += table.statements[action];
+        changed[action] = total;
+        continue;
+      }
+      const again = await rebuild(spoolDir, manifest, table, action, selection);
+      rebuilt[action] = again;
+      count +=
+        again.statements.length +
+        (again.after !== undefined ? table.statements[action] - again.after : 0);
+      changed[action] =
+        selection.mode === 'only' ? selection.rows.size : total - selection.rows.size;
     }
+    if (count === 0) return undefined;
+    const frame = { table, actions: unitActions, count, rows: changed, rebuilt };
+    // MongoDB commands need no session settings around them, and run outside transactions.
+    if (manifest.dialect === 'mongodb') return { ...frame, prologue: [], epilogue: [] };
     const builder = new DataSyncScriptBuilder(
       builderOptions(manifest.dialect, table, {
         transaction: true,
@@ -486,18 +611,12 @@ export function syncPlan(
         ...(options.disableTriggers ? { disableTriggers: true } : {}),
       }),
     );
-    return {
-      table,
-      actions: unitActions,
-      prologue: builder.prologue(),
-      epilogue: builder.epilogue(),
-      count,
-    };
+    return { ...frame, prologue: builder.prologue(), epilogue: builder.epilogue() };
   };
   const units: SyncUnit[] = [];
   if (actions.delete) {
     for (const table of [...ordered].reverse()) {
-      const u = unit(table, ['delete']);
+      const u = await unit(table, ['delete']);
       if (u) units.push(u);
     }
   }
@@ -507,39 +626,51 @@ export function syncPlan(
   ];
   if (writes.length > 0) {
     for (const table of ordered) {
-      const u = unit(table, writes);
+      const u = await unit(table, writes);
       if (u) units.push(u);
     }
   }
   return units;
 }
 
+function countFor(table: SpoolTable, action: DataRowAction): number {
+  return action === 'insert'
+    ? table.counts.inserts
+    : action === 'update'
+      ? table.counts.updates
+      : table.counts.deletes;
+}
+
 /** Every statement of a unit, prologue and epilogue included. */
 export async function* unitStatements(spoolDir: string, unit: SyncUnit): AsyncGenerator<string> {
   yield* unit.prologue;
   for (const action of unit.actions) {
-    if (unit.table.statements[action] === 0) continue;
+    const rebuilt = unit.rebuilt[action];
+    if (rebuilt) {
+      yield* rebuilt.statements;
+      if (rebuilt.after === undefined) continue;
+    }
+    const skip = rebuilt?.after ?? 0;
+    if (unit.table.statements[action] <= skip) continue;
     const lines = createInterface({
       input: createReadStream(join(spoolDir, statementsFile(unit.table.index, action))),
       crlfDelay: Infinity,
     });
-    for await (const line of lines) if (line !== '') yield JSON.parse(line) as string;
+    let line = 0;
+    for await (const text of lines) {
+      if (text !== '' && line++ >= skip) yield JSON.parse(text) as string;
+    }
   }
   yield* unit.epilogue;
 }
 
 function unitComment(unit: SyncUnit, mongo: boolean): string {
   const parts = unit.actions
-    .filter((a) => unit.table.statements[a] > 0)
-    .map((a) => {
-      const rows =
-        a === 'insert'
-          ? unit.table.counts.inserts
-          : a === 'update'
-            ? unit.table.counts.updates
-            : unit.table.counts.deletes;
-      return `${rows} ${a === 'delete' ? 'deletes' : a === 'update' ? 'updates' : 'inserts'}`;
-    });
+    .filter((a) => unit.rows[a] > 0)
+    .map(
+      (a) =>
+        `${unit.rows[a]} ${a === 'delete' ? 'deletes' : a === 'update' ? 'updates' : 'inserts'}`,
+    );
   return `${mongo ? '//' : '--'} ${unit.table.name}: ${parts.join(', ')}`;
 }
 
@@ -551,11 +682,12 @@ export async function dataSyncScript(input: {
   readonly spoolDir: string;
   readonly tables: readonly number[];
   readonly actions: DataActions;
+  readonly rows?: readonly DataRowSelection[] | undefined;
   readonly path?: string | undefined;
   readonly limit?: number | undefined;
 }): Promise<{ statements: string[]; total: number; truncated: boolean; bytes: number }> {
   const manifest = await readManifest(input.spoolDir);
-  const units = syncPlan(manifest, input.tables, input.actions);
+  const units = await syncPlan(input.spoolDir, manifest, input.tables, input.actions, input.rows);
   const total = units.reduce((sum, u) => sum + u.count + u.prologue.length + u.epilogue.length, 0);
   if (input.path === undefined) {
     const limit = input.limit ?? 200;
@@ -624,7 +756,7 @@ export async function runDataApply(
       message: 'The target connection is not the one that was compared',
     });
   }
-  const units = syncPlan(manifest, job.tables, job.actions);
+  const units = await syncPlan(job.spoolDir, manifest, job.tables, job.actions, job.rows);
   const total = units.reduce((sum, u) => sum + u.count + u.prologue.length + u.epilogue.length, 0);
   if (total === 0) {
     throw new QuerybaraError({

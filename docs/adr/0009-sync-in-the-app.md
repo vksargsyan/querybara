@@ -52,6 +52,14 @@ reports why others are skipped). Applying runs one transaction per table and pas
 child tables first, then updates and inserts, parents first (`dataSyncOrder`), stopping at the
 first error; the panel then compares again.
 
+**Rows tick like tables.** Each row of the grid has a tick, as in Navicat's data sync: an
+unticked row is left out of the script and the apply. The selection travels as, per table and
+action, `except` (every row but these) or `only` (just these) with row numbers in grid order, so
+ticking everything costs nothing. The runner also spools the grid's rows as raw diffs and
+flushes the statement batch after the last of them, so the first statements of each action
+cover exactly the grid's rows: a partial selection builds those again from the diffs and keeps
+the statements of the rows past the grid (`except`) or leaves them out (`only`).
+
 **Write rules twice.** Main refuses to start an apply on a read-only target and needs
 `confirmed` for production and confirm-writes targets; the runner checks the same rules against
 the profile it was given before running a statement.
@@ -68,7 +76,9 @@ rename mapping and data settings as a JSON definition the app validates.
 - A comparison does not survive an app restart; saved comparisons keep the settings to run it
   again. Scheduling saved comparisons (spec §14) can reuse the job kinds as they are.
 - The row grid shows the first 10,000 differences per table and action; the counts, the script
-  and the apply cover every row.
+  and the apply cover every row. Only those rows can be unticked one by one; the header tick
+  takes the rest along. Their raw diffs are spooled a second time, at most 10,000 per table and
+  action.
 - Schemas pair by name on PostgreSQL, so comparing schema `a` with schema `b` is out of scope;
   compare two databases instead. Data compare also crosses engine families (no checksums then),
   with one PostgreSQL schema.

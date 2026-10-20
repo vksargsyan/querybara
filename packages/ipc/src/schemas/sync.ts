@@ -458,11 +458,27 @@ export const dataRowPageSchema = z.object({
 });
 export type DataRowPage = z.infer<typeof dataRowPageSchema>;
 
+/**
+ * The rows of one table and action that a selection syncs, when not all of them (the ticks in
+ * the row grid). Rows are numbered from 0 in the order the grid shows them; only the rows kept
+ * for the grid (`DataTableResult.stored`) can be named. `except`: every row but these, the ones
+ * past the grid's included. `only`: just these, the ones past the grid's left out.
+ */
+export const dataRowSelectionSchema = z.object({
+  table: countSchema,
+  action: dataRowActionSchema,
+  mode: z.enum(['except', 'only']),
+  rows: z.array(countSchema).max(100_000),
+});
+export type DataRowSelection = z.infer<typeof dataRowSelectionSchema>;
+
 /** Tables (by `DataTableResult.index`) and actions of a finished data compare. */
 export const dataSelectionSchema = z.object({
   jobId: idSchema,
   tables: z.array(countSchema).min(1).max(10_000),
   actions: dataActionsSchema,
+  /** Tables and actions that sync only some of their rows; all of them when absent. */
+  rows: z.array(dataRowSelectionSchema).max(30_000).optional(),
 });
 export type DataSelection = z.infer<typeof dataSelectionSchema>;
 

@@ -26,6 +26,7 @@ import {
   SPOOL_MAX_CELL,
   SPOOL_MAX_ROWS,
   SPOOL_PAGE_SIZE,
+  diffsFile,
   rowPageFile,
   statementsFile,
   type SpoolManifest,
@@ -40,7 +41,7 @@ import {
   type SyncJobContext,
   type SyncJobOutcome,
 } from './sync-common';
-import { LineWriter, dataSummary } from './sync-files';
+import { LineWriter, dataSummary, encodeDiff } from './sync-files';
 
 /**
  * MongoDB data compare in the job runner (spec §13, data sync for documents): collections pair
@@ -121,8 +122,11 @@ export function mongoRow(diff: RowDiff): DataRowDiff {
 class CollectionSpool {
   readonly statements = perAction(() => 0);
   readonly stored = perAction(() => 0);
+  /** Statements that cover the stored rows; set once they are all in. */
+  readonly #head = perAction((): number | undefined => undefined);
   readonly #builders: Record<DataRowAction, MongoDataSyncScriptBuilder>;
   readonly #files: Record<DataRowAction, LineWriter>;
+  readonly #diffs: Record<DataRowAction, LineWriter>;
   readonly #pages = perAction((): DataRowDiff[] => []);
   readonly #pageNumbers = perAction(() => 0);
 
@@ -135,6 +139,7 @@ class CollectionSpool {
       () => new MongoDataSyncScriptBuilder({ collection, batchSize: BATCH_DOCUMENTS }),
     );
     this.#files = perAction((action) => new LineWriter(join(dir, statementsFile(index, action))));
+    this.#diffs = perAction((action) => new LineWriter(join(dir, diffsFile(index, action))));
   }
 
   async add(diff: RowDiff): Promise<void> {
@@ -142,20 +147,40 @@ class CollectionSpool {
     for (const command of this.#builders[action].add(diff)) await this.#statement(action, command);
     if (this.stored[action] >= SPOOL_MAX_ROWS) return;
     this.stored[action]++;
+    await this.#diffs[action].write(encodeDiff(diff));
     this.#pages[action].push(mongoRow(diff));
     if (this.#pages[action].length >= SPOOL_PAGE_SIZE) await this.#flushPage(action);
+    if (this.stored[action] === SPOOL_MAX_ROWS) await this.#endHead(action);
+  }
+
+  /** Statements per action that cover the stored rows (the first ones of each file). */
+  heads(): Record<DataRowAction, number> {
+    return perAction((action) => this.#head[action] ?? this.statements[action]);
   }
 
   async finish(): Promise<void> {
     for (const action of ACTIONS) {
-      for (const command of this.#builders[action].flush()) await this.#statement(action, command);
+      await this.#endHead(action);
       await this.#flushPage(action);
       await this.#files[action].close();
+      await this.#diffs[action].close();
     }
   }
 
   destroy(): void {
-    for (const action of ACTIONS) this.#files[action].destroy();
+    for (const action of ACTIONS) {
+      this.#files[action].destroy();
+      this.#diffs[action].destroy();
+    }
+  }
+
+  /**
+   * Flushes the batch the stored rows end in, so their statements stand apart from the rest's:
+   * a sync of only some of them builds those statements again and keeps the others.
+   */
+  async #endHead(action: DataRowAction): Promise<void> {
+    for (const command of this.#builders[action].flush()) await this.#statement(action, command);
+    this.#head[action] ??= this.statements[action];
   }
 
   async #statement(action: DataRowAction, command: string): Promise<void> {
@@ -310,6 +335,7 @@ export async function runMongoDataCompare(
     }
     entry.stored = { ...spool.stored };
     entry.statements = { ...spool.statements };
+    entry.headStatements = spool.heads();
     entry.durationMs = Math.round(performance.now() - tableStarted);
     tables.push(entry);
     const c = entry.counts;
@@ -348,7 +374,8 @@ export async function runMongoDataCompare(
       : `${plural(differing.length, 'collection')} of ${tables.length} differ: ${totals.inserts} to insert, ${totals.updates} to update, ${totals.deletes} to delete${failed.length > 0 ? `; ${failed.length} failed` : ''}`;
   context.log('info', outcome);
   const result: DataTableResult[] = tables.map(
-    ({ sourceColumns: _s, targetColumns: _t, targetKinds: _k, ...table }) => table,
+    ({ sourceColumns: _s, targetColumns: _t, targetKinds: _k, headStatements: _h, ...table }) =>
+      table,
   );
   return {
     summary: dataSummary('completed', performance.now() - started, outcome, {
