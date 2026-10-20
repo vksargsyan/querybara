@@ -13,6 +13,21 @@ case "$redis_image" in
   *) server=redis-server cli=redis-cli ;;
 esac
 
+# On failure, show what the containers said: a server that exits or never listens otherwise
+# leaves only a timeout in the log.
+dump_containers() {
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    docker ps --all --filter name='^(mongo|redis)' --format '{{.Names}}: {{.Status}}' >&2 || true
+    for name in $(docker ps --all --filter name='^(mongo|redis)' --format '{{.Names}}'); do
+      echo "--- docker logs $name" >&2
+      docker logs --tail 200 "$name" >&2 || true
+    done
+  fi
+  return "$status"
+}
+trap dump_containers EXIT
+
 wait_for() {
   for _ in $(seq 1 90); do
     if "$@" >/dev/null 2>&1; then return 0; fi
@@ -27,7 +42,12 @@ keydir=$(mktemp -d)
 openssl rand -base64 756 >"$keydir/keyfile"
 chmod 400 "$keydir/keyfile"
 sudo chown 999:999 "$keydir/keyfile"
+# The image turns glibc's rseq off (GLIBC_TUNABLES=glibc.pthread.rseq=0) so TCMalloc can use
+# per-CPU caches; on Linux 6.19 to 7.0.13 that TCMalloc crashes, so MongoDB 8.0 refuses to start
+# there (SERVER-121912), as on the ubuntu-24.04 runner's 7.0.0 kernel. Keeping glibc's rseq on
+# makes TCMalloc fall back to per-thread caches, which every kernel runs.
 docker run -d --name mongo --network host -v "$keydir/keyfile:/etc/mongo-keyfile:ro" \
+  -e GLIBC_TUNABLES=glibc.pthread.rseq=1 \
   "mongo:$mongo_tag" --replSet rs0 --port 27018 --bind_ip 127.0.0.1 --keyFile /etc/mongo-keyfile
 mongosh() { docker exec mongo mongosh --quiet --port 27018 "$@"; }
 wait_for mongosh --eval 'db.runCommand({ ping: 1 }).ok'
