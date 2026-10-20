@@ -37,6 +37,8 @@ import {
   useOpenFolders,
 } from '../state/folders';
 import { refreshObjects } from '../state/metadata';
+import { openNewDatabase as openNewMongoDatabase } from '../state/mongo/create-dialogs';
+import { openNewDatabase } from '../state/new-database';
 import { objectsPathFor } from '../state/objects-model';
 import { showObjects, useObjectsView } from '../state/objects-view';
 import {
@@ -65,6 +67,7 @@ import {
 } from './ObjectMenu';
 import { BackupMenuItems } from './backup/BackupDialogs';
 import { MongoTree } from './mongo/MongoTree';
+import { NewDatabaseHost } from './NewDatabaseDialog';
 import { RedisTree, openRedisTool } from './redis/RedisTree';
 import { SearchTree } from './search/SearchTree';
 import { openQueryTab } from './dock';
@@ -232,6 +235,7 @@ export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) =
       </div>
       <SearchBar />
       <DropTableHost />
+      <NewDatabaseHost />
     </aside>
   );
 }
@@ -657,6 +661,24 @@ function ProfileItem(props: {
                       ? 'Open console'
                       : 'New query tab'}
                 </MenuItem>
+                {(isSqlEngine(profile.engine) || profile.engine === 'mongodb') &&
+                  !profile.presentation.readOnly && (
+                    <MenuItem
+                      icon="plus"
+                      onSelect={() => {
+                        if (profile.engine !== 'mongodb') {
+                          openNewDatabase(profile);
+                          return;
+                        }
+                        // The dialog lives in the connection's tree: open it first.
+                        setExpanded(true);
+                        if (!rootNodes) void loadChildren(profile.id, []);
+                        openNewMongoDatabase(profile.id);
+                      }}
+                    >
+                      New database…
+                    </MenuItem>
+                  )}
                 {isSqlEngine(profile.engine) && (
                   <MenuItem icon="file-run" onSelect={() => openRunSqlFile(profile)}>
                     Run SQL file…

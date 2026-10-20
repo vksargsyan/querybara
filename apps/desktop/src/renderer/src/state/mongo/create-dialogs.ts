@@ -7,6 +7,7 @@ import {
   EMPTY_COLLECTION_FORM,
   buildCreateCollection,
   buildCreateView,
+  databaseNameIssue,
   folderOf,
   supportsClustered,
   type CreateCollectionForm,
@@ -42,6 +43,8 @@ export type MongoDialog =
   | (DialogBase & {
       readonly kind: 'create-collection';
       readonly form: CreateCollectionForm;
+      /** Opened as "New database…": the database is named in the dialog too. */
+      readonly newDatabase: boolean;
       /** The server takes clustered collections (5.3+); undefined while asking. */
       readonly clusteredSupported: boolean | undefined;
     })
@@ -68,7 +71,7 @@ function current(): MongoDialog | undefined {
   return useMongoDialogs.getState().dialog;
 }
 
-function openLane(profileId: string, db: string): SessionLane {
+function openLane(profileId: string, db: string | undefined): SessionLane {
   void lane?.close();
   lane = new SessionLane(profileId, db);
   return lane;
@@ -80,11 +83,29 @@ export function openCreateCollection(
   db: string,
   kind: NewCollectionKind = 'plain',
 ): void {
-  const own = openLane(profileId, db);
+  openCollectionDialog(profileId, db, kind, false);
+}
+
+/**
+ * Opens the create collection dialog for a database not made yet ("New database…"): MongoDB
+ * makes a database with its first collection.
+ */
+export function openNewDatabase(profileId: string): void {
+  openCollectionDialog(profileId, '', 'plain', true);
+}
+
+function openCollectionDialog(
+  profileId: string,
+  db: string,
+  kind: NewCollectionKind,
+  newDatabase: boolean,
+): void {
+  const own = openLane(profileId, newDatabase ? undefined : db);
   setDialog({
     kind: 'create-collection',
     profileId,
     db,
+    newDatabase,
     form: { ...EMPTY_COLLECTION_FORM, kind },
     clusteredSupported: undefined,
     creating: false,
@@ -139,6 +160,14 @@ export function updateCollectionForm(patch: Partial<CreateCollectionForm>): void
   }
 }
 
+/** The database a "New database…" dialog creates. */
+export function updateNewDatabase(db: string): void {
+  const dialog = current();
+  if (dialog?.kind === 'create-collection' && dialog.newDatabase) {
+    setDialog({ ...dialog, db, error: undefined });
+  }
+}
+
 export function updateViewForm(patch: Partial<Omit<CreateViewForm, 'stages'>>): void {
   const dialog = current();
   if (dialog?.kind === 'create-view') {
@@ -185,6 +214,7 @@ function planOf(
   dialog: MongoDialog,
 ): { name: string; command: string; create: Parameters<SessionLane['run']>[0] } | undefined {
   if (dialog.kind === 'create-collection') {
+    if (dialog.newDatabase && databaseNameIssue(dialog.db) !== undefined) return undefined;
     const built = buildCreateCollection(dialog.db, dialog.form);
     if (!built.ok) return undefined;
     const { name, spec, command } = built.plan;
@@ -253,6 +283,9 @@ export async function submitMongoDialog(): Promise<boolean> {
   setDialog(undefined);
   void own.close();
   if (lane === own) lane = undefined;
+  if (dialog.kind === 'create-collection' && dialog.newDatabase) {
+    await loadChildren(dialog.profileId, []).catch(() => undefined);
+  }
   await loadChildren(dialog.profileId, [dialog.db, folder]).catch(() => undefined);
   return true;
 }
