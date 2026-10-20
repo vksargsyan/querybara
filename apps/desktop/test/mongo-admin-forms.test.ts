@@ -15,6 +15,7 @@ import {
   buildExpiryChange,
   buildValidationChange,
   collectionNameIssue,
+  databaseNameIssue,
   dropCollectionCommand,
   renameCommand,
   supportsClustered,
@@ -25,8 +26,10 @@ import {
   closeMongoDialog,
   openCreateCollection,
   openCreateView,
+  openNewDatabase,
   submitMongoDialog,
   updateCollectionForm,
+  updateNewDatabase,
   updateViewForm,
   useMongoDialogs,
   viewStages,
@@ -119,6 +122,11 @@ describe('create collection form', () => {
     expect(collectionNameIssue('')).toBe('Name the collection');
     expect(collectionNameIssue('a$b')).toMatch(/\$/);
     expect(collectionNameIssue('system.x')).toMatch(/reserved/);
+    expect(databaseNameIssue('')).toBe('Name the database');
+    expect(databaseNameIssue('a.b')).toBe('A database name cannot contain .');
+    expect(databaseNameIssue('my db')).toBe('A database name cannot contain spaces');
+    expect(databaseNameIssue('a'.repeat(64))).toBe('Fewer than 64 bytes');
+    expect(databaseNameIssue('blog')).toBeUndefined();
     const issues = (patch: Partial<CreateCollectionForm>) => {
       const built = collection(patch);
       return built.ok ? {} : built.issues;
@@ -335,6 +343,30 @@ describe('create dialogs', () => {
       confirmed: true,
     });
     expect(useMongoDialogs.getState().dialog).toBeUndefined();
+  });
+
+  it('creates a new database with its first collection', async () => {
+    const rec = dialogHost();
+    openNewDatabase(PROFILE_ID);
+    await expect
+      .poll(() => {
+        const d = useMongoDialogs.getState().dialog;
+        return d?.kind === 'create-collection' ? d.clusteredSupported : 'none';
+      })
+      .toBe(false);
+    updateCollectionForm({ name: 'posts' });
+    updateNewDatabase('my.blog');
+    expect(await submitMongoDialog()).toBe(false);
+    updateNewDatabase('blog');
+    expect(await submitMongoDialog()).toBe(true);
+    expect(confirms.asked[0]).toMatchObject({
+      title: 'Create the collection blog.posts?',
+      detail: "db.getSiblingDB('blog').createCollection('posts')",
+    });
+    expect(rec.of('create')[0]!.input).toMatchObject({
+      ns: { db: 'blog', collection: 'posts' },
+      confirmed: true,
+    });
   });
 
   it('creates a view from its source and stages', async () => {

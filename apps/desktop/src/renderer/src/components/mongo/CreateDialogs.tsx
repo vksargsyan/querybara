@@ -1,12 +1,14 @@
 import {
   buildCreateCollection,
   buildCreateView,
+  databaseNameIssue,
   type NewCollectionKind,
 } from '../../state/mongo/collection-options';
 import {
   closeMongoDialog,
   submitMongoDialog,
   updateCollectionForm,
+  updateNewDatabase,
   updateViewForm,
   useMongoDialogs,
   viewStages,
@@ -49,6 +51,7 @@ function CreateCollectionDialog(props: {
   const { form } = dialog;
   const built = buildCreateCollection(dialog.db, form);
   const issues: Readonly<Record<string, string>> = built.ok ? {} : built.issues;
+  const dbIssue = dialog.newDatabase ? databaseNameIssue(dialog.db) : undefined;
   const id = (name: string): string => `create-collection-${name}`;
   const kinds = KINDS.filter((k) => k.value !== 'clustered' || dialog.clusteredSupported !== false);
   const validatorEditor = (
@@ -72,7 +75,10 @@ function CreateCollectionDialog(props: {
     <Modal
       open
       onOpenChange={(open) => !open && closeMongoDialog()}
-      title={`Create a collection in ${dialog.db}`}
+      title={dialog.newDatabase ? 'New database' : `Create a collection in ${dialog.db}`}
+      {...(dialog.newDatabase
+        ? { description: 'MongoDB creates a database with its first collection.' }
+        : {})}
       width="w-[720px]"
       footer={
         <>
@@ -81,7 +87,7 @@ function CreateCollectionDialog(props: {
           </Button>
           <Button
             variant="primary"
-            disabled={!built.ok || dialog.creating}
+            disabled={!built.ok || dbIssue !== undefined || dialog.creating}
             onClick={() => void submitMongoDialog()}
             data-testid="create-collection-run"
           >
@@ -91,14 +97,31 @@ function CreateCollectionDialog(props: {
       }
     >
       <div className="flex flex-col gap-3 text-xs" data-testid="create-collection-dialog">
+        {dialog.newDatabase && (
+          <Labelled
+            label="Database"
+            htmlFor={id('database')}
+            error={dialog.db === '' ? undefined : dbIssue}
+          >
+            <Input
+              id={id('database')}
+              autoFocus
+              spellCheck={false}
+              value={dialog.db}
+              onChange={(event) => updateNewDatabase(event.target.value)}
+              className="h-7 font-mono text-xs"
+              data-testid="create-collection-database"
+            />
+          </Labelled>
+        )}
         <Labelled
-          label="Name"
+          label={dialog.newDatabase ? 'First collection' : 'Name'}
           htmlFor={id('name')}
           error={form.name === '' ? undefined : issues['name']}
         >
           <Input
             id={id('name')}
-            autoFocus
+            autoFocus={!dialog.newDatabase}
             value={form.name}
             onChange={(event) => updateCollectionForm({ name: event.target.value })}
             className="h-7 font-mono text-xs"

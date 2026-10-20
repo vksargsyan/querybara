@@ -54,6 +54,17 @@ export function collectionNameIssue(name: string): string | undefined {
   return undefined;
 }
 
+/** Why the name cannot be a new database's, if it cannot (MongoDB's naming rules). */
+export function databaseNameIssue(name: string): string | undefined {
+  if (name.trim() === '') return 'Name the database';
+  if (name !== name.trim()) return 'The name has leading or trailing spaces';
+  const bad = /[/\\. "$*<>:|?\0]/.exec(name);
+  if (bad)
+    return `A database name cannot contain ${bad[0] === '\0' ? 'a null character' : bad[0] === ' ' ? 'spaces' : bad[0]}`;
+  if (new TextEncoder().encode(name).length >= 64) return 'Fewer than 64 bytes';
+  return undefined;
+}
+
 function wholeNumber(text: string, what: string, min: number): number | string {
   const trimmed = text.trim();
   if (!/^\d+$/.test(trimmed)) return `${what} is a whole number`;

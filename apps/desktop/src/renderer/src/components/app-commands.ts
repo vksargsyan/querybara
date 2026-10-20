@@ -18,7 +18,11 @@ import { createFolder } from '../state/folders';
 import { showJobs, useJobs } from '../state/jobs';
 import { openKeybindingsPanel } from '../state/keybindings-panel';
 import { loadSnapshot } from '../state/metadata';
-import { openCreateCollection } from '../state/mongo/create-dialogs';
+import {
+  openCreateCollection,
+  openNewDatabase as openNewMongoDatabase,
+} from '../state/mongo/create-dialogs';
+import { openNewDatabase } from '../state/new-database';
 import { revealObjects, useObjectsView } from '../state/objects-view';
 import { openPalette, quickPick } from '../state/palette';
 import { panelInfo } from '../state/panels';
@@ -53,6 +57,13 @@ function status(profileId: string): string | undefined {
 
 function connected(): StoredProfile[] {
   return profiles().filter((profile) => status(profile.id) === 'ready');
+}
+
+/** Whether "New database…" applies: a writable SQL or MongoDB connection. */
+function takesNewDatabase(profile: StoredProfile): boolean {
+  return (
+    (isSqlEngine(profile.engine) || profile.engine === 'mongodb') && !profile.presentation.readOnly
+  );
 }
 
 /** Asks for a connection among `candidates`; undefined when the user closes the list. */
@@ -235,6 +246,28 @@ export function registerAppCommands(actions: () => AppActions): () => void {
       title: 'Show History',
       icon: 'history',
       run: () => actions().toggleHistory(),
+    },
+    {
+      id: 'database.create',
+      category: 'Database',
+      title: 'New Database…',
+      icon: 'plus',
+      enabled: () => connected().some(takesNewDatabase),
+      run: async () => {
+        const profile = await pickConnection(
+          'Which connection should the database go on?',
+          connected().filter(takesNewDatabase),
+        );
+        if (!profile) return;
+        if (profile.engine !== 'mongodb') {
+          openNewDatabase(profile);
+          return;
+        }
+        // The create dialogs live in the connection's tree: open it first.
+        setProfileExpanded(profile.id, true);
+        void loadChildren(profile.id, []);
+        openNewMongoDatabase(profile.id);
+      },
     },
     {
       id: 'table.create',
