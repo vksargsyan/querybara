@@ -141,7 +141,7 @@ export function registerAppCommands(actions: () => AppActions): () => void {
       category: 'Connection',
       title: 'Import Connections…',
       icon: 'import',
-      keywords: ['navicat', 'ncx', 'restore', 'move'],
+      keywords: ['navicat', 'ncx', 'compass', 'robo 3t', 'robomongo', 'restore', 'move'],
       run: () => openImportConnections(),
     },
     {

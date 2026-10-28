@@ -462,7 +462,7 @@ export const connectionsFileInputSchema = z.object({
   passphrase: secretValueSchema.optional(),
 });
 
-export const connectionsFileFormatSchema = z.enum(['querybara', 'navicat']);
+export const connectionsFileFormatSchema = z.enum(['querybara', 'navicat', 'compass', 'robo3t']);
 export type ConnectionsFileFormat = z.infer<typeof connectionsFileFormatSchema>;
 
 /**

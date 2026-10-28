@@ -1055,15 +1055,17 @@ Examples:
 
   profiles
     .command('import')
-    .description('import profiles from an export file or a Navicat .ncx file')
+    .description(
+      'import profiles from an export file, a Navicat .ncx file, a Compass export or robo3t.json',
+    )
     .argument('<file>', 'file to read')
     .option(
       '--replace',
-      'replace profiles that already exist (same id; same engine and name from Navicat)',
+      'replace profiles that already exist (same id; same engine and name from other tools)',
     )
     .addHelpText(
       'after',
-      '\nThe passphrase of an export file comes from QUERYBARA_EXPORT_PASSPHRASE or a prompt.\nA Navicat .ncx file (File > Export Connections) needs no passphrase; the passwords saved in\nit are saved when QUERYBARA_PASSPHRASE is set.',
+      "\nThe passphrase of an export file comes from QUERYBARA_EXPORT_PASSPHRASE or a prompt, as does\nthe one of a MongoDB Compass export whose passwords are encrypted.\nA Navicat .ncx file (File > Export Connections) and Robo 3T's robo3t.json need no passphrase;\nthe passwords saved in them are saved when QUERYBARA_PASSPHRASE is set.",
     )
     .action((file: string, options: { replace?: boolean }) => {
       schedule((runtime) => importCommand(runtime, file, { replace: options.replace === true }));

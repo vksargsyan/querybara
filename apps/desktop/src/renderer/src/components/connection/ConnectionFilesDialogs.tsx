@@ -36,10 +36,14 @@ export function ConnectionFilesDialogs() {
 const FORMAT_LABELS: Readonly<Record<ConnectionsFilePreview['format'], string>> = {
   querybara: 'Querybara export',
   navicat: 'Navicat connections',
+  compass: 'MongoDB Compass connections',
+  robo3t: 'Robo 3T connections',
 };
 
 /**
- * Import connections: a Querybara export (asks for its passphrase) or a Navicat `.ncx` file.
+ * Import connections: a Querybara export (asks for its passphrase), a Navicat `.ncx` file, a
+ * MongoDB Compass export (asking for its passphrase when its passwords are encrypted) or Robo
+ * 3T's `robo3t.json`.
  * The file's connections are listed with what would happen to each, and only the ticked ones
  * are imported. Connections that already exist are left alone unless Replace is ticked.
  */
@@ -128,7 +132,7 @@ function ImportConnectionsDialog(props: { readonly onClose: () => void }) {
       open
       onOpenChange={(open) => !open && props.onClose()}
       title="Import connections"
-      description="From a Querybara export file or a Navicat connections file (.ncx)."
+      description="From a Querybara export, a Navicat connections file (.ncx), a MongoDB Compass export or Robo 3T's robo3t.json."
       width="w-[680px]"
       footer={
         <>
@@ -273,7 +277,7 @@ function ImportConnectionsDialog(props: { readonly onClose: () => void }) {
                 ))}
               </div>
             )}
-            {preview.format === 'navicat' && (
+            {preview.format !== 'querybara' && (
               <p className="text-muted">
                 Passwords saved in the file are saved in the OS keychain. Treat the file as a
                 secret: anyone who has it can read them.

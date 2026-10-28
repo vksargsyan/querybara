@@ -15,6 +15,7 @@ import {
 import {
   applyConnectionsImport,
   connectionsFileFormat,
+  connectionsFileNeedsPassphrase,
   exportConnections,
   parseConnectionUri,
   readConnectionsFile,
@@ -469,9 +470,13 @@ export async function importCommand(
   }
   const format = connectionsFileFormat(data);
   if (format === undefined) {
-    throw new CliError(`${file} is not a Querybara export or a Navicat .ncx file`);
+    throw new CliError(
+      `${file} is not a Querybara export, a Navicat .ncx file, a Compass export or a Robo 3T settings file`,
+    );
   }
-  const passphrase = format === 'querybara' ? await exportPassphrase(runtime, false) : undefined;
+  const passphrase = connectionsFileNeedsPassphrase(data)
+    ? await exportPassphrase(runtime, false)
+    : undefined;
   const imported = readConnectionsFile(data, passphrase === undefined ? {} : { passphrase });
   const store = runtime.store.require();
   const result = applyConnectionsImport(store, imported, { replace: options.replace });

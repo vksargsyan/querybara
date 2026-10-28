@@ -1,4 +1,4 @@
-import { createCipheriv } from 'node:crypto';
+import { createCipheriv, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,7 +11,8 @@ import { launchApp, openNewConnection, type LaunchedApp } from './app';
  * Import and export of connections, with no server: connections export to an encrypted file
  * from the side bar's menu, the file imports into a fresh app with its passphrase, and a Navicat
  * `.ncx` file imports with its saved password; a password typed later for an imported connection
- * whose password Navicat had not saved is kept. Native file dialogs are stubbed.
+ * whose password Navicat had not saved is kept; a MongoDB Compass export whose passwords are
+ * encrypted imports with its passphrase. Native file dialogs are stubbed.
  */
 
 const SHOTS = process.env['QUERYBARA_E2E_SHOTS'];
@@ -211,4 +212,60 @@ test('the Compare menu shows a glyph for each item', async () => {
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Connection actions' }).click();
   await shot(page, 'connection-actions');
+});
+
+test('imports a MongoDB Compass export with its passwords encrypted', async () => {
+  // Compass's Encrypter: version 0x0001, salt, IV, tag and ciphertext, in base64.
+  const salt = randomBytes(16);
+  const iv = randomBytes(16);
+  const key = pbkdf2Sync(Buffer.from('compass pass', 'utf8'), salt, 100_000, 32, 'sha512');
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const body = Buffer.concat([
+    cipher.update(JSON.stringify({ secrets: { password: 'compass-secret' } })),
+    cipher.final(),
+  ]);
+  const secrets = Buffer.concat([
+    Buffer.from([0x00, 0x01]),
+    salt,
+    iv,
+    cipher.getAuthTag(),
+    body,
+  ]).toString('base64');
+  const file = join(dir, 'compass-connections.json');
+  writeFileSync(
+    file,
+    JSON.stringify({
+      type: 'Compass Connections',
+      version: { $numberInt: '1' },
+      connections: [
+        {
+          id: '0d4a6a6e-0000-4000-8000-000000000001',
+          favorite: { name: 'E2E Compass Atlas', color: '#016bf8' },
+          connectionOptions: {
+            connectionString: 'mongodb+srv://app@cluster0.abcde.mongodb.net/?appName=Compass',
+          },
+          connectionSecrets: secrets,
+        },
+      ],
+    }),
+  );
+  const launched = await launch();
+  const page = launched.page;
+  await stubDialog(launched, 'open', file);
+  await page.getByText('Connections', { exact: true }).first().click();
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+  await page.keyboard.type('Import Connections');
+  await page.keyboard.press('Enter');
+  const importing = page.getByRole('dialog', { name: 'Import connections' });
+  await importing.getByRole('button', { name: 'Choose file…' }).click();
+  // Its passwords are encrypted: the passphrase it was exported with is asked for.
+  await importing.getByLabel('Passphrase').fill('compass pass');
+  await importing.getByRole('button', { name: 'Open' }).click();
+  await expect(importing.getByText('MongoDB Compass connections · 1 connection')).toBeVisible();
+  await expect(importing.getByText('1 saved password')).toBeVisible();
+  await importing.getByRole('button', { name: 'Import 1' }).click();
+  await expect(importing).toBeHidden();
+  await expect(
+    page.getByRole('treeitem', { name: 'E2E Compass Atlas', exact: true }),
+  ).toBeVisible();
 });

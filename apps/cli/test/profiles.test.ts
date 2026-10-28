@@ -240,7 +240,9 @@ describe('profiles', () => {
     writeFileSync(join(dir, 'other.txt'), 'hello');
     const refused = await cli(['profiles', 'import', 'other.txt']);
     expect(refused.code).toBe(2);
-    expect(refused.stderr).toContain('not a Querybara export or a Navicat .ncx file');
+    expect(refused.stderr).toContain(
+      'not a Querybara export, a Navicat .ncx file, a Compass export or a Robo 3T settings file',
+    );
   });
 
   it('needs an export passphrase from the environment or a terminal', async () => {

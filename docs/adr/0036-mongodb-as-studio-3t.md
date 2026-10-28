@@ -41,6 +41,7 @@ Studio 3T's workspace, as this decision maps it:
 | Reschema, Data Masking                              | Reschema and Data Masking panels (ADR 0038)                |
 | Authentication: SCRAM, LDAP, X.509, AWS IAM, OIDC   | The same, Kerberos aside (ADR 0039)                        |
 | Data Generator                                      | Data Generator panel (ADR 0040)                            |
+| Connection Manager import (Compass, Robo 3T, URI)   | Import Connections reads the same files, and URIs          |
 
 ## Decision
 

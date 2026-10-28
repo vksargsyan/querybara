@@ -168,9 +168,23 @@ export {
   type SkippedConnection,
 } from './import/navicat';
 export {
+  compassNeedsPassphrase,
+  isCompassConnections,
+  parseCompassConnections,
+  type CompassConnection,
+  type CompassImport,
+} from './import/compass';
+export {
+  isRobo3tConnections,
+  parseRobo3tConnections,
+  type Robo3tConnection,
+  type Robo3tImport,
+} from './import/robo3t';
+export {
   CONNECTIONS_FILE_LIMIT,
   applyConnectionsImport,
   connectionsFileFormat,
+  connectionsFileNeedsPassphrase,
   existingProfileFor,
   exportConnections,
   readConnectionsFile,
