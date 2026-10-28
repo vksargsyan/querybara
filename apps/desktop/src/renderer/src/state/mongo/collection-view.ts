@@ -1,6 +1,7 @@
 import { QuerybaraError, requiresWriteConfirmation } from '@querybara/core';
-import type { MongoExplainResult } from '@querybara/ipc';
+import type { MongoExplainResult, MongoSavedPipeline } from '@querybara/ipc';
 import {
+  collectionReference,
   formatShellInline,
   fromEjson,
   isBsonDocument,
@@ -20,7 +21,8 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 
 import { errorInfo, errorMessage } from '../../lib/errors';
 import { formatCount } from '../../lib/format';
-import { profileById } from '../data';
+import { mainApi } from '../../lib/main-client';
+import { profileById, queryClient } from '../data';
 import { confirm } from '../dialogs';
 import { patchPanel } from '../panels';
 import { SessionLane } from '../session-lane';
@@ -149,6 +151,16 @@ export interface CollectionViewState {
   readonly confirmWrites: boolean;
   readonly editor: OpenEditor | undefined;
   readonly bulk: BulkState | undefined;
+  /** The collection's saved queries (Studio 3T's, ADR 0036), ordered by name. */
+  readonly saved: readonly MongoSavedPipeline[];
+}
+
+/** A query run before on the collection, from the query history. */
+export interface PastQuery {
+  readonly id: string;
+  readonly text: string;
+  readonly at: string;
+  readonly failed: boolean;
 }
 
 export class CollectionView {
@@ -191,6 +203,7 @@ export class CollectionView {
       confirmWrites: false,
       editor: undefined,
       bulk: undefined,
+      saved: [],
     }));
     this.#lane = new SessionLane(target.profileId, target.db);
     this.builder = new QueryBuilder({
@@ -380,9 +393,142 @@ export class CollectionView {
       section: 'result',
     });
     const started = performance.now();
+    const text = s.findText;
     const shown = await this.#loadPage(1);
-    if (shown) this.#set({ durationMs: Math.round(performance.now() - started) });
+    const durationMs = Math.round(performance.now() - started);
+    if (shown) this.#set({ durationMs });
+    // A run a later one replaced is not recorded; a failed one is.
+    const failed = this.results.state.error;
+    if (shown || failed !== undefined) {
+      void this.#record(text, failed, durationMs, this.results.state.documents.length);
+    }
     void this.#refreshEstimate();
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Query history and saved queries (Studio 3T's, ADR 0036)
+
+  /** The prefix of this collection's find() text, which its history entries start with. */
+  #findPrefix(): string {
+    return `${collectionReference(this.target.collection)}.find(`;
+  }
+
+  /** Records a run in the app's query history; a run never fails because it could not. */
+  async #record(
+    text: string,
+    error: string | undefined,
+    durationMs: number,
+    rowCount: number,
+  ): Promise<void> {
+    if (text.trim() === '') return;
+    try {
+      await mainApi().history.add({
+        profileId: this.target.profileId,
+        database: this.target.db,
+        text,
+        status: error === undefined ? 'success' : 'error',
+        error: error ?? null,
+        durationMs,
+        rowCount,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['history'] });
+    } catch {
+      // Best effort, as IntelliShell's.
+    }
+  }
+
+  /** The collection's recent queries, newest first, without repeats. */
+  async queryHistory(limit = 30): Promise<PastQuery[]> {
+    const prefix = this.#findPrefix();
+    const page = await mainApi().history.search({
+      query: prefix.slice(0, -1),
+      profileId: this.target.profileId,
+      limit: 200,
+    });
+    const seen = new Set<string>();
+    const out: PastQuery[] = [];
+    for (const entry of page.entries) {
+      if (entry.database !== this.target.db || !entry.text.startsWith(prefix)) continue;
+      if (seen.has(entry.text)) continue;
+      seen.add(entry.text);
+      out.push({
+        id: entry.id,
+        text: entry.text,
+        at: entry.executedAt,
+        failed: entry.status === 'error',
+      });
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  /** Puts a past or saved find() back in the query bar and runs it. */
+  async reuse(text: string): Promise<void> {
+    this.setFindText(text);
+    if (this.state.findIssue) {
+      this.#set({ notice: { kind: 'error', text: 'That query no longer parses here.' } });
+      return;
+    }
+    await this.run();
+  }
+
+  #scope() {
+    return {
+      profileId: this.target.profileId,
+      db: this.target.db,
+      collection: this.target.collection,
+    };
+  }
+
+  async refreshSaved(): Promise<void> {
+    try {
+      this.#set({ saved: await mainApi().mongo.queries.list(this.#scope()) });
+    } catch (error) {
+      this.#set({ notice: { kind: 'error', text: `Saved queries: ${errorMessage(error)}` } });
+    }
+  }
+
+  /** Saves the query in the bar under `name`, over a saved query of that name if there is one. */
+  async saveQuery(name: string): Promise<boolean> {
+    const trimmed = name.trim();
+    if (trimmed === '') return false;
+    if (this.state.findIssue || Object.keys(this.state.issues).length > 0) {
+      this.#set({ notice: { kind: 'error', text: 'Fix the query first.' } });
+      return false;
+    }
+    const existing = this.state.saved.find((query) => query.name === trimmed);
+    try {
+      const saved = await mainApi().mongo.queries.save({
+        ...this.#scope(),
+        ...(existing ? { id: existing.id } : {}),
+        name: trimmed,
+        text: this.state.findText,
+      });
+      this.#set({ notice: { kind: 'success', text: `Saved as "${saved.name}"` } });
+      await this.refreshSaved();
+      return true;
+    } catch (error) {
+      this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
+      return false;
+    }
+  }
+
+  async deleteSaved(id: string): Promise<void> {
+    const entry = this.state.saved.find((query) => query.id === id);
+    if (!entry) return;
+    const ok = await confirm({
+      title: `Delete the saved query "${entry.name}"?`,
+      message: 'The query in the bar stays; only the saved copy goes.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await mainApi().mongo.queries.delete({ id });
+      await this.refreshSaved();
+    } catch (error) {
+      this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
+    }
   }
 
   /**

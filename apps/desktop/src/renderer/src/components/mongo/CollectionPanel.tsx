@@ -1,6 +1,6 @@
 import type { BsonValue, DocumentPath } from '@querybara/mongo-tools';
 import { DropdownMenu } from 'radix-ui';
-import { useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { formatCount } from '../../lib/format';
 import { cachedProfile } from '../../state/data';
@@ -8,6 +8,7 @@ import { shortcutLabel } from '../../state/keybindings';
 import {
   useCollectionState,
   type CollectionView,
+  type PastQuery,
   type ViewSection,
 } from '../../state/mongo/collection-view';
 import { QUERY_FIELDS, type QueryField } from '../../state/mongo/query-bar';
@@ -15,7 +16,7 @@ import { useQueryBuilder } from '../../state/mongo/query-builder';
 import { useResults } from '../../state/mongo/results';
 import { useTheme } from '../theme';
 import { Button, Icon, TAB, cx } from '../ui';
-import { MenuItem } from '../MenuItem';
+import { MenuItem, MenuSub } from '../MenuItem';
 import { Pager } from '../Pager';
 import { DOCUMENT_PAGE_SIZES, elapsed, queryTotal } from '../../state/mongo/pages';
 import { CodeExportView } from './CodeExportDialog';
@@ -24,6 +25,7 @@ import { ExplainView } from './ExplainView';
 import { defaultShellScript } from '../../state/mongo/explorer';
 import { openMongoExport, openMongoImport } from '../../state/mongo/file-transfer';
 import { openIntelliShell, openMongoSql, openMongoTool } from './open';
+import { NameDialog } from './parts';
 import { QueryBuilderPanel } from './QueryBuilderPanel';
 import { ResultViews } from './ResultViews';
 import { ResultViewSelect } from './ResultViewSelect';
@@ -282,6 +284,8 @@ function QueryToolbar({ view }: { readonly view: CollectionView }) {
         <Icon name="gauge" className="h-3.5 w-3.5" />
         Explain
       </Button>
+      <QueryHistoryMenu view={view} />
+      <SavedQueriesMenu view={view} />
       <span className="mx-1 h-4 w-px bg-border" />
       <CollectionTools view={view} kind={kind} />
       <span className="flex-1" />
@@ -296,6 +300,124 @@ function QueryToolbar({ view }: { readonly view: CollectionView }) {
         Visual Query Builder
       </Button>
     </div>
+  );
+}
+
+/** The collection's past queries (Studio 3T's Query History), newest first; one runs again. */
+function QueryHistoryMenu({ view }: { readonly view: CollectionView }) {
+  const [entries, setEntries] = useState<readonly PastQuery[] | undefined>();
+  return (
+    <DropdownMenu.Root
+      onOpenChange={(open) => {
+        if (!open) return;
+        setEntries(undefined);
+        void view
+          .queryHistory()
+          .then(setEntries)
+          .catch(() => setEntries([]));
+      }}
+    >
+      <DropdownMenu.Trigger asChild>
+        <Button size="sm" variant="ghost" title="Queries run on this collection">
+          <Icon name="history" className="h-3.5 w-3.5" />
+          History
+          <Icon name="chevron-down" className="h-3 w-3" />
+        </Button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="start"
+          sideOffset={4}
+          aria-label="Query history"
+          className={cx(MENU, 'max-h-96 w-[30rem] overflow-auto')}
+        >
+          {entries === undefined && <p className="px-2 py-1.5 text-xs text-muted">Reading…</p>}
+          {entries?.length === 0 && (
+            <p className="px-2 py-1.5 text-xs text-muted">No query run on this collection yet.</p>
+          )}
+          {entries?.map((entry) => (
+            <MenuItem key={entry.id} onSelect={() => void view.reuse(entry.text)}>
+              <span className="flex min-w-0 flex-col">
+                <span className={cx('truncate font-mono text-xs', entry.failed && 'text-danger')}>
+                  {entry.text}
+                </span>
+                <span className="text-[11px] text-faint">
+                  {new Date(entry.at).toLocaleString()}
+                  {entry.failed ? ' · failed' : ''}
+                </span>
+              </span>
+            </MenuItem>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+/** The collection's saved queries (Studio 3T's): open one, save the query in the bar, delete. */
+function SavedQueriesMenu({ view }: { readonly view: CollectionView }) {
+  const saved = useCollectionState(view, (s) => s.saved);
+  const [naming, setNaming] = useState(false);
+  useEffect(() => {
+    void view.refreshSaved();
+  }, [view]);
+  return (
+    <>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <Button size="sm" variant="ghost" title="Queries saved for this collection">
+            <Icon name="bookmark" className="h-3.5 w-3.5" />
+            Saved
+            <Icon name="chevron-down" className="h-3 w-3" />
+          </Button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="start"
+            sideOffset={4}
+            aria-label="Saved queries"
+            className={cx(MENU, 'max-h-96 w-80 overflow-auto')}
+          >
+            {saved.length === 0 && (
+              <p className="px-2 py-1.5 text-xs text-muted">No saved queries yet.</p>
+            )}
+            {saved.map((entry) => (
+              <MenuItem key={entry.id} icon="bookmark" onSelect={() => void view.reuse(entry.text)}>
+                <span className="flex min-w-0 flex-col" title={entry.text}>
+                  <span className="truncate">{entry.name}</span>
+                  <span className="truncate font-mono text-[11px] text-faint">{entry.text}</span>
+                </span>
+              </MenuItem>
+            ))}
+            <DropdownMenu.Separator className="my-1 h-px bg-border" />
+            <MenuItem icon="plus" onSelect={() => setNaming(true)}>
+              Save Query…
+            </MenuItem>
+            {saved.length > 0 && (
+              <MenuSub label="Delete Saved Query" icon="trash">
+                {saved.map((entry) => (
+                  <MenuItem key={entry.id} danger onSelect={() => void view.deleteSaved(entry.id)}>
+                    {entry.name}
+                  </MenuItem>
+                ))}
+              </MenuSub>
+            )}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+      <NameDialog
+        open={naming}
+        title="Save the query"
+        label="Name"
+        initial=""
+        confirmLabel="Save"
+        onSubmit={(name) => {
+          setNaming(false);
+          void view.saveQuery(name);
+        }}
+        onClose={() => setNaming(false)}
+      />
+    </>
   );
 }
 

@@ -244,6 +244,32 @@ describe('saved pipelines and exported text in main', () => {
     expect(await handlers.pipelines.list(orders, context())).toEqual([]);
   });
 
+  it("keeps the collection tab's saved queries apart from the saved pipelines", async () => {
+    const { store, handlers } = handlersWithProfile();
+    const orders = { profileId: 'm1', db: 'shop', collection: 'orders' };
+    const query = await handlers.queries.save(
+      { ...orders, name: 'Open', text: "db.orders.find({ status: 'open' })" },
+      context(),
+    );
+    const pipeline = await handlers.pipelines.save(
+      { ...orders, name: 'Open', text: '[]' },
+      context(),
+    );
+    expect(store.savedQueries.get(query.id)?.tags).toEqual(['mongodb:find', 'collection:orders']);
+    expect((await handlers.queries.list(orders, context())).map((q) => q.id)).toEqual([query.id]);
+    expect((await handlers.pipelines.list(orders, context())).map((q) => q.id)).toEqual([
+      pipeline.id,
+    ]);
+    // A saved pipeline is not a saved query: neither replaced nor deleted through queries.*.
+    await expect(
+      handlers.queries.save({ ...orders, id: pipeline.id, name: 'x', text: 'x' }, context()),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await handlers.queries.delete({ id: pipeline.id }, context());
+    expect(store.savedQueries.get(pipeline.id)).toBeDefined();
+    await handlers.queries.delete({ id: query.id }, context());
+    expect(await handlers.queries.list(orders, context())).toEqual([]);
+  });
+
   it('writes exported text only where the save dialog pointed', async () => {
     const { grants, handlers } = handlersWithProfile();
     const dir = mkdtempSync(join(tmpdir(), 'querybara-mongo-'));

@@ -349,6 +349,52 @@ test('edits values in place in the table and tree views, keeping their types', a
   expect(after['customer']).toEqual({ name: 'Customer 2', address: { city: 'Lyon' } });
 });
 
+test('runs a query again from its history, and saves, opens and deletes a query', async () => {
+  await panel().getByRole('button', { name: 'Reset' }).click();
+  await setField('filter', "{ status: 'shipped' }");
+  await run();
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('75 documents loaded');
+  await setField('filter', '{ total: { $gt: 700 } }');
+  await run();
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('9 documents loaded');
+
+  await panel().getByRole('button', { name: 'History' }).click();
+  const history = page.getByRole('menu', { name: 'History' });
+  await expect(history.getByRole('menuitem').first()).toContainText(
+    'db.orders.find({ total: { $gt: 700 } })',
+  );
+  await history.getByRole('menuitem', { name: /status: 'shipped'/ }).click();
+  await expect(panel().getByTestId('mongo-filter')).toHaveValue("{ status: 'shipped' }");
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('75 documents loaded');
+
+  await panel().getByRole('button', { name: 'Saved', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Save Query…' }).click();
+  await page.getByTestId('name-dialog-input').fill('Shipped orders');
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
+  await expect(panel().getByTestId('mongo-notice')).toContainText('Saved as "Shipped orders"');
+
+  await panel().getByRole('button', { name: 'Reset' }).click();
+  await expect(panel().getByTestId('mongo-filter')).toHaveValue('');
+  await panel().getByRole('button', { name: 'Saved', exact: true }).click();
+  await page
+    .getByRole('menu', { name: 'Saved' })
+    .getByRole('menuitem', { name: /Shipped orders/ })
+    .click();
+  await expect(panel().getByTestId('mongo-filter')).toHaveValue("{ status: 'shipped' }");
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('75 documents loaded');
+
+  await panel().getByRole('button', { name: 'Saved', exact: true }).click();
+  // The submenu by keyboard: a pointer crossing the menu would close it on the way.
+  await page.getByRole('menuitem', { name: 'Delete Saved Query' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('menuitem', { name: 'Shipped orders', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await confirmDialog('Delete');
+  await panel().getByRole('button', { name: 'Saved', exact: true }).click();
+  await expect(page.getByRole('menu', { name: 'Saved' })).toContainText('No saved queries yet.');
+  await page.keyboard.press('Escape');
+});
+
 test('bulk-updates the filtered documents after showing the matched count', async () => {
   await setField('filter', "{ status: 'shipped' }");
   await run();

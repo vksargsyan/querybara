@@ -466,6 +466,16 @@ export const mongoMainContractShape = {
     delete: { input: z.object({ id: idSchema }), output: done },
   },
   /**
+   * Named find() queries per collection (Studio 3T's saved queries, ADR 0036), ordered by
+   * name; `text` is the collection tab's find() in mongosh syntax.
+   */
+  queries: {
+    list: { input: mongoPipelineScopeSchema, output: z.array(mongoSavedPipelineSchema) },
+    save: { input: mongoSavePipelineInputSchema, output: mongoSavedPipelineSchema },
+    /** Unknown ids are ignored. */
+    delete: { input: z.object({ id: idSchema }), output: done },
+  },
+  /**
    * Writes exported text (a JSON Schema, a validator) to a path this window picked with
    * `dialogs.saveFile`; returns the bytes written.
    */
