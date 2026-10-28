@@ -270,6 +270,21 @@ export function registerMongoCommands(): () => void {
         ),
     },
     {
+      id: 'mongo.generate',
+      category: 'MongoDB',
+      title: 'Data Generator…',
+      icon: 'table-new',
+      keywords: ['test data', 'fake data', 'sample data', 'seed', 'populate'],
+      enabled: anyMongo,
+      run: () =>
+        onCollection((context, { db, collection }) =>
+          openMongoTool({
+            tool: 'generate',
+            target: { profileId: context.profile.id, db, collection },
+          }),
+        ),
+    },
+    {
       id: 'mongo.export',
       category: 'MongoDB',
       title: 'Export…',

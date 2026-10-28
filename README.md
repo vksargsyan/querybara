@@ -127,10 +127,11 @@ What works today:
   collection tab's query history and saved queries; copy and paste of documents and of whole
   collections across databases and connections; Reschema (move, nest, convert, drop and compute
   fields) and Data Masking (mask characters, replace, null, randomise numbers and dates) into
-  another collection, run on the server. A
-  SQL tab translates a SELECT to find() or aggregate() as it is typed, runs it, and opens it in
-  the collection tab, IntelliShell or the aggregation editor; any query exports as a Node.js,
-  Python, Java, C#, Go, PHP or Ruby program for the official driver. A MongoDB toolbar and Studio 3T's
+  another collection, run on the server; a Data Generator that fills a collection with test
+  documents from a rule per field, read from its own documents. A SQL tab translates a SELECT to
+  find() or aggregate() as it is typed, runs it, and opens it in the collection tab, IntelliShell
+  or the aggregation editor; any query exports as a Node.js, Python, Java, C#, Go, PHP or Ruby
+  program for the official driver, or as a mongosh script. A MongoDB toolbar and Studio 3T's
   keys reach it all: Ctrl+L IntelliShell, Ctrl+Shift+L SQL, F4 aggregation, Ctrl+Alt+1/2/3 the
   tree, table and JSON views, Ctrl+D insert, Ctrl+U update, F8 delete, Ctrl+G Query Code.
 - **Redis and Valkey**: standalone, Sentinel and Cluster with ACL users (Cluster nodes behind NAT,

@@ -353,6 +353,17 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
             >
               Data Masking…
             </MenuItem>
+            <MenuItem
+              icon="table-new"
+              onSelect={() =>
+                openMongoTool({
+                  tool: 'generate',
+                  target: { profileId, db, collection: object.name },
+                })
+              }
+            >
+              Generate Data…
+            </MenuItem>
           </>
         )}
         <MenuItem

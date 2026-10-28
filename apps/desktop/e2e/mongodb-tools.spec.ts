@@ -657,3 +657,28 @@ test('reschemas a collection into another one, and masks a field', async () => {
     await direct!.count({ db, collection: 'people_masked' }, toEjson({ name: 'Person 0' })),
   ).toBe(0);
 });
+
+test('generates test documents from rules read from the collection', async () => {
+  const before = await direct!.count({ db, collection: 'people' });
+  await treeMenu('people', 'Generate Data…');
+  const generator = visible('mongo-generate');
+  // The rules come from the sample: a full name, and ages in the range seen.
+  await expect(generator.getByRole('combobox', { name: 'Value of name' })).toHaveValue('fullName');
+  await expect(generator.getByRole('combobox', { name: 'Value of age' })).toHaveValue('int');
+  await generator.getByRole('textbox', { name: 'Seed' }).fill('2026');
+  await generator.getByRole('button', { name: 'Preview' }).click();
+  await expect(generator.getByTestId('mongo-json-text')).toContainText('name:');
+  await generator.getByRole('textbox', { name: 'Number of documents' }).fill('1200');
+  await shot('mongo2-data-generator');
+  await generator.getByRole('button', { name: 'Generate', exact: true }).click();
+  // The schema validator applied earlier accepts them: they follow the sample's types.
+  await confirmWith('Generate', 'insertMany');
+  await expect(generator.getByText('1,200 documents inserted into people.')).toBeVisible();
+  expect(await direct!.count({ db, collection: 'people' })).toBe(before + 1200);
+  expect(
+    await direct!.count(
+      { db, collection: 'people' },
+      toEjson({ age: { $gte: 20, $lte: 39 }, name: { $regex: '^\\S+ \\S+$' } }),
+    ),
+  ).toBeGreaterThanOrEqual(1200);
+});

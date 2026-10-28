@@ -239,7 +239,12 @@ Copy tone: confident, concrete, short. Every sentence names a real capability. N
 - Users and roles
 - IntelliShell (the embedded mongosh)
 - SQL tab
-- Export query as code
+- Export query as code (seven languages and mongosh)
+- Import and export (JSON, CSV, BSON)
+- Query history and saved queries
+- Copy and paste of documents and collections
+- Reschema and Data Masking
+- Data Generator
 - The MongoDB toolbar and keyboard shortcuts
 
 **Redis and Valkey**

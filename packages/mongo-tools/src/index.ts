@@ -113,6 +113,14 @@ export type { CodeExportOptions, CodeLanguage, ExportTarget } from './codegen/co
 export { commandSafety } from './commands';
 export { copiedIndexes, indexSpecOf } from './index-spec';
 export {
+  GENERATOR_KINDS,
+  SeededRandom,
+  compileGenerator,
+  defaultGeneratorRules,
+  generateDocuments,
+} from './generate';
+export type { GenerateOptions, GeneratorKind, GeneratorRule } from './generate';
+export {
   RESHAPE_ACTIONS,
   RESHAPE_OUTPUT_MODES,
   RESHAPE_TYPES,

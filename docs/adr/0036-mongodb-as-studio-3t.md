@@ -40,6 +40,7 @@ Studio 3T's workspace, as this decision maps it:
 | Copy/Paste documents and collections                | Copy and Paste across collections and connections          |
 | Reschema, Data Masking                              | Reschema and Data Masking panels (ADR 0038)                |
 | Authentication: SCRAM, LDAP, X.509, AWS IAM, OIDC   | The same, Kerberos aside (ADR 0039)                        |
+| Data Generator                                      | Data Generator panel (ADR 0040)                            |
 
 ## Decision
 
@@ -132,4 +133,4 @@ mongosh completer with collection and field names sampled from the database.
   autocompleter's type-aware suggestions.
 - querybara-cli keeps running command documents (`querybara query`); scripts are the app's.
 - File import and export came with ADR 0037, Reschema and Data Masking with ADR 0038, AWS IAM
-  and OIDC sign-in with ADR 0039.
+  and OIDC sign-in with ADR 0039, the Data Generator with ADR 0040.

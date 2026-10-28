@@ -12,7 +12,7 @@ import { useMongoToolbar } from './mongo-commands';
 /**
  * The MongoDB toolbar (ADR 0036), Studio 3T's row of tools under the title bar: Connect,
  * Collection, IntelliShell, SQL, Aggregate, Query Profiler, Export, Import, Compare, Schema,
- * Reschema, Masking, Transfer, Users,
+ * Reschema, Masking, Generate, Transfer, Users,
  * Roles, Server Status and Tasks, each a command acting on the connection, database and
  * collection in view (asking when none is). It shows while a MongoDB connection is open;
  * Ctrl+Alt+B (View › Toggle MongoDB Toolbar) hides it.
@@ -42,6 +42,7 @@ const GROUPS: readonly (readonly Tool[])[] = [
     { command: 'mongo.analyzeSchema', label: 'Schema', icon: 'chart' },
     { command: 'mongo.reschema', label: 'Reschema', icon: 'design' },
     { command: 'mongo.mask', label: 'Masking', icon: 'eye-off' },
+    { command: 'mongo.generate', label: 'Generate', icon: 'table-new' },
     { command: 'mongo.transfer', label: 'Transfer', icon: 'transfer' },
     { command: 'tools.schedules', label: 'Tasks', icon: 'schedule' },
   ],
