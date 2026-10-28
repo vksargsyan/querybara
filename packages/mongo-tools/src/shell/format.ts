@@ -31,6 +31,11 @@ export interface FormatShellOptions {
   readonly lineWidth?: number;
   /** Strings longer than this are cut with "…" (the output then no longer parses back). */
   readonly maxStringLength?: number;
+  /**
+   * Text for mongosh itself to run: an integral Double prints as `Double(1)`, since mongosh
+   * reads `1.0` as a number it sends as an Int32.
+   */
+  readonly forMongosh?: boolean;
 }
 
 const IDENTIFIER = /^[\p{ID_Start}$_][\p{ID_Continue}$‌‍]*$/u;
@@ -118,13 +123,28 @@ function literalPattern(pattern: string): boolean {
   return !inClass;
 }
 
-function formatRegex(pattern: string, flags: string): string {
-  if (literalPattern(pattern)) return `/${pattern}/${flags}`;
+function formatRegex(pattern: string, flags: string, forMongosh = false): string {
+  if (literalPattern(pattern) && (!forMongosh || jsRegex(pattern, flags))) {
+    return `/${pattern}/${flags}`;
+  }
   return `BSONRegExp(${quoteShellString(pattern)}, ${quoteShellString(flags)})`;
 }
 
-function formatDate(date: Date): string {
+/** Whether JavaScript (hence mongosh) reads `/pattern/flags`: BSON's x and l flags it does not. */
+function jsRegex(pattern: string, flags: string): boolean {
+  try {
+    new RegExp(pattern, flags);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function formatDate(date: Date, forMongosh = false): string {
   if (Number.isNaN(date.getTime())) return 'new Date(NaN)';
+  // mongosh's ISODate takes four-digit years only.
+  const year = date.getUTCFullYear();
+  if (forMongosh && (year < 0 || year > 9999)) return `new Date(${date.getTime()})`;
   return `ISODate(${quoteShellString(date.toISOString())})`;
 }
 
@@ -132,11 +152,18 @@ class Formatter {
   private readonly indent: number;
   private readonly width: number;
   private readonly maxString: number;
+  private readonly double: (n: number) => string;
+  private readonly forMongosh: boolean;
 
   constructor(options: FormatShellOptions) {
+    this.forMongosh = options.forMongosh === true;
     this.indent = options.indent ?? 2;
     this.width = options.lineWidth ?? 80;
     this.maxString = options.maxStringLength ?? Infinity;
+    this.double = options.forMongosh
+      ? (n) =>
+          Number.isInteger(n) ? `Double(${Object.is(n, -0) ? '-0' : String(n)})` : formatDouble(n)
+      : formatDouble;
   }
 
   string(value: string): string {
@@ -188,14 +215,14 @@ class Formatter {
         // As Extended JSON types a JS number: Int32, else Int64 when integral, else Double.
         if (isInt32Number(value)) return String(value);
         if (isInt64Number(value)) return `Long('${Long.fromNumber(value).toString()}')`;
-        return formatDouble(value);
+        return this.double(value);
       case 'bigint':
         return `Long('${String(value)}')`;
       default:
         break;
     }
-    if (value instanceof Date) return formatDate(value);
-    if (value instanceof RegExp) return formatRegex(value.source, value.flags);
+    if (value instanceof Date) return formatDate(value, this.forMongosh);
+    if (value instanceof RegExp) return formatRegex(value.source, value.flags, this.forMongosh);
     switch (bsonTag(value)) {
       case undefined:
         return undefined;
@@ -204,7 +231,7 @@ class Formatter {
       case 'Int32':
         return String((value as Int32).value);
       case 'Double':
-        return formatDouble((value as Double).value);
+        return this.double((value as Double).value);
       case 'Long':
         return `Long('${(value as Long).toString()}')`;
       case 'Decimal128':
@@ -227,7 +254,7 @@ class Formatter {
         return 'MaxKey()';
       case 'BSONRegExp': {
         const re = value as BSONRegExp;
-        return formatRegex(re.pattern, re.options);
+        return formatRegex(re.pattern, re.options, this.forMongosh);
       }
       case 'BSONSymbol':
         return `BSONSymbol(${this.string((value as BSONSymbol).value)})`;

@@ -56,6 +56,15 @@ const CHECKERS: readonly Checker[] = [
     },
   },
   {
+    // A mongosh script is JavaScript; its BSON helpers are plain calls.
+    language: 'mongosh',
+    available: true,
+    check: (file) => {
+      const { code, out } = run(process.execPath, ['--check', file]);
+      return code === 0 ? '' : out;
+    },
+  },
+  {
     language: 'python',
     available: runs('python3', ['--version']),
     check: (file) => {

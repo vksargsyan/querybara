@@ -246,4 +246,26 @@ describe('formatShell', () => {
   it('truncates long strings only when asked', () => {
     expect(formatShellInline('abcdef', { maxStringLength: 3 })).toBe("'abc'…");
   });
+
+  it('writes what mongosh itself reads back to the same types, when asked', () => {
+    const value: BsonDocument = {
+      one: new Double(1),
+      nzero: new Double(-0),
+      half: new Double(0.5),
+      flags: new BSONRegExp('a b', 'sx'),
+      plain: new BSONRegExp('^a', 'i'),
+      far: new Date('+010000-01-01T00:00:00.000Z'),
+      near: new Date('2024-01-02T03:04:05.678Z'),
+    };
+    expect(formatShellInline(value)).toBe(
+      "{ one: 1.0, nzero: -0.0, half: 0.5, flags: /a b/sx, plain: /^a/i, far: ISODate('+010000-01-01T00:00:00.000Z'), near: ISODate('2024-01-02T03:04:05.678Z') }",
+    );
+    const text = formatShellInline(value, { forMongosh: true });
+    expect(text).toBe(
+      "{ one: Double(1), nzero: Double(-0), half: 0.5, flags: BSONRegExp('a b', 'sx'), plain: /^a/i, far: new Date(253402300800000), near: ISODate('2024-01-02T03:04:05.678Z') }",
+    );
+    // Still the same values for Querybara's own reader, which reads -0 as mongosh sends it.
+    expect(toEjson(parseShell(text))).toBe(toEjson(value));
+    expect(ejson('-0')).toEqual({ $numberDouble: '-0.0' });
+  });
 });

@@ -270,6 +270,8 @@ export class ShellParser {
       const n = Number(raw);
       return new Double(negative ? -n : n);
     }
+    // JavaScript's -0 is no integer to BSON: the driver sends it as a Double.
+    if (negative && BigInt(raw) === 0n) return new Double(-0);
     return integerValue(BigInt(raw) * (negative ? -1n : 1n));
   }
 

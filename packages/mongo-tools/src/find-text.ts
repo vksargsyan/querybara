@@ -110,10 +110,11 @@ function isEmpty(doc: BsonDocument | undefined): boolean {
 export function formatFindText(
   collection: string,
   query: QueryModel,
-  options: { readonly multiline?: boolean } = {},
+  options: { readonly multiline?: boolean; readonly forMongosh?: boolean } = {},
 ): string {
+  const shell = options.forMongosh ? { forMongosh: true } : {};
   const doc = (value: BsonValue): string =>
-    options.multiline ? formatShell(value) : formatShellInline(value);
+    options.multiline ? formatShell(value, shell) : formatShellInline(value, shell);
   const args = [doc(query.filter)];
   if (!isEmpty(query.projection)) args.push(doc(query.projection!));
   let text = `${collectionReference(collection)}.find(${args.join(', ')})`;

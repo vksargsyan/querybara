@@ -12,8 +12,8 @@ import { mainApi } from '../../lib/main-client';
 /**
  * Code export (spec §9, "Query tools"): the query of a collection view, an aggregation editor or
  * a SQL tab as a complete program for the official driver of Node.js, Python, Java, C#, Go, Ruby or
- * PHP (`exportQueryCode`, in the renderer). The program reads the connection string from
- * MONGODB_URI, so it never holds credentials. The language picked last is picked again.
+ * PHP, or as a mongosh script (`exportQueryCode`, in the renderer). The program reads the
+ * connection string from MONGODB_URI, so it never holds credentials. The language picked last is picked again.
  */
 
 /** What an export dialog is asked to show. */

@@ -813,7 +813,10 @@ function copyFrom(view: CollectionView): (index: number | 'all') => void {
   };
 }
 
-/** The query as a program (Node.js, Python, Java, C#, Go, PHP, Ruby), or as mongosh in IntelliShell. */
+/**
+ * The query as a program (Node.js, Python, Java, C#, Go, PHP, Ruby) or a mongosh script, or
+ * opened in IntelliShell.
+ */
 function CodeSection({ view }: { readonly view: CollectionView }) {
   const fields = useCollectionState(view, (s) => s.fields);
   const extras = useCollectionState(view, (s) => s.extras);

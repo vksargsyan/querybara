@@ -1,0 +1,16 @@
+// npm install -g mongosh
+// Set MONGODB_URI to your connection string, e.g. mongodb://localhost:27017, then run:
+// mongosh "$MONGODB_URI" --file query.mongosh.js
+db = db.getSiblingDB('shop');
+db.orders.find({
+  status: { $in: [ 'A', 'D' ] },
+  qty: { $gte: 5, $lt: Long('100') },
+  'item.sku': /^ab/i
+}, { status: 1, qty: 1, _id: 0 })
+  .sort({ qty: -1, status: 1 })
+  .skip(10)
+  .limit(20)
+  .collation({ locale: 'en', strength: 2, numericOrdering: true })
+  .hint({ status: 1 })
+  .maxTimeMS(5000)
+  .forEach((document) => printjson(document));
