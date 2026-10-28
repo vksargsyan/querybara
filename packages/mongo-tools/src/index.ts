@@ -45,6 +45,8 @@ export {
   parseShellPipeline,
 } from './shell/parser';
 export type { ShellParseOptions } from './shell/parser';
+export { splitScript, statementAt } from './shell/script';
+export type { ScriptStatement } from './shell/script';
 
 export {
   collectionReference,

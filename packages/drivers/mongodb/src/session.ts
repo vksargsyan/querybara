@@ -52,7 +52,7 @@ import { browseMongo } from './browse';
 import { buildMongoClientPlan, type MongoClientPlan } from './config';
 import { MongoContext, checkDatabaseName } from './context';
 import * as documents from './documents';
-import { mapMongoError } from './errors';
+import { mapMongoError, type MongoErrorContext } from './errors';
 import { executeCommand, parseCommand } from './execute';
 import * as gridfs from './gridfs';
 import { introspectMongo } from './introspect';
@@ -99,6 +99,41 @@ export function isMongoSession(session: Session): session is MongoSession {
 }
 
 /**
+ * A connected MongoClient for a profile (its plan built and its default database checked), and
+ * the context its errors are mapped with. Failures come back mapped (AUTH_FAILED, TLS_FAILED...).
+ * Sessions and the embedded shell (ADR 0036) both start here.
+ */
+export async function connectMongoClient(resolved: ResolvedProfile): Promise<{
+  readonly client: MongoClient;
+  readonly plan: MongoClientPlan;
+  readonly errorContext: MongoErrorContext;
+}> {
+  const plan: MongoClientPlan = buildMongoClientPlan(resolved);
+  checkDatabaseName(plan.defaultDatabase);
+  const errorContext: MongoErrorContext = {
+    where: plan.where,
+    secrets: plan.secrets,
+    ...(plan.replicaSet !== undefined ? { replicaSet: plan.replicaSet } : {}),
+    ...(plan.options.serverSelectionTimeoutMS !== undefined
+      ? { timeoutMs: plan.options.serverSelectionTimeoutMS }
+      : {}),
+  };
+  let client: MongoClient;
+  try {
+    client = new MongoClient(plan.url, plan.options);
+  } catch (error) {
+    throw mapMongoError(error, errorContext);
+  }
+  try {
+    await client.connect();
+  } catch (error) {
+    await client.close().catch(() => undefined);
+    throw mapMongoError(error, errorContext);
+  }
+  return { client, plan, errorContext };
+}
+
+/**
  * One MongoDB connection (a MongoClient with a small pool) behind the Session contract, plus
  * the document services (see MongoSession). Operations run concurrently on the pool; each
  * cancellable one runs in its own ClientSession, so `cancel` kills exactly that operation
@@ -120,24 +155,8 @@ export class MongoDbSession implements MongoSession {
 
   /** Connects, reads the topology and version, and checks the default database name. */
   static async open(resolved: ResolvedProfile): Promise<MongoDbSession> {
-    const plan: MongoClientPlan = buildMongoClientPlan(resolved);
-    checkDatabaseName(plan.defaultDatabase);
-    const errorContext = {
-      where: plan.where,
-      secrets: plan.secrets,
-      ...(plan.replicaSet !== undefined ? { replicaSet: plan.replicaSet } : {}),
-      ...(plan.options.serverSelectionTimeoutMS !== undefined
-        ? { timeoutMs: plan.options.serverSelectionTimeoutMS }
-        : {}),
-    };
-    let client: MongoClient;
+    const { client, plan, errorContext } = await connectMongoClient(resolved);
     try {
-      client = new MongoClient(plan.url, plan.options);
-    } catch (error) {
-      throw mapMongoError(error, errorContext);
-    }
-    try {
-      await client.connect();
       const adminDb = client.db('admin');
       const [hello, build] = await Promise.all([
         adminDb.command({ hello: 1 }),

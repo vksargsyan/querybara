@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@querybara/core": "workspace:*",
-    "bson": "^6.10.4"
+    "acorn": "^8.18.0",
+    "bson": "^7.3.3"
   },
   "devDependencies": {
     "@types/node": "catalog:",

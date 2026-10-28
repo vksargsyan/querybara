@@ -16,7 +16,7 @@ export { normaliseExplain, type NormalisedExplain } from './explain';
 export { indexDef } from './introspect';
 export { MONGO_FOLDERS } from './browse';
 export { gridFsBuckets } from './gridfs';
-export { MongoDbSession, isMongoSession, mongoCapabilities } from './session';
+export { MongoDbSession, connectMongoClient, isMongoSession, mongoCapabilities } from './session';
 export type {
   AggregateOptions,
   AnalyzeSchemaOptions,
@@ -35,3 +35,12 @@ export type {
   WriteOptions,
 } from './types';
 export { MongoServerTools, createMongoServerTools } from './server-tools';
+export { ShellClient } from './shell/client';
+export type { ShellClientOptions, ShellWorkerHandle, ShellWorkerSpawner } from './shell/client';
+export type {
+  HostToShell,
+  ShellPolicyMessage,
+  ShellPort,
+  ShellRequest,
+  ShellToHost,
+} from './shell/protocol';
