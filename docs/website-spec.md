@@ -226,7 +226,7 @@ Copy tone: confident, concrete, short. Every sentence names a real capability. N
 
 - Connecting (SRV, SCRAM, LDAP, X.509)
 - Explorer
-- Collection view and query bar
+- Collection tab and query bar
 - Visual query builder
 - Document editor
 - Bulk update and delete
@@ -237,9 +237,10 @@ Copy tone: confident, concrete, short. Every sentence names a real capability. N
 - Change streams
 - GridFS
 - Users and roles
-- Command console
+- IntelliShell (the embedded mongosh)
 - SQL tab
 - Export query as code
+- The MongoDB toolbar and keyboard shortcuts
 
 **Redis and Valkey**
 

@@ -40,3 +40,4 @@ supersede it with a new one.
 | [0033](0033-querybara-name-and-icon.md)          | The name Querybara, and a capybara icon on a cream tile              | Accepted                   |
 | [0034](0034-apache-2-licence.md)                 | Open source under Apache-2.0; name and logo stay trademarks          | Accepted                   |
 | [0035](0035-mongodb-compare.md)                  | MongoDB structure and data compare through the SQL compare's paths   | Accepted                   |
+| [0036](0036-mongodb-as-studio-3t.md)             | MongoDB as Studio 3T's: IntelliShell on an embedded mongosh          | Accepted                   |

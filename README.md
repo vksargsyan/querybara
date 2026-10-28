@@ -105,18 +105,26 @@ What works today:
   per object, optional AES-256-GCM encryption with a passphrase); pg_dump and mysqldump when
   installed; restores of everything or selected objects into any database, listing what would
   be dropped before asking; a Redis BGSAVE button.
-- **MongoDB**: host lists, SRV, SCRAM, LDAP and X.509 sign-in; an explorer of databases,
-  collections, views, time series, GridFS buckets, indexes, users and roles; a collection view
-  with a mongosh-syntax query bar and a visual query builder (fields from a sample, typed
-  conditions, projection and sort) kept in step with the generated find(), tree, table (with
-  drill-down into arrays and sub-documents) and JSON views, a document editor with Extended JSON
-  types and conflict detection, bulk update and delete with a matched-count preview, visual
-  explain that flags collection scans, an aggregation editor with per-stage previews, an index
-  manager, schema analysis exported as JSON Schema or applied as a validator, collection and view
-  options, a change stream viewer, a GridFS browser, users and roles, and a command console. A
+- **MongoDB**, laid out as Studio 3T's: host lists, SRV, SCRAM, LDAP and X.509 sign-in; an
+  explorer of databases, collections, views, time series, GridFS buckets, indexes, users and
+  roles, with Studio 3T's menus (copy name, rename, duplicate with indexes, clear, statistics);
+  **IntelliShell**, an embedded mongosh (5.9, on driver 7) with completion of collections,
+  methods and sampled fields, F5/F6/F9 to run the script, the statement at the cursor or the
+  selection, Query Assist result tabs that keep exact BSON types and page like a collection,
+  writes checked against the profile (read-only refuses, destructive operations ask), and a
+  hard restart for a script that does not stop; a collection tab with Studio 3T's query grid
+  (query, projection, sort, skip, limit; find, findOne or count), a docked visual query builder
+  kept in step with the generated find(), Result, Query Code and Explain sections, tree, table
+  (with drill-down into arrays and sub-documents) and JSON views, a document editor with
+  Extended JSON types and conflict detection, bulk update and delete with a matched-count
+  preview, and visual explain that flags collection scans; an aggregation editor with per-stage
+  previews, an index manager, schema analysis exported as JSON Schema or applied as a validator,
+  collection and view options, a change stream viewer, a GridFS browser, and users and roles. A
   SQL tab translates a SELECT to find() or aggregate() as it is typed, runs it, and opens it in
-  the collection view or the aggregation editor; any query exports as a Node.js, Python, Java,
-  C#, Go or PHP program for the official driver.
+  the collection tab, IntelliShell or the aggregation editor; any query exports as a Node.js,
+  Python, Java, C#, Go or PHP program for the official driver. A MongoDB toolbar and Studio 3T's
+  keys reach it all: Ctrl+L IntelliShell, Ctrl+Shift+L SQL, F4 aggregation, Ctrl+Alt+1/2/3 the
+  tree, table and JSON views, Ctrl+D insert, Ctrl+U update, F8 delete, Ctrl+G Query Code.
 - **Redis and Valkey**: standalone, Sentinel and Cluster with ACL users (Cluster nodes behind NAT,
   Docker or Kubernetes NodePorts reached through the seed that answers as each); a SCAN-based key
   browser with a namespace tree, type filters and lazy memory sizes (cluster-wide in Cluster mode);
@@ -191,7 +199,7 @@ pnpm workspaces with Turborepo ([ADR 0001](docs/adr/0001-monorepo-and-source-pac
 | `packages/drivers/sql-base`      | `@querybara/driver-sql-base`      | Shared endpoint, TLS, error mapping and Test Connection logic                                     |
 | `packages/drivers/postgres`      | `@querybara/driver-postgres`      | PostgreSQL adapter (pg, pg-cursor)                                                                |
 | `packages/drivers/mysql`         | `@querybara/driver-mysql`         | MySQL and MariaDB adapter (mysql2)                                                                |
-| `packages/drivers/mongodb`       | `@querybara/driver-mongodb`       | MongoDB adapter (mongodb) with document, index, GridFS and change stream services                 |
+| `packages/drivers/mongodb`       | `@querybara/driver-mongodb`       | MongoDB adapter (mongodb): documents, indexes, GridFS, change streams, IntelliShell's mongosh     |
 | `packages/mongo-tools`           | `@querybara/mongo-tools`          | mongosh-style query parsing, Extended JSON, find() text, schema analysis                          |
 | `packages/drivers/redis`         | `@querybara/driver-redis`         | Redis and Valkey adapter (ioredis): standalone, Sentinel, Cluster; keys, CLI, tools               |
 | `packages/redis-tools`           | `@querybara/redis-tools`          | redis-cli tokenizer and reply formats, command docs, INFO parsers, value codecs, RDB reader       |

@@ -1,6 +1,7 @@
 # 0007. MongoDB and Redis: engine services beside the Session contract
 
-- Status: Accepted; "Tunnels reach one host" superseded by [ADR 0008](0008-multi-node-tunnels.md)
+- Status: Accepted; "Tunnels reach one host" superseded by [ADR 0008](0008-multi-node-tunnels.md),
+  "The MongoDB console runs command documents" by [ADR 0036](0036-mongodb-as-studio-3t.md)
 - Date: 2026-09-29
 
 ## Context
