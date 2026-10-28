@@ -6,7 +6,10 @@ import {
   isBsonDocument,
   toEjson,
   toFindQuery,
+  withValueAt,
   type BsonDocument,
+  type BsonValue,
+  type DocumentPath,
   type ExplainVerbosity,
   type Namespace,
   type QueryModel,
@@ -748,6 +751,98 @@ export class CollectionView {
     } catch (error) {
       this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
     }
+  }
+
+  /**
+   * Edits one value in place (Studio 3T's Table and Tree views, ADR 0036): the loaded document
+   * with `value` at `path` (undefined removes the field) replaces the stored one while that is
+   * still unchanged. On a conflict the view shows the current version and nothing is written.
+   * True when the value was saved.
+   */
+  async setValue(
+    index: number,
+    path: DocumentPath,
+    value: BsonValue | undefined,
+    what: 'edit' | 'remove' = 'edit',
+  ): Promise<boolean> {
+    if (this.#refuse()) return false;
+    if (!this.editable) {
+      this.#set({
+        notice: {
+          kind: 'error',
+          text: 'These documents were read with a projection; clear it to edit whole documents.',
+        },
+      });
+      return false;
+    }
+    const original = this.results.state.documents[index];
+    if (original === undefined || path.length === 0 || path[0] === '_id') {
+      this.#set({ notice: { kind: 'error', text: 'The _id of a document cannot change.' } });
+      return false;
+    }
+    let replacement: string;
+    try {
+      replacement = toEjson(withValueAt(fromEjson(original, 'document'), path, value));
+    } catch (error) {
+      this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
+      return false;
+    }
+    if (replacement === original) return true;
+    const id = toEjson((fromEjson(original) as BsonDocument)['_id']!);
+    const field = path.map(String).join('.');
+    const command = `${this.#nsRef()}.replaceOne({ _id: ${this.#idText(id)} }, ${formatShellInline(fromEjson(replacement))})`;
+    // Removing a field always asks; a value change asks where every write does.
+    const confirmed =
+      what === 'remove'
+        ? await confirm({
+            title: `Remove ${field}?`,
+            message: this.state.production
+              ? 'This connection is marked production. The field is removed from the stored document. This runs:'
+              : 'The field is removed from the stored document. This runs:',
+            detail: command,
+            confirmLabel: 'Remove',
+            danger: true,
+          })
+        : await this.#confirmWrite(`Save ${field}?`, command);
+    if (!confirmed) return false;
+    try {
+      await this.#lane.run((host, sessionId) =>
+        host.mongo.replaceOne({
+          sessionId,
+          ns: this.ns,
+          original,
+          replacement,
+          confirmed: this.state.confirmWrites,
+        }),
+      );
+      this.results.replaceAt(index, replacement);
+      this.#set({
+        notice: {
+          kind: 'success',
+          text: what === 'remove' ? `Removed ${field}` : `Saved ${field}`,
+        },
+      });
+      return true;
+    } catch (error) {
+      const info = errorInfo(error);
+      if (info.code === 'CONFLICT' && info.detail !== undefined) {
+        this.results.replaceAt(index, info.detail);
+        this.#set({
+          notice: {
+            kind: 'error',
+            text: 'The document changed since it was read, so it was not saved; it now shows the current version.',
+          },
+        });
+      } else {
+        this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
+      }
+      return false;
+    }
+  }
+
+  /** Removes a field (or an array element) of a loaded document, after a confirmation. */
+  removeField(index: number, path: DocumentPath): Promise<boolean> {
+    return this.setValue(index, path, undefined, 'remove');
   }
 
   // -------------------------------------------------------------------------------------------

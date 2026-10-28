@@ -303,6 +303,52 @@ test('inserts, clones and deletes documents', async () => {
   expect(await direct!.count({ db, collection: 'orders' }, toEjson({ _id: 1000 }))).toBe(0);
 });
 
+test('edits values in place in the table and tree views, keeping their types', async () => {
+  await setField('filter', '{ _id: 3 }');
+  await run();
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('1 document loaded');
+  await panel().getByTestId('mongo-view').selectOption('table');
+  const table = panel().getByTestId('mongo-table');
+  const columns = await table
+    .locator('thead th')
+    .evaluateAll((cells) => cells.map((cell) => cell.getAttribute('data-column')));
+  const total = table.locator('tbody tr').first().locator('td').nth(columns.indexOf('total'));
+  await total.dblclick();
+  const editor = total.getByTestId('mongo-value-editor');
+  await expect(editor.getByRole('combobox', { name: 'Type of total' })).toHaveValue('int');
+  const input = editor.getByRole('textbox', { name: 'Value of total' });
+  await expect(input).toHaveValue('10');
+  await input.fill('ten');
+  await input.press('Enter');
+  await expect(editor.getByRole('alert')).toHaveText('"ten" is not a whole number');
+  await input.fill('12');
+  await input.press('Enter');
+  await expect(panel().getByTestId('mongo-notice')).toContainText('Saved total');
+  await expect(editor).toBeHidden();
+  expect((await stored(3))['total']).toEqual({ $numberInt: '12' });
+  await shot('mongo-value-edit');
+
+  // In the tree: a nested value, then a field removed from its menu.
+  await panel().getByTestId('mongo-view').selectOption('tree');
+  const tree = panel().getByTestId('mongo-tree');
+  await tree.getByRole('button', { name: 'Document 1', exact: true }).click();
+  await tree.getByRole('button', { name: 'Expand customer' }).click();
+  await tree.getByRole('button', { name: 'Expand address' }).click();
+  await tree.locator('[data-field="city"]').dblclick();
+  const city = tree.getByRole('textbox', { name: 'Value of customer.address.city' });
+  await expect(city).toHaveValue('Yerevan');
+  await city.fill('Lyon');
+  await city.press('Enter');
+  await expect(panel().getByTestId('mongo-notice')).toContainText('Saved customer.address.city');
+  await tree.locator('[data-field="status"]').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Remove Field…' }).click();
+  await confirmDialog('Remove');
+  await expect(panel().getByTestId('mongo-notice')).toContainText('Removed status');
+  const after = await stored(3);
+  expect(after['status']).toBeUndefined();
+  expect(after['customer']).toEqual({ name: 'Customer 2', address: { city: 'Lyon' } });
+});
+
 test('bulk-updates the filtered documents after showing the matched count', async () => {
   await setField('filter', "{ status: 'shipped' }");
   await run();

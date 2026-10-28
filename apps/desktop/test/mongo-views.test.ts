@@ -7,6 +7,7 @@ import {
 } from '@querybara/core';
 import type { StoredProfile } from '@querybara/ipc';
 import {
+  Int32,
   fromEjson,
   toEjson,
   type DocumentPage,
@@ -360,6 +361,58 @@ describe('collection view', () => {
     expect(fake.calls.find((c) => c.method === 'insertOne')?.input).toMatchObject({
       document: '{"total":{"$numberInt":"10"}}',
     });
+  });
+
+  it('edits a value in place, keeping its type, and removes a field after asking', async () => {
+    const fake = fakeHost(3);
+    connectTo(fake.host);
+    const v = view();
+    await v.init();
+    expect(await v.setValue(1, ['total'], new Int32(15))).toBe(true);
+    expect(fake.calls.find((c) => c.method === 'replaceOne')?.input).toMatchObject({
+      original: toEjson({ _id: 2, total: 10 }),
+      replacement: toEjson({ _id: 2, total: new Int32(15) }),
+    });
+    expect(v.results.state.documents[1]).toBe(toEjson({ _id: 2, total: new Int32(15) }));
+    expect(v.state.notice).toMatchObject({ kind: 'success', text: 'Saved total' });
+    // A new field goes at the end; the _id never changes in place.
+    expect(await v.setValue(1, ['note'], 'rush')).toBe(true);
+    expect(v.results.state.documents[1]).toBe(
+      toEjson({ _id: 2, total: new Int32(15), note: 'rush' }),
+    );
+    expect(await v.setValue(1, ['_id'], 9)).toBe(false);
+
+    asked.length = 0;
+    expect(await v.removeField(1, ['note'])).toBe(true);
+    expect(asked).toEqual([
+      {
+        title: 'Remove note?',
+        detail: "db.getSiblingDB('shop').orders.replaceOne({ _id: 2 }, { _id: 2, total: 15 })",
+      },
+    ]);
+    expect(v.results.state.documents[1]).toBe(toEjson({ _id: 2, total: new Int32(15) }));
+  });
+
+  it('shows the current version when a value edit meets a concurrent change', async () => {
+    const fake = fakeHost(2);
+    connectTo(fake.host);
+    const v = view();
+    await v.init();
+    fake.change(1, { total: 42, by: 'someone else' });
+    expect(await v.setValue(0, ['total'], 7)).toBe(false);
+    expect(v.results.state.documents[0]).toBe(toEjson({ _id: 1, total: 42, by: 'someone else' }));
+    expect(v.state.notice?.text).toMatch(/changed since it was read/);
+  });
+
+  it('does not edit values read with a projection', async () => {
+    const fake = fakeHost(2);
+    connectTo(fake.host);
+    const v = view();
+    v.setField('projection', '{ total: 1 }');
+    await v.init();
+    expect(await v.setValue(0, ['total'], 7)).toBe(false);
+    expect(fake.calls.some((c) => c.method === 'replaceOne')).toBe(false);
+    expect(v.state.notice?.text).toMatch(/projection/);
   });
 
   it('counts a bulk update with a dry run, then writes after the confirmation', async () => {

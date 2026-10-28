@@ -68,6 +68,14 @@ export type {
 } from './schema';
 
 export { cellText, containerSummary, tableView, valueAtPath, withValueAt } from './table';
+export {
+  VALUE_EDIT_LABELS,
+  VALUE_EDIT_TYPES,
+  parseValueEdit,
+  valueEditText,
+  valueEditType,
+} from './value-edit';
+export type { ValueEditType } from './value-edit';
 export type {
   DocumentPath,
   TableCell,

@@ -1,3 +1,4 @@
+import type { BsonValue, DocumentPath } from '@querybara/mongo-tools';
 import { DropdownMenu } from 'radix-ui';
 import { useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react';
 
@@ -550,6 +551,10 @@ function ResultSection(props: { readonly view: CollectionView; readonly writable
               ? {
                   edit: (index: number) => view.openEditor('edit', index),
                   clone: (index: number) => view.openEditor('clone', index),
+                  setValue: (index: number, path: DocumentPath, value: BsonValue | undefined) =>
+                    view.setValue(index, path, value),
+                  removeField: (index: number, path: DocumentPath) =>
+                    void view.removeField(index, path),
                 }
               : {}),
             remove: (index: number) => void view.deleteDocument(index),
