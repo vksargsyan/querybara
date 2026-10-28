@@ -55,15 +55,33 @@ const PLACEHOLDERS: Readonly<Record<ValueType, string>> = {
   shell: "{ a: 1 } or 'text'",
 };
 
-export function QueryBuilderPanel({ view }: { readonly view: CollectionView }) {
+export function QueryBuilderPanel({
+  view,
+  docked = false,
+}: {
+  readonly view: CollectionView;
+  /** Docked at the right of the collection tab (Studio 3T's place for it): fields on top. */
+  readonly docked?: boolean;
+}) {
   const blocked = useQueryBuilder(view.builder, (s) => s.blocked);
   const pending = useQueryBuilder(view.builder, (s) => s.pending);
   const extras = useCollectionState(view, (s) => s.extras);
   const kept = Object.keys(extras);
   return (
-    <div className="flex max-h-80 min-h-40 gap-2" data-testid="mongo-builder">
-      <FieldList view={view} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5 overflow-auto">
+    <div
+      className={cx(
+        'flex gap-2',
+        docked ? 'h-full min-h-0 flex-col overflow-auto p-2' : 'max-h-80 min-h-40',
+      )}
+      data-testid="mongo-builder"
+    >
+      <FieldList view={view} docked={docked} />
+      <div
+        className={cx(
+          'flex min-w-0 flex-col gap-1.5',
+          docked ? 'shrink-0' : 'flex-1 overflow-auto',
+        )}
+      >
         {blocked ? (
           <BlockedNote blocked={blocked} />
         ) : (
@@ -166,7 +184,7 @@ function fieldTitle(field: BuilderField): string {
   return `${field.display} · ${types} · in ${Math.round(field.share * 100)}% of the sample`;
 }
 
-function FieldList({ view }: { readonly view: CollectionView }) {
+function FieldList({ view, docked }: { readonly view: CollectionView; readonly docked: boolean }) {
   const builder = view.builder;
   const sample = useQueryBuilder(builder, (s) => s.sample);
   const search = useQueryBuilder(builder, (s) => s.search);
@@ -185,7 +203,10 @@ function FieldList({ view }: { readonly view: CollectionView }) {
   return (
     <section
       aria-label="Fields"
-      className="flex w-60 shrink-0 flex-col rounded border border-border bg-panel-2"
+      className={cx(
+        'flex shrink-0 flex-col rounded border border-border bg-panel-2',
+        docked ? 'max-h-56 w-full' : 'w-60',
+      )}
       data-testid="builder-fields"
     >
       <div className="flex items-center gap-1 border-b border-border px-1.5 py-0.5">

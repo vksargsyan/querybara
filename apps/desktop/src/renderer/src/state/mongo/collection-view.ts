@@ -42,8 +42,8 @@ import { DocumentResults, type ResultMode } from './results';
 /**
  * One collection view (spec §9, "Browsing and editing"): the query bar, the documents one page
  * at a time as Navicat pages them (state/mongo/pages.ts), counts (the collection's estimate, the exact number
- * of matches on demand), the tree, table and JSON views, the document editor, bulk update and
- * delete by the current filter, and explain. Everything runs on the view's own session. The
+ * of matches on demand), the table, tree and JSON views, the query as code, the document editor,
+ * bulk update and delete by the current filter, and explain: Studio 3T's collection tab (ADR 0036). Everything runs on the view's own session. The
  * write rules follow the profile as the SQL table view's do: a read-only profile edits nothing,
  * a production one confirms every write, and bulk writes always confirm their matched count.
  */
@@ -57,6 +57,7 @@ export interface CollectionTarget {
 }
 
 const PAGE_SIZE_KEY = 'querybara.mongo.pageSize';
+const VIEW_KEY = 'querybara.mongo.view';
 
 /** The page size last chosen, kept in this browser profile (a convenience, not a setting). */
 function readPageSize(): number {
@@ -78,7 +79,26 @@ function savePageSize(size: number): void {
   }
 }
 
-export type ViewTab = ResultMode | 'explain';
+/** The result view last chosen (Table View, as Studio 3T opens, until another is picked). */
+function readView(): ResultMode {
+  try {
+    const stored = localStorage.getItem(VIEW_KEY);
+    return stored === 'tree' || stored === 'json' ? stored : 'table';
+  } catch {
+    return 'table';
+  }
+}
+
+function saveView(mode: ResultMode): void {
+  try {
+    localStorage.setItem(VIEW_KEY, mode);
+  } catch {
+    // Not kept: the next view starts with Table View.
+  }
+}
+
+/** The collection tab's sections, as Studio 3T's: Result, Query Code and Explain. */
+export type ViewSection = 'result' | 'code' | 'explain';
 
 export interface ExplainState {
   readonly verbosity: ExplainVerbosity;
@@ -116,7 +136,7 @@ export interface CollectionViewState {
   /** Documents matching the active filter, counted on demand. */
   readonly exactCount: number | undefined;
   readonly counting: boolean;
-  readonly tab: ViewTab;
+  readonly section: ViewSection;
   readonly explain: ExplainState | undefined;
   readonly notice: Notice | undefined;
   readonly readOnlyProfile: boolean;
@@ -131,7 +151,7 @@ export class CollectionView {
   readonly id: string;
   readonly target: CollectionTarget;
   readonly store: StoreApi<CollectionViewState>;
-  readonly results = new DocumentResults({ mode: 'tree' });
+  readonly results = new DocumentResults({ mode: readView() });
   /** The visual query builder, the query bar's second editor. */
   readonly builder: QueryBuilder;
   readonly #lane: SessionLane;
@@ -159,7 +179,7 @@ export class CollectionView {
       estimate: undefined,
       exactCount: undefined,
       counting: false,
-      tab: 'tree',
+      section: 'result',
       explain: undefined,
       notice: undefined,
       readOnlyProfile: false,
@@ -246,16 +266,10 @@ export class CollectionView {
     });
   }
 
-  /**
-   * The query in the bar as code export takes it; undefined, with a notice, while a field does
-   * not parse.
-   */
-  exportRequest(): CodeExportRequest | undefined {
+  /** The query in the bar as code export takes it; undefined while a field does not parse. */
+  codeRequest(): CodeExportRequest | undefined {
     const s = this.state;
-    if (s.findIssue || Object.keys(s.issues).length > 0) {
-      this.#set({ notice: { kind: 'error', text: 'Fix the query first.' } });
-      return undefined;
-    }
+    if (s.findIssue || Object.keys(s.issues).length > 0) return undefined;
     try {
       return {
         target: {
@@ -265,10 +279,16 @@ export class CollectionView {
         },
         database: this.target.db,
       };
-    } catch (error) {
-      this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
+    } catch {
       return undefined;
     }
+  }
+
+  /** `codeRequest`, saying what to fix in a notice when there is none. */
+  exportRequest(): CodeExportRequest | undefined {
+    const request = this.codeRequest();
+    if (!request) this.#set({ notice: { kind: 'error', text: 'Fix the query first.' } });
+    return request;
   }
 
   /** Replaces the query with `fields` (a query opened from elsewhere) and runs it. */
@@ -298,8 +318,11 @@ export class CollectionView {
   // -------------------------------------------------------------------------------------------
   // Running and paging
 
-  /** Runs the query in the bar from the first page; problems are shown instead of running. */
-  async run(): Promise<void> {
+  /**
+   * Runs the query in the bar from the first page; problems are shown instead of running. With
+   * `one`, only its first document (Studio 3T's findOne(…)).
+   */
+  async run(options: { readonly one?: boolean } = {}): Promise<void> {
     const s = this.state;
     const pending = this.builder.pendingIssue();
     if (s.findIssue || Object.keys(s.issues).length > 0 || pending !== undefined) {
@@ -318,13 +341,14 @@ export class CollectionView {
       this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
       return;
     }
+    if (options.one) model = { ...model, limit: 1 };
     this.#count?.abort();
     this.#set({
       active: model,
       exactCount: undefined,
       notice: undefined,
       explain: undefined,
-      tab: s.tab === 'explain' ? this.results.state.mode : s.tab,
+      section: 'result',
     });
     const started = performance.now();
     const shown = await this.#loadPage(1);
@@ -460,9 +484,15 @@ export class CollectionView {
     this.#set({ counting: false });
   }
 
-  setTab(tab: ViewTab): void {
-    if (tab !== 'explain') this.results.setMode(tab);
-    this.#set({ tab });
+  setSection(section: ViewSection): void {
+    this.#set({ section });
+  }
+
+  /** Table, Tree or JSON View (kept for the next collection tab); shows the result. */
+  setView(mode: ResultMode): void {
+    this.results.setMode(mode);
+    saveView(mode);
+    this.#set({ section: 'result' });
   }
 
   dismissNotice(): void {
@@ -487,7 +517,7 @@ export class CollectionView {
       return;
     }
     this.#set({
-      tab: 'explain',
+      section: 'explain',
       explain: { verbosity, loading: true, result: undefined, error: undefined },
     });
     try {

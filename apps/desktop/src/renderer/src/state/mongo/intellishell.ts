@@ -38,6 +38,8 @@ export interface IntelliShellTarget {
   /** The database `db` starts in; the connection's default when undefined. */
   readonly database: string | undefined;
   readonly text?: string;
+  /** Runs the text once the shell is up (Collection Statistics and the like). */
+  readonly run?: boolean;
 }
 
 /** How much of the editor a run takes: everything, the statement at the cursor, the selection. */
@@ -230,7 +232,9 @@ export class IntelliShell {
       await this.#ensure();
     } catch {
       // #ensure reported it; the next run tries again.
+      return;
     }
+    if (this.target.run && this.state.text.trim() !== '') await this.run('all');
   }
 
   async #loadDatabases(): Promise<void> {

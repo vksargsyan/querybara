@@ -1,14 +1,16 @@
 import type { BrowseNode } from '@querybara/core';
 import type { StoredProfile } from '@querybara/ipc';
-import { formatShellInline, fromEjson } from '@querybara/mongo-tools';
+import { collectionReference, formatShellInline, fromEjson } from '@querybara/mongo-tools';
 import { DropdownMenu } from 'radix-ui';
 import type { ReactNode } from 'react';
 
+import { copyToClipboard } from '../../lib/clipboard';
 import { errorMessage } from '../../lib/errors';
 import { formatCount } from '../../lib/format';
 import { confirm } from '../../state/dialogs';
 import { loadChildren, pathKey, toggleNode, useExplorer } from '../../state/explorer';
 import {
+  defaultShellScript,
   describeObject,
   dropCommand,
   dropMongoObject,
@@ -16,6 +18,11 @@ import {
   opensCollection,
   type MongoObject,
 } from '../../state/mongo/explorer';
+import {
+  clearCollection,
+  openDuplicateCollection,
+  openRenameCollection,
+} from '../../state/mongo/collection-actions';
 import { openCreateCollection, openCreateView } from '../../state/mongo/create-dialogs';
 import { mongoObjectsPathFor } from '../../state/objects-model';
 import { shortcutLabel } from '../../state/keybindings';
@@ -27,14 +34,9 @@ import { MenuItem } from '../MenuItem';
 import { CompareItems } from '../ObjectMenu';
 import { Row } from '../Sidebar';
 import { Icon } from '../ui';
+import { CollectionNameDialog } from './CollectionNameDialog';
 import { MongoCreateDialogs } from './CreateDialogs';
-import {
-  defaultShellScript,
-  openIntelliShell,
-  openMongoCollection,
-  openMongoSql,
-  openMongoTool,
-} from './open';
+import { openIntelliShell, openMongoCollection, openMongoSql, openMongoTool } from './open';
 
 /**
  * A MongoDB connection's object tree (spec §5): databases, then collections, views, time series
@@ -163,6 +165,7 @@ export function MongoTree(props: {
     <>
       <MongoChildren {...props} path={[]} />
       <MongoCreateDialogs profileId={props.profile.id} />
+      <CollectionNameDialog profileId={props.profile.id} />
     </>
   );
 }
@@ -184,7 +187,19 @@ function toolOpener(profileId: string, node: BrowseNode): (() => void) | undefin
   return undefined;
 }
 
-/** The tool menu items of a node (collections, databases and folders). */
+const SEPARATOR = <DropdownMenu.Separator className="my-1 h-px bg-border" />;
+
+/** IntelliShell on a database, its script run as soon as the shell is up. */
+function runInShell(profileId: string, database: string, text: string): void {
+  openIntelliShell({ profileId, database, text, run: true });
+}
+
+/**
+ * The tool menu items of a node, in Studio 3T's order (ADR 0036): for a collection, its tools
+ * (IntelliShell, SQL, the Aggregation Editor), then copying, renaming, duplicating, clearing,
+ * then indexes, validation and views, then schema, changes and transfers, then statistics; for a
+ * database, IntelliShell and SQL, then creating, then users and roles, then the server's tools.
+ */
 function ToolItems(props: { readonly profile: StoredProfile; readonly node: BrowseNode }) {
   const { profile, node } = props;
   const profileId = profile.id;
@@ -197,32 +212,109 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
     (object.kind === 'collection' || object.kind === 'view' || object.kind === 'time-series')
   ) {
     const target = { profileId, db, collection: object.name };
+    const writable = !readOnly && object.kind !== 'view';
     return (
       <>
-        <MenuItem icon="filter" onSelect={() => openMongoTool({ tool: 'aggregation', target })}>
-          Aggregate…
+        <MenuItem
+          icon="shell"
+          shortcut={shortcutLabel('mongo.openIntelliShell')}
+          onSelect={() =>
+            openIntelliShell({ profileId, database: db, text: defaultShellScript(object.name) })
+          }
+        >
+          Open IntelliShell
         </MenuItem>
         <MenuItem
           icon="query"
+          shortcut={shortcutLabel('mongo.openSql')}
           onSelect={() => openMongoSql({ profileId, db, collection: object.name })}
         >
-          Query with SQL
+          Open SQL
         </MenuItem>
+        <MenuItem
+          icon="filter"
+          shortcut={shortcutLabel('mongo.openAggregation')}
+          onSelect={() => openMongoTool({ tool: 'aggregation', target })}
+        >
+          Open Aggregation Editor
+        </MenuItem>
+        {SEPARATOR}
+        <MenuItem icon="copy" onSelect={() => copyToClipboard(object.name)}>
+          Copy Name
+        </MenuItem>
+        {writable && (
+          <>
+            <MenuItem icon="edit" onSelect={() => openRenameCollection(profileId, db, object.name)}>
+              Rename Collection…
+            </MenuItem>
+            {object.kind === 'collection' && (
+              <MenuItem
+                icon="copy"
+                onSelect={() => openDuplicateCollection(profileId, db, object.name)}
+              >
+                Duplicate Collection…
+              </MenuItem>
+            )}
+            <MenuItem
+              icon="discard"
+              danger
+              onSelect={() => void clearCollection(profileId, db, object.name)}
+            >
+              Clear Collection…
+            </MenuItem>
+          </>
+        )}
+        {SEPARATOR}
         {object.kind !== 'view' && (
           <MenuItem icon="key" onSelect={() => openMongoTool({ tool: 'indexes', target })}>
-            Indexes
+            Manage Indexes
           </MenuItem>
         )}
+        <MenuItem icon="design" onSelect={() => openMongoTool({ tool: 'options', target })}>
+          {object.kind === 'view' ? 'View Options' : 'Edit Validator and Options…'}
+        </MenuItem>
+        {!readOnly && (
+          <MenuItem icon="plus" onSelect={() => openCreateView(profileId, db, object.name)}>
+            Add View Here…
+          </MenuItem>
+        )}
+        {SEPARATOR}
         <MenuItem
           icon="chart"
           onSelect={() =>
             openMongoTool({ tool: 'schema', target: { ...target, kind: object.kind } })
           }
         >
-          Analyse schema
+          Analyze Schema…
         </MenuItem>
-        <MenuItem icon="design" onSelect={() => openMongoTool({ tool: 'options', target })}>
-          Options
+        {object.kind !== 'view' && (
+          <MenuItem
+            icon="pulse"
+            onSelect={() =>
+              openMongoTool({
+                tool: 'changes',
+                target: {
+                  profileId,
+                  scope: { kind: 'collection', ns: { db, collection: object.name } },
+                },
+              })
+            }
+          >
+            Watch Changes
+          </MenuItem>
+        )}
+        <MenuItem
+          icon="transfer"
+          onSelect={() => openTransferFrom(profile, { database: db, objects: [object.name] })}
+        >
+          Transfer Data To…
+        </MenuItem>
+        {SEPARATOR}
+        <MenuItem
+          icon="gauge"
+          onSelect={() => runInShell(profileId, db, `${collectionReference(object.name)}.stats()`)}
+        >
+          Collection Statistics
         </MenuItem>
         {object.kind !== 'view' && (
           <MenuItem
@@ -237,52 +329,77 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
             Maintenance…
           </MenuItem>
         )}
-        {object.kind !== 'view' && (
-          <MenuItem
-            icon="pulse"
-            onSelect={() =>
-              openMongoTool({
-                tool: 'changes',
-                target: {
-                  profileId,
-                  scope: { kind: 'collection', ns: { db, collection: object.name } },
-                },
-              })
-            }
-          >
-            Watch changes
-          </MenuItem>
-        )}
-        {!readOnly && (
-          <MenuItem icon="plus" onSelect={() => openCreateView(profileId, db, object.name)}>
-            Create view on it…
-          </MenuItem>
-        )}
-        <MenuItem
-          icon="transfer"
-          onSelect={() => openTransferFrom(profile, { database: db, objects: [object.name] })}
-        >
-          Transfer data to…
-        </MenuItem>
       </>
     );
   }
   if (node.kind === 'database') {
     return (
       <>
-        <MenuItem icon="query" onSelect={() => openMongoSql({ profileId, db })}>
-          New SQL query
+        <MenuItem
+          icon="shell"
+          shortcut={shortcutLabel('mongo.openIntelliShell')}
+          onSelect={() => openIntelliShell({ profileId, database: db })}
+        >
+          Open IntelliShell
+        </MenuItem>
+        <MenuItem
+          icon="query"
+          shortcut={shortcutLabel('mongo.openSql')}
+          onSelect={() => openMongoSql({ profileId, db })}
+        >
+          Open SQL
+        </MenuItem>
+        {SEPARATOR}
+        <MenuItem icon="copy" onSelect={() => copyToClipboard(db)}>
+          Copy Name
         </MenuItem>
         {!readOnly && (
           <>
             <MenuItem icon="table-new" onSelect={() => openCreateCollection(profileId, db)}>
-              Create collection…
+              Add Collection…
             </MenuItem>
             <MenuItem icon="plus" onSelect={() => openCreateView(profileId, db)}>
-              Create view…
+              Add View…
             </MenuItem>
           </>
         )}
+        <MenuItem icon="transfer" onSelect={() => openTransferFrom(profile, { database: db })}>
+          Transfer Data To…
+        </MenuItem>
+        <BackupMenuItems profile={profile} location={{ database: db }} />
+        {SEPARATOR}
+        <MenuItem
+          icon="users"
+          onSelect={() => openMongoTool({ tool: 'users', target: { profileId, db, tab: 'users' } })}
+        >
+          Manage Users
+        </MenuItem>
+        <MenuItem
+          icon="key"
+          onSelect={() => openMongoTool({ tool: 'users', target: { profileId, db, tab: 'roles' } })}
+        >
+          Manage Roles
+        </MenuItem>
+        {SEPARATOR}
+        <MenuItem icon="gauge" onSelect={() => runInShell(profileId, db, 'db.stats()')}>
+          DB Statistics
+        </MenuItem>
+        <MenuItem
+          icon="history"
+          onSelect={() => openServerTools(profile, { tab: 'topQueries', focus: { container: db } })}
+        >
+          Query Profiler
+        </MenuItem>
+        <MenuItem icon="pulse" onSelect={() => openServerTools(profile, { tab: 'sessions' })}>
+          Current Operations
+        </MenuItem>
+        <MenuItem icon="server" onSelect={() => openServerTools(profile, { tab: 'monitor' })}>
+          Server Status
+        </MenuItem>
+        <MenuItem icon="server" onSelect={() => runInShell(profileId, db, 'db.serverBuildInfo()')}>
+          Server Build Info
+        </MenuItem>
+        {SEPARATOR}
         <MenuItem
           icon="pulse"
           onSelect={() =>
@@ -292,7 +409,7 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
             })
           }
         >
-          Watch changes
+          Watch Changes
         </MenuItem>
         <MenuItem
           icon="pulse"
@@ -300,24 +417,8 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
             openMongoTool({ tool: 'changes', target: { profileId, scope: { kind: 'cluster' } } })
           }
         >
-          Watch the whole deployment
+          Watch the Whole Deployment
         </MenuItem>
-        <MenuItem
-          icon="users"
-          onSelect={() => openMongoTool({ tool: 'users', target: { profileId, db, tab: 'users' } })}
-        >
-          Users and roles
-        </MenuItem>
-        <MenuItem
-          icon="gauge"
-          onSelect={() => openServerTools(profile, { tab: 'topQueries', focus: { container: db } })}
-        >
-          Profiler…
-        </MenuItem>
-        <MenuItem icon="transfer" onSelect={() => openTransferFrom(profile, { database: db })}>
-          Transfer data to…
-        </MenuItem>
-        <BackupMenuItems profile={profile} location={{ database: db }} />
       </>
     );
   }
@@ -330,7 +431,7 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
           openMongoTool({ tool: 'indexes', target: { profileId, db, collection: name } })
         }
       >
-        Manage indexes
+        Manage Indexes
       </MenuItem>
     );
   }
@@ -342,14 +443,25 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
           icon="users"
           onSelect={() => openMongoTool({ tool: 'users', target: { profileId, db, tab: folder } })}
         >
-          {folder === 'users' ? 'Manage users' : 'Manage roles'}
+          {folder === 'users' ? 'Manage Users' : 'Manage Roles'}
         </MenuItem>
       );
     case 'collections':
-      return readOnly ? null : (
-        <MenuItem icon="table-new" onSelect={() => openCreateCollection(profileId, db)}>
-          Create collection…
-        </MenuItem>
+      return (
+        <>
+          <MenuItem
+            icon="shell"
+            shortcut={shortcutLabel('mongo.openIntelliShell')}
+            onSelect={() => openIntelliShell({ profileId, database: db })}
+          >
+            Open IntelliShell
+          </MenuItem>
+          {!readOnly && (
+            <MenuItem icon="table-new" onSelect={() => openCreateCollection(profileId, db)}>
+              Add Collection…
+            </MenuItem>
+          )}
+        </>
       );
     case 'time-series':
       return readOnly ? null : (
@@ -357,13 +469,13 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
           icon="table-new"
           onSelect={() => openCreateCollection(profileId, db, 'timeseries')}
         >
-          Create time series collection…
+          Add Time Series Collection…
         </MenuItem>
       );
     case 'views':
       return readOnly ? null : (
         <MenuItem icon="plus" onSelect={() => openCreateView(profileId, db)}>
-          Create view…
+          Add View…
         </MenuItem>
       );
     default:
@@ -460,8 +572,9 @@ export function hasMongoMenu(profile: StoredProfile, node: BrowseNode): boolean 
 }
 
 /**
- * A MongoDB node's menu, in the tree and in the Objects view: open, the tool panels, a console,
- * refresh, and drop after showing the exact command.
+ * A MongoDB node's menu, in the tree and in the Objects view: open (a collection tab, files, the
+ * index manager, users and roles), the tools in Studio 3T's order, compare, refresh, and drop
+ * after showing the exact command.
  */
 export function MongoNodeMenu(props: {
   readonly node: BrowseNode;
@@ -497,60 +610,46 @@ export function MongoNodeMenu(props: {
   return (
     <>
       {opens && (
-        <MenuItem icon="table" onSelect={open}>
-          Open documents
+        <MenuItem icon="table" onSelect={open} shortcut="↵">
+          Open Collection Tab
         </MenuItem>
       )}
       {tool && (
         <MenuItem icon="open" onSelect={tool}>
           {node.kind === 'gridfs-bucket'
-            ? 'Open files'
+            ? 'Open GridFS View'
             : node.kind === 'index'
-              ? 'Manage indexes'
-              : 'Open in users and roles'}
+              ? 'Manage Indexes'
+              : 'Open in Users and Roles'}
         </MenuItem>
       )}
       <ToolItems profile={profile} node={node} />
-      {database !== undefined && (node.kind === 'database' || opens) && (
-        <MenuItem
-          icon="shell"
-          shortcut={shortcutLabel('mongo.openIntelliShell')}
-          onSelect={() =>
-            openIntelliShell({
-              profileId: profile.id,
-              database,
-              ...(opens && object && 'name' in object
-                ? { text: defaultShellScript(object.name) }
-                : {}),
-            })
-          }
-        >
-          Open IntelliShell
-        </MenuItem>
-      )}
-      {node.hasChildren && (
-        <MenuItem icon="refresh" onSelect={() => void loadChildren(profile.id, node.path)}>
-          Refresh
-        </MenuItem>
-      )}
       {node.kind === 'database' && database !== undefined && (
         <CompareItems source={{ profileId: profile.id, database }} />
       )}
+      {node.hasChildren && (
+        <>
+          {SEPARATOR}
+          <MenuItem icon="refresh" onSelect={() => void loadChildren(profile.id, node.path)}>
+            Refresh
+          </MenuItem>
+        </>
+      )}
       {object && command && (
         <>
-          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          {SEPARATOR}
           <MenuItem icon="trash" danger onSelect={() => void drop(object, command)}>
             {object.kind === 'database'
-              ? 'Drop database…'
+              ? 'Drop Database…'
               : object.kind === 'index'
-                ? 'Drop index…'
+                ? 'Drop Index…'
                 : object.kind === 'view'
-                  ? 'Drop view…'
+                  ? 'Drop View…'
                   : object.kind === 'user'
-                    ? 'Drop user…'
+                    ? 'Drop User…'
                     : object.kind === 'role'
-                      ? 'Drop role…'
-                      : 'Drop collection…'}
+                      ? 'Drop Role…'
+                      : 'Drop Collection…'}
           </MenuItem>
         </>
       )}

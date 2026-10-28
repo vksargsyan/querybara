@@ -403,7 +403,7 @@ describe('collection view', () => {
     });
     expect(v.results.state.documents).toHaveLength(1);
     await v.explain('queryPlanner');
-    expect(v.state.tab).toBe('explain');
+    expect(v.state.section).toBe('explain');
     expect(v.state.explain).toMatchObject({
       verbosity: 'queryPlanner',
       result: { summary: { collectionScan: true } },

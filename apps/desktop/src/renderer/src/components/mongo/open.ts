@@ -57,6 +57,8 @@ export function openIntelliShell(options: {
   readonly database?: string;
   readonly text?: string;
   readonly title?: string;
+  /** Runs the text as soon as the shell is up. */
+  readonly run?: boolean;
 }): string {
   const profile = cachedProfile(options.profileId);
   const title = options.title ?? `IntelliShell: ${profile?.name ?? options.database ?? 'MongoDB'}`;
@@ -65,22 +67,13 @@ export function openIntelliShell(options: {
       profileId: options.profileId,
       database: options.database,
       ...(options.text !== undefined ? { text: options.text } : {}),
+      ...(options.run ? { run: true } : {}),
     },
     title,
   );
   addToDock(id, title);
   return id;
 }
-
-/** The script an IntelliShell opened on a collection starts with (Studio 3T's default query). */
-export function defaultShellScript(collection: string): string {
-  return /^[A-Za-z_$][\w$]*$/.test(collection) && !SHELL_NAMES.has(collection)
-    ? `db.${collection}.find({})`
-    : `db.getCollection(${JSON.stringify(collection)}).find({})`;
-}
-
-/** Names that are Database methods or fields in mongosh, which `db.<name>` would not reach. */
-const SHELL_NAMES = new Set(['getName', 'getCollection', 'stats', 'version', 'help', 'runCommand']);
 
 /**
  * Opens a SQL tab on a database: empty, with `text`, or with a starter query on `collection`.

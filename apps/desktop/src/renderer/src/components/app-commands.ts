@@ -28,6 +28,7 @@ import { openPalette, quickPick } from '../state/palette';
 import { panelInfo } from '../state/panels';
 import { openSchedulesPanel } from '../state/schedules';
 import { showSidebar } from '../state/sidebar';
+import { activeCollectionView, activeIntelliShell } from '../state/mongo/context';
 import { getTableView } from '../state/table-view';
 import { openAbout } from '../state/updates';
 import { currentDock, openTableDesigner, requestClose } from './dock';
@@ -394,13 +395,23 @@ export function registerAppCommands(actions: () => AppActions): () => void {
       enabled: () => {
         const id = activeId();
         const kind = id === undefined ? undefined : panelInfo(id)?.kind;
-        return kind === 'table-data' || kind === 'objects';
+        return (
+          kind === 'table-data' ||
+          kind === 'objects' ||
+          activeCollectionView() !== undefined ||
+          activeIntelliShell() !== undefined
+        );
       },
       run: async () => {
         const id = activeId();
         if (id === undefined) return;
         const kind = panelInfo(id)?.kind;
-        if (kind === 'table-data') await getTableView(id)?.refresh();
+        // A collection tab runs its query again; IntelliShell runs its script (F5, as Studio 3T).
+        const view = activeCollectionView();
+        const shell = activeIntelliShell();
+        if (view) await view.run();
+        else if (shell) await shell.run('all');
+        else if (kind === 'table-data') await getTableView(id)?.refresh();
         else if (kind === 'objects') {
           const location = useObjectsView.getState().location;
           if (location) await loadChildren(location.profileId, location.path);

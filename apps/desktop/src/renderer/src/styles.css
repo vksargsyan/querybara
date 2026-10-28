@@ -317,6 +317,15 @@ progress {
   color: var(--muted);
 }
 
+/* A menu longer than the window (a MongoDB database's, a short window's) scrolls within it; in
+   the base layer, so a menu's own max-h-* utility still wins. */
+@layer base {
+  [data-radix-menu-content] {
+    max-height: var(--radix-popper-available-height);
+    overflow-y: auto;
+  }
+}
+
 /* Glide Data Grid's overlay editors render into #portal: keep it above the dock panels. */
 #portal {
   position: fixed;

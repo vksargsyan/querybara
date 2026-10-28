@@ -1,14 +1,17 @@
 import {
   BSON_TYPES,
+  EJSON,
   bsonTypeOf,
   containerSummary,
+  formatShell,
   formatShellInline,
   isBsonDocument,
   type BsonTypeName,
   type BsonValue,
   type DocumentPath,
 } from '@querybara/mongo-tools';
-import { useMemo, type ReactNode, type UIEvent } from 'react';
+import { DropdownMenu } from 'radix-ui';
+import { useMemo, useState, type MouseEvent, type ReactNode, type UIEvent } from 'react';
 
 import { copyToClipboard } from '../../lib/clipboard';
 import { formatCount } from '../../lib/format';
@@ -20,18 +23,90 @@ import {
   useResults,
   type DocumentResults,
 } from '../../state/mongo/results';
+import { MenuItem } from '../MenuItem';
+import { PointerAnchor } from '../PointerAnchor';
 import { Button, Icon, cx } from '../ui';
 
 /**
  * The three views of a MongoDB result (spec §9): tree, table and JSON. The collection view
- * passes document actions (edit, clone, delete); the console shows results read-only. Scrolling
- * near the end fetches the next page.
+ * passes document actions (edit, clone, delete, insert); IntelliShell shows results read-only.
+ * A right-click on a document opens Studio 3T's document menu (ADR 0036): edit, clone, insert,
+ * remove, and copy as mongosh or Extended JSON. Scrolling near the end fetches the next page.
  */
 
 export interface DocumentActions {
   readonly edit?: (index: number) => void;
   readonly clone?: (index: number) => void;
   readonly remove?: (index: number) => void;
+  readonly insert?: () => void;
+}
+
+/** The document menu at the pointer: where it opened, and on which document. */
+interface DocumentMenuAt {
+  readonly x: number;
+  readonly y: number;
+  readonly index: number;
+}
+
+/** A right-click handler for a document's row, and the menu it opens. */
+function useDocumentMenu(results: DocumentResults, actions: DocumentActions | undefined) {
+  const [at, setAt] = useState<DocumentMenuAt | undefined>();
+  const open = (index: number) => (event: MouseEvent) => {
+    event.preventDefault();
+    setAt({ x: event.clientX, y: event.clientY, index });
+  };
+  const copy = (style: 'shell' | 'ejson'): void => {
+    const value = at === undefined ? undefined : results.values()[at.index];
+    if (value === undefined) return;
+    copyToClipboard(
+      style === 'shell'
+        ? formatShell(value)
+        : EJSON.stringify(value, undefined, 2, { relaxed: true }),
+    );
+  };
+  const menu = at && (
+    <DropdownMenu.Root open onOpenChange={(next) => !next && setAt(undefined)}>
+      <DropdownMenu.Trigger asChild>
+        <PointerAnchor x={at.x} y={at.y} />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="start"
+          aria-label="Document"
+          className="z-50 min-w-52 rounded border border-border bg-raised p-1 text-[13px] shadow-widget"
+        >
+          {actions?.edit && (
+            <MenuItem icon="edit" onSelect={() => actions.edit!(at.index)}>
+              Edit Document…
+            </MenuItem>
+          )}
+          {actions?.clone && (
+            <MenuItem icon="copy" onSelect={() => actions.clone!(at.index)}>
+              Clone Document…
+            </MenuItem>
+          )}
+          {actions?.insert && (
+            <MenuItem icon="plus" onSelect={() => actions.insert!()}>
+              Insert Document…
+            </MenuItem>
+          )}
+          {actions?.remove && (
+            <MenuItem icon="trash" danger onSelect={() => actions.remove!(at.index)}>
+              Remove Document…
+            </MenuItem>
+          )}
+          {actions && <DropdownMenu.Separator className="my-1 h-px bg-border" />}
+          <MenuItem icon="copy" onSelect={() => copy('shell')}>
+            Copy Document
+          </MenuItem>
+          <MenuItem icon="copy" onSelect={() => copy('ejson')}>
+            Copy as Extended JSON
+          </MenuItem>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+  return { open, menu };
 }
 
 const TYPE_CLASSES: Partial<Record<BsonTypeName, string>> = {
@@ -125,6 +200,7 @@ function TreeResults(props: {
   );
   // A page's documents are numbered on from the pages before it.
   const offset = useResults(results, (s) => s.offset);
+  const documentMenu = useDocumentMenu(results, props.actions);
   return (
     <div
       className="h-full overflow-auto font-mono text-xs select-text"
@@ -144,6 +220,7 @@ function TreeResults(props: {
             aria-expanded={open}
             aria-selected={false}
             data-document={index}
+            onContextMenu={documentMenu.open(index)}
           >
             <div className="group flex items-center gap-1.5 border-b border-border/60 px-2 py-1 hover:bg-hover">
               <button
@@ -174,6 +251,7 @@ function TreeResults(props: {
         );
       })}
       <LoadMore results={results} />
+      {documentMenu.menu}
     </div>
   );
 }
@@ -318,6 +396,7 @@ function TableResults(props: {
   );
   const crumbs = crumbsOf(drill);
   const actions = drill ? undefined : props.actions;
+  const documentMenu = useDocumentMenu(results, actions);
   return (
     <div className="flex h-full flex-col" data-testid="mongo-table">
       <div className="flex items-center gap-2 border-b border-border bg-panel px-2 py-1 text-xs">
@@ -382,7 +461,12 @@ function TableResults(props: {
           </thead>
           <tbody>
             {view.rows.map((row, r) => (
-              <tr key={r} className="group hover:bg-hover" data-row={r}>
+              <tr
+                key={r}
+                className="group hover:bg-hover"
+                data-row={r}
+                onContextMenu={documentMenu.open(row.document)}
+              >
                 <td className="border-r border-b border-border/60 px-2 py-0.5 text-muted">
                   {drill ? pathTail(row.path) : r + 1}
                 </td>
@@ -428,6 +512,7 @@ function TableResults(props: {
         </table>
         {!drill && <LoadMore results={results} />}
       </div>
+      {documentMenu.menu}
     </div>
   );
 }

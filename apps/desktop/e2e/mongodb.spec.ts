@@ -161,6 +161,10 @@ test('opens a collection and pages its documents as Navicat does', async () => {
   // One click opens the documents.
   await treeRow('orders').click();
   await expect(panel()).toBeVisible();
+  // Studio 3T's layout: the breadcrumb, Table View first; this test reads the Tree View.
+  await expect(panel().getByTestId('mongo-collection-breadcrumb')).toContainText(`${db}orders`);
+  await expect(panel().getByTestId('mongo-view')).toHaveValue('table');
+  await panel().getByTestId('mongo-view').selectOption('tree');
   const loaded = panel().getByTestId('mongo-loaded');
   const pageBox = panel().getByLabel('Page', { exact: true });
   await expect(loaded).toHaveText('100 documents loaded');
@@ -198,7 +202,7 @@ test('filters, sorts and projects, with the find() text editable both ways', asy
 
   await setField('projection', '{ total: 1 }');
   await run();
-  await panel().getByRole('radio', { name: 'JSON' }).click();
+  await panel().getByTestId('mongo-view').selectOption('json');
   const json = panel().getByTestId('mongo-json-text');
   await expect(json).toContainText('{ _id: 150, total: 745 }');
   await expect(json).not.toContainText('status');
@@ -220,7 +224,7 @@ test('filters, sorts and projects, with the find() text editable both ways', asy
 });
 
 test('shows the table view and drills into an array and back', async () => {
-  await panel().getByRole('radio', { name: 'Table' }).click();
+  await panel().getByTestId('mongo-view').selectOption('table');
   const table = panel().getByTestId('mongo-table');
   await expect(table.locator('th[data-column="customer.address.city"]')).toBeVisible();
   await table.locator('tr[data-row="0"]').getByRole('button', { name: '[ 2 elements ]' }).click();
@@ -238,7 +242,7 @@ test('shows the table view and drills into an array and back', async () => {
 
 test('edits a document and resolves a conflict with a concurrent change', async () => {
   await panel().getByRole('button', { name: 'Reset' }).click();
-  await panel().getByRole('radio', { name: 'Tree' }).click();
+  await panel().getByTestId('mongo-view').selectOption('tree');
   await expect(panel().getByTestId('mongo-loaded')).toHaveText('100 documents loaded');
   await panel().getByRole('button', { name: 'Edit document 1', exact: true }).click();
   const editor = page.getByTestId('document-editor');
@@ -440,4 +444,76 @@ test('opens a result in the collection tab, and restarts a script that does not 
   await expect(shellPanel().getByTestId('intellishell-output').locator('pre').last()).toHaveText(
     '2',
   );
+});
+
+/** Opens a tree row's menu and picks an item. */
+async function treeMenu(text: string, item: string): Promise<void> {
+  const row = treeRow(text);
+  await row.hover();
+  await row.getByRole('button', { name: 'Actions' }).click();
+  await page.getByRole('menuitem', { name: item, exact: true }).click();
+}
+
+test('works as Studio 3T: the MongoDB toolbar, its keys, and findOne()', async () => {
+  const toolbar = page.getByTestId('mongo-toolbar');
+  await expect(toolbar).toBeVisible();
+  await page.getByRole('tab', { name: 'orders', exact: true }).click();
+  await expect(panel()).toBeVisible();
+  // Ctrl+Alt+3 is JSON View, Ctrl+Alt+2 Table View, in the collection tab in front.
+  await page.keyboard.press('Control+Alt+3');
+  await expect(panel().getByTestId('mongo-json-text')).toBeVisible();
+  await page.keyboard.press('Control+Alt+2');
+  await expect(panel().getByTestId('mongo-table')).toBeVisible();
+  await shot('mongo-collection-tab');
+
+  await panel().getByRole('button', { name: 'Reset' }).click();
+  await panel().getByRole('button', { name: 'Run options' }).click();
+  await page.getByRole('menuitem', { name: /^findOne/ }).click();
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('1 document loaded');
+
+  // The toolbar acts on the collection in front: IntelliShell starts on its find().
+  await toolbar.getByRole('button', { name: 'IntelliShell' }).click();
+  const shell = shellPanel();
+  await expect(shell.getByTestId('intellishell-editor')).toContainText('db.orders.find({})');
+  await expect(shell.getByTestId('intellishell-database')).toHaveValue(db);
+  // Ctrl+L opens another on the same database, and F5 in its editor runs the script.
+  await page.keyboard.press('Control+l');
+  await expect(page.locator('.dv-tab', { hasText: `IntelliShell: ${NAME}` })).toHaveCount(3);
+  await expect(shellPanel().getByTestId('intellishell-database')).toHaveValue(db);
+  await replaceText(shellPanel().getByTestId('intellishell-editor'), 'db.orders.find({})');
+  await page.keyboard.press('F5');
+  await expect(shellPanel().getByTestId('intellishell-result-tab')).toHaveText(
+    'Find Query (line 1)',
+  );
+  // With no collection in front, a tool asks for one in the shell's database.
+  await toolbar.getByRole('button', { name: 'Schema' }).click();
+  const pick = page.getByRole('dialog', { name: 'Choose' });
+  await expect(pick.getByRole('combobox')).toHaveAccessibleName(`Which collection of ${db}?`);
+  await pick.getByRole('option', { name: `orders ${db}`, exact: true }).click();
+  await expect(page.locator('.dv-tab', { hasText: 'orders schema' })).toHaveCount(1);
+});
+
+test('duplicates, renames and clears a collection from its menu', async () => {
+  await treeMenu('orders', 'Duplicate Collection…');
+  const name = page.getByTestId('name-dialog-input');
+  await expect(name).toHaveValue('orders_copy');
+  await page.getByRole('dialog').getByRole('button', { name: 'Duplicate' }).click();
+  const confirmation = await confirmDialog('Duplicate');
+  await expect(confirmation).toBeHidden();
+  await expect(treeRow('orders_copy')).toBeVisible();
+  expect(await direct!.count({ db, collection: 'orders_copy' })).toBe(
+    await direct!.count({ db, collection: 'orders' }),
+  );
+  const indexes = await direct!.listIndexes({ db, collection: 'orders_copy' });
+  expect(indexes.map((index) => index.name)).toContain('total_1');
+
+  await treeMenu('orders_copy', 'Rename Collection…');
+  await name.fill('orders_renamed');
+  await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click();
+  await confirmDialog('Rename');
+  await expect(treeRow('orders_renamed')).toBeVisible();
+
+  await treeMenu('orders_renamed', 'Clear Collection…');
+  await confirmDialog('Clear');
+  await expect.poll(() => direct!.count({ db, collection: 'orders_renamed' })).toBe(0);
 });

@@ -21,6 +21,7 @@ export function MenuItem(props: {
     <DropdownMenu.Item
       onSelect={props.onSelect}
       disabled={props.disabled}
+      {...(props.shortcut !== undefined ? { 'aria-keyshortcuts': props.shortcut } : {})}
       className={cx(
         'flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-list-active',
         props.danger && 'text-danger',
@@ -35,7 +36,10 @@ export function MenuItem(props: {
       )}
       {props.children}
       {props.shortcut !== undefined && (
-        <kbd className="ml-auto pl-4 font-sans text-[11px] text-faint">{props.shortcut}</kbd>
+        // Shown, not read as part of the item's name (aria-keyshortcuts carries it).
+        <kbd aria-hidden="true" className="ml-auto pl-4 font-sans text-[11px] text-faint">
+          {props.shortcut}
+        </kbd>
       )}
     </DropdownMenu.Item>
   );

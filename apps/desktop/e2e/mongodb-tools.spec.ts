@@ -147,7 +147,7 @@ test('connects and shows the scratch database', async () => {
 });
 
 test('builds a three-stage pipeline with per-stage previews and a disabled stage', async () => {
-  await treeMenu('orders', 'Aggregate…');
+  await treeMenu('orders', 'Open Aggregation Editor');
   const panel = visible('mongo-aggregation-panel');
   await expect(panel).toBeVisible();
   const cards = panel.getByTestId('stage-card');
@@ -197,7 +197,7 @@ test('builds a three-stage pipeline with per-stage previews and a disabled stage
 });
 
 test('creates and drops a TTL and a partial index', async () => {
-  await treeMenu('orders', 'Indexes');
+  await treeMenu('orders', 'Manage Indexes');
   const panel = visible('mongo-indexes-panel');
   await expect(panel.locator('tr[data-index="_id_"]')).toBeVisible();
 
@@ -241,7 +241,7 @@ test('creates and drops a TTL and a partial index', async () => {
 });
 
 test('analyses a schema, applies it as a validator, and the editor then refuses a bad insert', async () => {
-  await treeMenu('people', 'Analyse schema');
+  await treeMenu('people', 'Analyze Schema…');
   const panel = visible('mongo-schema-panel');
   await expect(panel.getByTestId('schema-summary')).toContainText('20 documents sampled');
   const age = panel.locator('tr[data-field="age"]');
@@ -272,7 +272,7 @@ test('analyses a schema, applies it as a validator, and the editor then refuses 
 });
 
 test('creates a capped and a time series collection', async () => {
-  await treeMenu(db, 'Create collection…');
+  await treeMenu(db, 'Add Collection…');
   const dialog = page.getByTestId('create-collection-dialog');
   await dialog.getByTestId('create-collection-name').fill('capped_log');
   await dialog.getByRole('radio', { name: 'Capped' }).click();
@@ -290,7 +290,7 @@ test('creates a capped and a time series collection', async () => {
     capped: true,
   });
 
-  await treeMenu(db, 'Create collection…');
+  await treeMenu(db, 'Add Collection…');
   await dialog.getByTestId('create-collection-name').fill('readings');
   await dialog.getByRole('radio', { name: 'Time series' }).click();
   await dialog.getByTestId('create-collection-time-field').fill('at');
@@ -307,14 +307,14 @@ test('creates a capped and a time series collection', async () => {
     timeseries: { timeField: 'at', metaField: 'sensor', granularity: 'minutes' },
   });
 
-  await treeMenu('capped_log', 'Options');
+  await treeMenu('capped_log', 'Edit Validator and Options…');
   const options = visible('mongo-options-panel');
   await expect(options.getByTestId('options-type')).toHaveText('capped collection');
   await shot('mongo2-options');
 });
 
-test('watches a change stream while the console inserts, updates and deletes', async () => {
-  await treeMenu('orders', 'Watch changes');
+test('watches a change stream while IntelliShell inserts, updates and deletes', async () => {
+  await treeMenu('orders', 'Watch Changes');
   const panel = visible('mongo-changes-panel');
   await panel.getByTestId('changes-start').click();
   await expect(panel.getByTestId('changes-status')).toContainText('Watching');
@@ -412,7 +412,7 @@ test('uploads, downloads and deletes a GridFS file', async () => {
 
 test('creates a user with a role and drops it', async () => {
   await treeRow('Users').click();
-  await treeMenu('Users', 'Manage users');
+  await treeMenu('Users', 'Manage Users');
   const panel = visible('mongo-users-panel');
   await panel.getByTestId('user-create').click();
   const dialog = page.getByTestId('user-dialog');
@@ -467,7 +467,7 @@ test('creates a custom role with a privilege and an inherited role, and drops it
 });
 
 test('creates a view from the stage cards', async () => {
-  await treeMenu('orders', 'Create view on it…');
+  await treeMenu('orders', 'Add View Here…');
   const dialog = page.getByTestId('create-view-dialog');
   await dialog.getByTestId('create-view-name').fill('open_orders');
   await replaceText(dialog.getByTestId('stage-body').first(), "{ status: 'open' }");
