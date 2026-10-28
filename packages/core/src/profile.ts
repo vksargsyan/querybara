@@ -156,7 +156,7 @@ export const connectionOptionsSchema = z.object({
    */
   oidcEnvironment: z.enum(['azure', 'gcp', 'k8s']).optional(),
   /** MongoDB OIDC on Azure or GCP: the token's audience (TOKEN_RESOURCE). */
-  oidcTokenResource: z.string().min(1).optional(),
+  oidcAudience: z.string().min(1).optional(),
   /** MongoDB: which members reads may go to (the driver's default: primary). */
   readPreference: z
     .enum(['primary', 'primaryPreferred', 'secondary', 'secondaryPreferred', 'nearest'])

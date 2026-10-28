@@ -598,7 +598,7 @@ function buildMongo(parts: UriParts, params: Params): BuiltProfile {
   // Options the profile holds in its own fields; a URI kept whole carries them itself.
   const lifted: Pick<
     OptionsDraft,
-    'authSource' | 'readPreference' | 'directConnection' | 'oidcEnvironment' | 'oidcTokenResource'
+    'authSource' | 'readPreference' | 'directConnection' | 'oidcEnvironment' | 'oidcAudience'
   > = {};
   const oidc =
     mechanism === 'MONGODB-OIDC'
@@ -690,9 +690,9 @@ function buildMongo(parts: UriParts, params: Params): BuiltProfile {
  */
 function oidcProperties(
   value: string | undefined,
-): Pick<OptionsDraft, 'oidcEnvironment' | 'oidcTokenResource'> | undefined {
+): Pick<OptionsDraft, 'oidcEnvironment' | 'oidcAudience'> | undefined {
   if (value === undefined || value === '') return undefined;
-  const out: Pick<OptionsDraft, 'oidcEnvironment' | 'oidcTokenResource'> = {};
+  const out: Pick<OptionsDraft, 'oidcEnvironment' | 'oidcAudience'> = {};
   for (const pair of value.split(',')) {
     const colon = pair.indexOf(':');
     const key = pair.slice(0, colon).trim();
@@ -703,7 +703,7 @@ function oidcProperties(
       if (environment === undefined) return undefined;
       out.oidcEnvironment = environment;
     } else if (key === 'TOKEN_RESOURCE') {
-      out.oidcTokenResource = property;
+      out.oidcAudience = property;
     } else {
       return undefined;
     }

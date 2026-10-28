@@ -511,7 +511,7 @@ function oidcOptions(
     out.authMechanismProperties = {};
     return out;
   }
-  const resource = options.oidcTokenResource ?? uriMechanismProperty(query, 'TOKEN_RESOURCE');
+  const resource = options.oidcAudience ?? uriMechanismProperty(query, 'TOKEN_RESOURCE');
   if ((environment === 'azure' || environment === 'gcp') && resource === undefined) {
     throw new QuerybaraError({
       code: 'VALIDATION_FAILED',

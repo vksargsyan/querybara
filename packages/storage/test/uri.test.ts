@@ -444,7 +444,7 @@ const CASES: readonly Case[] = [
     uri: 'mongodb://app@h/?authMechanism=MONGODB-OIDC&authMechanismProperties=ENVIRONMENT:azure,TOKEN_RESOURCE:api://querybara',
     endpoint: { kind: 'host', host: 'h', port: 27017 },
     auth: { method: 'password', user: 'app', mechanism: 'MONGODB-OIDC' },
-    profileOptions: { oidcEnvironment: 'azure', oidcTokenResource: 'api://querybara' },
+    profileOptions: { oidcEnvironment: 'azure', oidcAudience: 'api://querybara' },
   },
   {
     // OIDC through the browser.

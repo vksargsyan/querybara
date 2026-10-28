@@ -275,7 +275,7 @@ export const connectionFormSchema = z
     /** MongoDB OIDC: the workload that supplies the token; empty signs in in the browser. */
     oidcEnvironment: z.union([z.literal(''), z.enum(OIDC_ENVIRONMENTS)]),
     /** MongoDB OIDC on Azure or GCP: the token's audience. */
-    oidcTokenResource: z.string().trim().max(1024),
+    oidcAudience: z.string().trim().max(1024),
     /** Redis key browser delimiter; empty uses ":". Not trimmed: a space is a delimiter too. */
     keyDelimiter: z.string().max(16, 'Use a delimiter of at most 16 characters'),
     tlsMode: tlsModeSchema,
@@ -401,9 +401,9 @@ function authIssues(form: ConnectionFormValues, issue: IssueAt): void {
     if (
       form.mechanism === 'MONGODB-OIDC' &&
       needsTokenResource(form.oidcEnvironment) &&
-      form.oidcTokenResource === ''
+      form.oidcAudience === ''
     ) {
-      issue(['oidcTokenResource'], "Enter the token's audience, e.g. api://<application id>");
+      issue(['oidcAudience'], "Enter the token's audience, e.g. api://<application id>");
     }
   }
   if (form.authMethod === 'clientCertificate') {
@@ -679,7 +679,7 @@ export function defaultFormValues(engine: DialogEngine = 'postgres'): Connection
     directConnection: false,
     readPreference: '',
     oidcEnvironment: '',
-    oidcTokenResource: '',
+    oidcAudience: '',
     keyDelimiter: ':',
     // Off until chosen: most servers a new connection points at (local, in a private network)
     // have no TLS, and a stated TLS mode (sslmode, rediss://, https://) comes with a pasted URI.
@@ -750,7 +750,7 @@ export function switchEngine(
     directConnection: false,
     readPreference: '',
     oidcEnvironment: '',
-    oidcTokenResource: '',
+    oidcAudience: '',
     keyDelimiter: fresh.keyDelimiter,
     urls: fresh.urls,
     cloudId: fresh.cloudId,
@@ -855,7 +855,7 @@ export function profileToForm(profile: ConnectionProfile): ConnectionFormValues 
     directConnection: options.directConnection === true,
     readPreference: options.readPreference ?? '',
     oidcEnvironment: options.oidcEnvironment ?? '',
-    oidcTokenResource: options.oidcTokenResource ?? '',
+    oidcAudience: options.oidcAudience ?? '',
     keyDelimiter: options.keyDelimiter ?? '',
     sniff: options.sniff === true,
     mapNodesToSeeds: options.mapNodesToSeeds === true,
@@ -1098,7 +1098,7 @@ function optionsFromForm(
     directConnection: previousDirect,
     readPreference: previousReadPreference,
     oidcEnvironment: _oidcEnvironment,
-    oidcTokenResource: _oidcTokenResource,
+    oidcAudience: _oidcAudience,
     keyDelimiter: _keyDelimiter,
     sniff: _sniff,
     mapNodesToSeeds: _mapNodesToSeeds,
@@ -1133,7 +1133,7 @@ function optionsFromForm(
     if (oidc && form.oidcEnvironment !== '') {
       options.oidcEnvironment = form.oidcEnvironment;
       if (needsTokenResource(form.oidcEnvironment)) {
-        options.oidcTokenResource = optional(form.oidcTokenResource);
+        options.oidcAudience = optional(form.oidcAudience);
       }
     }
   }

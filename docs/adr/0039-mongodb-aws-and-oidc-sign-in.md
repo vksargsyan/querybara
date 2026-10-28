@@ -45,7 +45,7 @@ names them. A pasted connection string fills the same fields. Both sign in throu
 **OIDC: a workload's identity, or a sign-in in the browser.**
 
 - **A workload.** The profile names the workload (`oidcEnvironment`: azure, gcp or k8s) and, for
-  Azure and GCP, the token's audience (`oidcTokenResource`). On Azure, the user names the managed
+  Azure and GCP, the token's audience (`oidcAudience`). On Azure, the user names the managed
   identity. These map to the driver's `ENVIRONMENT` and `TOKEN_RESOURCE` properties.
 - **A person.**
   - Without a workload, MongoDB's `@mongodb-js/oidc-plugin` signs the person in with the

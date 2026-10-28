@@ -431,7 +431,7 @@ describe('MongoDB profile ↔ form', () => {
       options: {
         authSource: '$external',
         oidcEnvironment: 'azure',
-        oidcTokenResource: 'api://querybara',
+        oidcAudience: 'api://querybara',
       },
     },
     'an explicit directConnection=false and a negotiated mechanism': {
@@ -540,7 +540,7 @@ describe('MongoDB profile ↔ form', () => {
 
     const oidc = { authMethod: 'password' as const, mechanism: 'MONGODB-OIDC' };
     expect(issues(mongo({ ...oidc, user: '' }))).toEqual({});
-    expect(issues(mongo({ ...oidc, oidcEnvironment: 'gcp' }))).toHaveProperty('oidcTokenResource');
+    expect(issues(mongo({ ...oidc, oidcEnvironment: 'gcp' }))).toHaveProperty('oidcAudience');
     expect(issues(mongo({ ...oidc, oidcEnvironment: 'k8s' }))).toEqual({});
     // OIDC keeps no password, whatever the storage field says.
     const browser = formToProfile(mongo({ ...oidc, password: 'typed', passwordMode: 'save' }));
@@ -549,11 +549,11 @@ describe('MongoDB profile ↔ form', () => {
     expect(browser.profile.auth).toEqual({ method: 'password', mechanism: 'MONGODB-OIDC' });
     expect(browser.profile.options?.oidcEnvironment).toBeUndefined();
     const gcp = formToProfile(
-      mongo({ ...oidc, oidcEnvironment: 'gcp', oidcTokenResource: 'https://db.example.com' }),
+      mongo({ ...oidc, oidcEnvironment: 'gcp', oidcAudience: 'https://db.example.com' }),
     );
     expect(gcp.profile.options).toMatchObject({
       oidcEnvironment: 'gcp',
-      oidcTokenResource: 'https://db.example.com',
+      oidcAudience: 'https://db.example.com',
     });
     // Another mechanism drops OIDC's options.
     const scram = formToProfile(
@@ -562,7 +562,7 @@ describe('MongoDB profile ↔ form', () => {
         user: 'app',
         mechanism: 'SCRAM-SHA-256',
         oidcEnvironment: 'gcp',
-        oidcTokenResource: 'x',
+        oidcAudience: 'x',
       }),
       connectionProfileSchema.parse({
         ...gcp.profile,
@@ -572,7 +572,7 @@ describe('MongoDB profile ↔ form', () => {
       }),
     );
     expect(scram.profile.options?.oidcEnvironment).toBeUndefined();
-    expect(scram.profile.options?.oidcTokenResource).toBeUndefined();
+    expect(scram.profile.options?.oidcAudience).toBeUndefined();
   });
 
   it('puts LDAP users in $external and keeps other databases away from X.509', () => {
@@ -834,7 +834,7 @@ describe('Fill from URI', () => {
       endpointKind: 'host',
       mechanism: 'MONGODB-OIDC',
       oidcEnvironment: 'gcp',
-      oidcTokenResource: 'https://h',
+      oidcAudience: 'https://h',
     });
     expect(issues(oidc.values)).toEqual({});
   });

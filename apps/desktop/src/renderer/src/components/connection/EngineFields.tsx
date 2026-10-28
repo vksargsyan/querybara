@@ -238,15 +238,15 @@ export function MongoFields(props: SectionProps) {
               {needsTokenResource(oidcEnvironment) ? (
                 <Field
                   label="Token resource"
-                  htmlFor="cx-oidc-token-resource"
+                  htmlFor="cx-oidc-audience"
                   hint="The audience the token is issued for"
-                  error={errors.oidcTokenResource?.message}
+                  error={errors.oidcAudience?.message}
                 >
                   <Input
-                    id="cx-oidc-token-resource"
+                    id="cx-oidc-audience"
                     placeholder="api://<application id>"
-                    {...register('oidcTokenResource')}
-                    aria-invalid={!!errors.oidcTokenResource}
+                    {...register('oidcAudience')}
+                    aria-invalid={!!errors.oidcAudience}
                   />
                 </Field>
               ) : (

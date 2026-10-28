@@ -316,7 +316,7 @@ describe('buildMongoClientPlan', () => {
     const azure = buildMongoClientPlan(
       resolved({
         auth: { method: 'password', user: 'client-id', mechanism: 'MONGODB-OIDC' },
-        options: { oidcEnvironment: 'azure', oidcTokenResource: 'api://querybara' },
+        options: { oidcEnvironment: 'azure', oidcAudience: 'api://querybara' },
       }),
     );
     expect(azure.options).toMatchObject({
