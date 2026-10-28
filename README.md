@@ -129,7 +129,7 @@ What works today:
   another collection, run on the server. A
   SQL tab translates a SELECT to find() or aggregate() as it is typed, runs it, and opens it in
   the collection tab, IntelliShell or the aggregation editor; any query exports as a Node.js,
-  Python, Java, C#, Go or PHP program for the official driver. A MongoDB toolbar and Studio 3T's
+  Python, Java, C#, Go, PHP or Ruby program for the official driver. A MongoDB toolbar and Studio 3T's
   keys reach it all: Ctrl+L IntelliShell, Ctrl+Shift+L SQL, F4 aggregation, Ctrl+Alt+1/2/3 the
   tree, table and JSON views, Ctrl+D insert, Ctrl+U update, F8 delete, Ctrl+G Query Code.
 - **Redis and Valkey**: standalone, Sentinel and Cluster with ACL users (Cluster nodes behind NAT,

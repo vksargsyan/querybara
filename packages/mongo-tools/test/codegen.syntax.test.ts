@@ -16,7 +16,7 @@ import { AGGREGATE, FIND, TYPES, bsonDocument } from './codegen-fixtures';
 
 /**
  * Exported programs must at least parse. Each check runs only where its toolchain is installed:
- * `node --check`, `python3 -m py_compile`, `php -l`, `gofmt` (which must also leave the file
+ * `node --check`, `python3 -m py_compile`, `php -l`, `ruby -c`, `gofmt` (which must also leave the file
  * unchanged) and `javac` stopped after parsing (the driver jars are not needed for that). C# has
  * no parse-only compiler without a project, so it is covered by the goldens alone.
  */
@@ -68,6 +68,14 @@ const CHECKERS: readonly Checker[] = [
     available: runs('php', ['--version']),
     check: (file) => {
       const { code, out } = run('php', ['-l', file]);
+      return code === 0 ? '' : out;
+    },
+  },
+  {
+    language: 'ruby',
+    available: runs('ruby', ['--version']),
+    check: (file) => {
+      const { code, out } = run('ruby', ['-c', file]);
       return code === 0 ? '' : out;
     },
   },

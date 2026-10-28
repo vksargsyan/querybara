@@ -7,6 +7,7 @@ import { javaProgram } from './java';
 import { nodeProgram } from './node';
 import { phpProgram } from './php';
 import { pythonProgram } from './python';
+import { rubyProgram } from './ruby';
 
 /** What the export dialog shows for each language. */
 export interface CodeExportLanguage {
@@ -71,6 +72,14 @@ export const CODE_EXPORT_LANGUAGES: readonly CodeExportLanguage[] = [
     fileName: 'query.php',
     editorLanguage: 'php',
   },
+  {
+    id: 'ruby',
+    label: 'Ruby',
+    driver: 'mongo (Ruby driver)',
+    install: 'gem install mongo',
+    fileName: 'query.rb',
+    editorLanguage: 'ruby',
+  },
 ];
 
 const PROGRAMS: Readonly<Record<CodeLanguage, (target: ExportTarget, database: string) => string>> =
@@ -81,6 +90,7 @@ const PROGRAMS: Readonly<Record<CodeLanguage, (target: ExportTarget, database: s
     csharp: csharpProgram,
     go: goProgram,
     php: phpProgram,
+    ruby: rubyProgram,
   };
 
 /**

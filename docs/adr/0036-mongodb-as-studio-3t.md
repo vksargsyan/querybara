@@ -24,7 +24,7 @@ Studio 3T's workspace, as this decision maps it:
 | IntelliShell (mongosh, Query Assist, result tabs)   | IntelliShell on the embedded mongosh (this record)         |
 | Collection tab: query bar, Tree/Table/JSON, Explain | Collection tab in Studio 3T's layout (this record)         |
 | Visual Query Builder                                | Visual Query Builder, docked on the collection tab's right |
-| Query Code                                          | Query Code section: Node.js, Python, Java, C#, Go and PHP  |
+| Query Code                                          | Query Code: Node.js, Python, Java, C#, Go, PHP and Ruby    |
 | Aggregation Editor, SQL Query                       | Aggregation Editor, SQL query tab                          |
 | Schema Explorer                                     | Analyze Schema                                             |
 | Compare (structure and data)                        | Structure and data compare (ADR 0035)                      |

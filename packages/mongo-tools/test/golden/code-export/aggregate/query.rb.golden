@@ -1,0 +1,30 @@
+# gem install mongo
+# Set MONGODB_URI to your connection string, e.g. mongodb://localhost:27017
+require "mongo"
+
+client = Mongo::Client.new(ENV.fetch("MONGODB_URI"), database: "shop")
+collection = client["order items"]
+pipeline = [
+  {
+    "$match" => {
+      "status" => "A",
+      "at" => { "$gte" => Time.utc(2024, 1, 1) },
+      "price" => { "$gt" => BSON::Decimal128.new("9.99") },
+    },
+  },
+  {
+    "$group" => {
+      "_id" => "$cust",
+      "total" => { "$sum" => "$amount" },
+      "n" => { "$sum" => 1 },
+      "avg" => { "$avg" => 1.0 },
+    },
+  },
+  { "$match" => {} },
+  { "$sort" => { "total" => -1 } },
+  { "$limit" => 5 },
+]
+collection.aggregate(pipeline).each do |document|
+  puts document
+end
+client.close
