@@ -212,11 +212,14 @@ test("opens a collection's SQL tab with a starter query, and exports a translati
     'aria-checked',
     'true',
   );
-  await dialog.getByRole('radio', { name: 'Go' }).click();
+  await dialog.getByRole('radio', { name: 'Go', exact: true }).click();
   await expect(dialog.getByTestId('code-export-install')).toHaveText(
     'go get go.mongodb.org/mongo-driver/v2/mongo',
   );
   await expect(dialog.getByTestId('code-export-editor')).toContainText('package main');
+  await dialog.getByRole('radio', { name: 'mongosh', exact: true }).click();
+  await expect(dialog.getByTestId('code-export-install')).toHaveText('npm install -g mongosh');
+  await expect(dialog.getByTestId('code-export-editor')).toContainText('db.getSiblingDB(');
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 });
