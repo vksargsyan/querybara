@@ -3,6 +3,7 @@ import type {
   CollectionInfo,
   DocumentPage,
   FindQuery,
+  IndexInfo,
   IndexSpec,
   InsertManyResult,
   Namespace,
@@ -41,6 +42,7 @@ export interface MongoTransferSession extends Session {
   collectionInfo(ns: Namespace): Promise<CollectionInfo>;
   createCollection(ns: Namespace): Promise<void>;
   dropCollection(ns: Namespace): Promise<void>;
+  listIndexes(ns: Namespace): Promise<IndexInfo[]>;
   createIndex(ns: Namespace, spec: IndexSpec): Promise<string>;
   analyzeSchema(
     ns: Namespace,

@@ -1,11 +1,7 @@
-import { toEjson, type IndexInfo } from '@querybara/mongo-tools';
+import { indexSpecOf, toEjson, type IndexInfo } from '@querybara/mongo-tools';
 import { describe, expect, it } from 'vitest';
 
-import {
-  collectionNameIssue,
-  copyName,
-  indexSpecOf,
-} from '../src/renderer/src/state/mongo/collection-actions';
+import { collectionNameIssue, copyName } from '../src/renderer/src/state/mongo/collection-actions';
 import { defaultShellScript } from '../src/renderer/src/state/mongo/explorer';
 import { elapsed } from '../src/renderer/src/state/mongo/pages';
 

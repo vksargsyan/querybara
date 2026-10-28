@@ -35,6 +35,9 @@ Studio 3T's workspace, as this decision maps it:
 | GridFS, Watch Changes                               | GridFS buckets, change streams                             |
 | Main toolbar and its keys                           | MongoDB toolbar and Studio 3T's default keys (this record) |
 | Import/Export wizards (JSON, CSV, BSON)             | Export and Import of collections and queries (ADR 0037)    |
+| In-place editing in Table and Tree views            | Values edited in place, typed (this record)                |
+| Query History, saved queries                        | The collection tab's History and Saved (this record)       |
+| Copy/Paste documents and collections                | Copy and Paste across collections and connections          |
 | Reschema, Data Masking                              | Not yet                                                    |
 
 ## Decision
@@ -104,6 +107,19 @@ mongosh completer with collection and field names sampled from the database.
   Collection (documents with `$out`, then each index), Clear Collection, and collection,
   database and server statistics (run in an IntelliShell). Each write shows its exact command
   before it runs. Documents get a right-click menu. A menu longer than the window scrolls.
+- A double-click on a value in the Table or Tree view edits it in place, in its type (a type
+  picker changes it, or edits it as a mongosh expression); the document is replaced only while
+  it is unchanged, as the document editor does, and removing a field always asks.
+- The collection tab records each run in the app's query history: History runs one again, and
+  Saved keeps named queries per collection (saved queries of the local store, as the
+  aggregation editor's pipelines).
+- Copy Document, Copy All Documents and Copy Collection fill an in-app clipboard (and the system
+  one, as text). Paste Documents… shows the documents in an editor, where text from elsewhere
+  can be pasted too (the page cannot read the system clipboard), and inserts them, each with its
+  `_id` or a new one. Paste Collection copies a collection with its documents and indexes into
+  another database or connection, through a MongoDB → MongoDB transfer (new in the transfer
+  engine; options such as a validator are not copied, and the plan says so), or duplicates it
+  within its own database.
 
 ## Consequences
 

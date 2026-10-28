@@ -1,10 +1,4 @@
-import {
-  fromEjson,
-  isBsonDocument,
-  toEjson,
-  type IndexInfo,
-  type IndexSpec,
-} from '@querybara/mongo-tools';
+import { copiedIndexes, toEjson } from '@querybara/mongo-tools';
 import { create } from 'zustand';
 
 import { errorMessage } from '../../lib/errors';
@@ -84,47 +78,6 @@ export function collectionNameIssue(name: string): string | undefined {
   return undefined;
 }
 
-/**
- * The spec that creates the same index on another collection, from how the index manager lists
- * it. A text index lists its internal keys (`_fts`, `_ftsx`); it is recreated from its weights.
- */
-export function indexSpecOf(info: IndexInfo): IndexSpec {
-  let keys = info.keys;
-  let text: Pick<IndexSpec, 'weights' | 'defaultLanguage' | 'languageOverride'> = {};
-  if (info.kind === 'text') {
-    const spec = fromEjson(info.spec, 'index');
-    const weights = isBsonDocument(spec) ? spec['weights'] : undefined;
-    if (isBsonDocument(weights)) {
-      keys = toEjson(Object.fromEntries(Object.keys(weights).map((field) => [field, 'text'])));
-      const language = isBsonDocument(spec) ? spec['default_language'] : undefined;
-      const override = isBsonDocument(spec) ? spec['language_override'] : undefined;
-      text = {
-        weights: toEjson(weights),
-        ...(typeof language === 'string' ? { defaultLanguage: language } : {}),
-        ...(typeof override === 'string' ? { languageOverride: override } : {}),
-      };
-    }
-  }
-  return {
-    keys,
-    name: info.name,
-    ...(info.unique ? { unique: true } : {}),
-    ...(info.sparse ? { sparse: true } : {}),
-    ...(info.hidden ? { hidden: true } : {}),
-    ...(info.expireAfterSeconds !== undefined
-      ? { expireAfterSeconds: info.expireAfterSeconds }
-      : {}),
-    ...(info.partialFilterExpression !== undefined
-      ? { partialFilterExpression: info.partialFilterExpression }
-      : {}),
-    ...(info.collation !== undefined ? { collation: info.collation } : {}),
-    ...(info.wildcardProjection !== undefined
-      ? { wildcardProjection: info.wildcardProjection }
-      : {}),
-    ...text,
-  };
-}
-
 /** Renames or duplicates the collection of the open dialog to `name`, after confirming. */
 export async function submitCollectionName(name: string): Promise<void> {
   const action = useCollectionActions.getState().action;
@@ -173,12 +126,11 @@ export async function submitCollectionName(name: string): Promise<void> {
         // $out returns no documents; reading the stream runs the pipeline to the end.
       }
       const indexes = await host.mongo.indexes.list({ sessionId, ns });
-      for (const index of indexes) {
-        if (index.name === '_id_' || index.kind === 'clustered') continue;
+      for (const spec of copiedIndexes(indexes)) {
         await host.mongo.indexes.create({
           sessionId,
           ns: { db: action.db, collection: name },
-          spec: indexSpecOf(index),
+          spec,
           confirmed: true,
         });
       }

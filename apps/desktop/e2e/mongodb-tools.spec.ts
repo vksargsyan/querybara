@@ -32,6 +32,8 @@ let page: Page;
 let direct: MongoSession | undefined;
 let database: ReturnType<typeof scratchMongoDatabase> | undefined;
 let db = '';
+/** A second database, for pasting a collection into another one. */
+let other: ReturnType<typeof scratchMongoDatabase> | undefined;
 let files = '';
 const USER = `e2e_user_${randomBytes(3).toString('hex')}`;
 const ROLE = `e2e_role_${randomBytes(3).toString('hex')}`;
@@ -50,6 +52,8 @@ test.beforeAll(async () => {
   await direct.insertMany({ db, collection: 'orders' }, toEjson(orders));
   const people = Array.from({ length: 20 }, (_, i) => ({ name: `Person ${i}`, age: 20 + i }));
   await direct.insertMany({ db, collection: 'people' }, toEjson(people));
+  other = scratchMongoDatabase(direct);
+  await direct.insertMany({ db: other.name, collection: 'seed' }, toEjson([{ _id: 1 }]));
   await direct.uploadFile({ db, bucket: 'fs' }, new TextEncoder().encode('Hello from GridFS'), {
     filename: 'hello.txt',
     contentType: 'text/plain',
@@ -64,6 +68,7 @@ test.afterAll(async () => {
   await direct?.dropUser(db, USER).catch(() => undefined);
   await direct?.dropRole(db, ROLE).catch(() => undefined);
   await database?.drop().catch(() => undefined);
+  await other?.drop().catch(() => undefined);
   await direct?.close();
   if (files) rmSync(files, { recursive: true, force: true });
 });
@@ -557,4 +562,51 @@ test("exports the collection tab's query to CSV", async () => {
   expect(rows[0]).toBe('_id,status,total,at');
   expect(rows).toHaveLength(31);
   expect(rows[1]).toBe('2,shipped,5,2026-01-02T00:00:00.000Z');
+});
+
+test('copies documents into another collection, and a collection into another database', async () => {
+  await treeRow('orders').click();
+  const panel = visible('mongo-collection-panel');
+  await panel.getByTestId('mongo-filter').fill('{ _id: { $lte: 3 } }');
+  await panel.getByTestId('mongo-filter').press('Enter');
+  await expect(panel.getByTestId('mongo-loaded')).toHaveText('3 documents loaded');
+  await panel.getByTestId('mongo-view').selectOption('tree');
+  await panel.locator('[data-document="0"]').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Copy All Documents' }).click();
+
+  // people's validator (applied by an earlier test) refuses orders: the dialog says why.
+  await treeMenu('people', 'Paste Documents…');
+  const refused = page.getByRole('dialog', { name: 'Paste documents into people' });
+  await expect(refused.getByTestId('paste-documents-status')).toHaveText(
+    `3 documents to insert into ${db}.people`,
+  );
+  await refused.getByRole('button', { name: 'Paste 3 documents' }).click();
+  await expect(refused.getByRole('alert')).toContainText('Document failed validation');
+  await refused.getByRole('button', { name: 'Cancel' }).click();
+
+  const imported = await direct!.count({ db, collection: 'orders_imported' });
+  await treeMenu('orders_imported', 'Paste Documents…');
+  const paste = page.getByRole('dialog', { name: 'Paste documents into orders_imported' });
+  await expect(paste.getByTestId('paste-documents-text')).toContainText("status: 'open'");
+  await paste.getByRole('checkbox', { name: 'Give each document a new _id' }).check();
+  await shot('mongo2-paste-documents');
+  await paste.getByRole('button', { name: 'Paste 3 documents' }).click();
+  await expect(paste).toBeHidden();
+  expect(await direct!.count({ db, collection: 'orders_imported' })).toBe(imported + 3);
+
+  // Pasted back where they came from, they get new _ids rather than colliding.
+  await treeMenu('orders', 'Paste Documents…');
+  const back = page.getByRole('dialog', { name: 'Paste documents into orders' });
+  await expect(back.getByRole('checkbox', { name: 'Give each document a new _id' })).toBeChecked();
+  await back.getByRole('button', { name: 'Paste 3 documents' }).click();
+  await expect(back).toBeHidden();
+  expect(await direct!.count({ db, collection: 'orders' }, toEjson({ total: 5 }))).toBe(2);
+
+  const orders = await direct!.count({ db, collection: 'orders' });
+  await treeMenu('orders', 'Copy Collection');
+  await treeMenu(other!.name, 'Paste Collection “orders”');
+  await confirmWith('Paste');
+  await expect.poll(() => direct!.count({ db: other!.name, collection: 'orders' })).toBe(orders);
+  const indexes = await direct!.listIndexes({ db: other!.name, collection: 'orders' });
+  expect(indexes.map((index) => index.name)).toContain('_id_');
 });

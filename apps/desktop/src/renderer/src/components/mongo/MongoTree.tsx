@@ -34,6 +34,12 @@ import { MenuItem } from '../MenuItem';
 import { CompareItems } from '../ObjectMenu';
 import { Row } from '../Sidebar';
 import { Icon } from '../ui';
+import {
+  copyCollection,
+  openPasteDocuments,
+  pasteCollection,
+  useMongoClipboard,
+} from '../../state/mongo/clipboard';
 import { openMongoExport, openMongoImport } from '../../state/mongo/file-transfer';
 import { CollectionNameDialog } from './CollectionNameDialog';
 import { MongoCreateDialogs } from './CreateDialogs';
@@ -206,8 +212,14 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
   const profileId = profile.id;
   const readOnly = profile.presentation.readOnly;
   const [db, folder, name, sub] = node.path;
+  const clipboard = useMongoClipboard((s) => s.clipboard);
   if (db === undefined) return null;
   const object = mongoObjectOf(node);
+  const pasteCollectionItem = !readOnly && clipboard?.kind === 'collection' && (
+    <MenuItem icon="import" onSelect={() => void pasteCollection(profileId, db)}>
+      Paste Collection “{clipboard.collection}”
+    </MenuItem>
+  );
   if (
     object &&
     (object.kind === 'collection' || object.kind === 'view' || object.kind === 'time-series')
@@ -243,6 +255,19 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
         <MenuItem icon="copy" onSelect={() => copyToClipboard(object.name)}>
           Copy Name
         </MenuItem>
+        {object.kind !== 'view' && (
+          <MenuItem icon="copy" onSelect={() => void copyCollection(profileId, db, object.name)}>
+            Copy Collection
+          </MenuItem>
+        )}
+        {writable && (
+          <MenuItem
+            icon="import"
+            onSelect={() => void openPasteDocuments(profileId, db, object.name)}
+          >
+            Paste Documents…
+          </MenuItem>
+        )}
         {writable && (
           <>
             <MenuItem icon="edit" onSelect={() => openRenameCollection(profileId, db, object.name)}>
@@ -368,6 +393,7 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
         <MenuItem icon="copy" onSelect={() => copyToClipboard(db)}>
           Copy Name
         </MenuItem>
+        {pasteCollectionItem}
         {!readOnly && (
           <>
             <MenuItem icon="table-new" onSelect={() => openCreateCollection(profileId, db)}>
@@ -484,6 +510,7 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
               Add Collection…
             </MenuItem>
           )}
+          {pasteCollectionItem}
           <MenuItem icon="export" onSelect={() => void openMongoExport({ profileId, db })}>
             Export Collections…
           </MenuItem>

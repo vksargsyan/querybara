@@ -111,6 +111,7 @@ export type { CodeExportLanguage } from './codegen/export';
 export type { CodeExportOptions, CodeLanguage, ExportTarget } from './codegen/common';
 
 export { commandSafety } from './commands';
+export { copiedIndexes, indexSpecOf } from './index-spec';
 export type { CommandSafety } from './commands';
 
 export type * from './wire';

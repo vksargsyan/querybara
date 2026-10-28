@@ -47,7 +47,7 @@ function profileOf(store: Store, id: string): StoredProfile {
 export function checkTransferEngines(source: EngineId, target: EngineId): void {
   const ok =
     (isSqlEngine(source) && (isSqlEngine(target) || target === 'mongodb')) ||
-    (source === 'mongodb' && isSqlEngine(target)) ||
+    (source === 'mongodb' && (isSqlEngine(target) || target === 'mongodb')) ||
     (source === 'redis' && target === 'redis');
   if (ok) return;
   throw new QuerybaraError({

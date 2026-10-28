@@ -23,6 +23,7 @@ import { CodeExportView } from './CodeExportDialog';
 import { BulkDialog, DocumentEditorDialog } from './DocumentDialogs';
 import { ExplainView } from './ExplainView';
 import { defaultShellScript } from '../../state/mongo/explorer';
+import { copyDocuments, openPasteDocuments } from '../../state/mongo/clipboard';
 import { openMongoExport, openMongoImport } from '../../state/mongo/file-transfer';
 import { openIntelliShell, openMongoSql, openMongoTool } from './open';
 import { NameDialog } from './parts';
@@ -682,8 +683,15 @@ function ResultSection(props: { readonly view: CollectionView; readonly writable
               : {}),
             remove: (index: number) => void view.deleteDocument(index),
             insert: () => view.openEditor('insert'),
+            copy: copyFrom(view),
+            paste: () =>
+              void openPasteDocuments(
+                view.target.profileId,
+                view.target.db,
+                view.target.collection,
+              ),
           }
-        : undefined,
+        : { copy: copyFrom(view) },
     [view, writable, editable],
   );
   return (
@@ -791,6 +799,18 @@ function ResultSection(props: { readonly view: CollectionView; readonly writable
       </div>
     </>
   );
+}
+
+/** Copies one loaded document, or all of them, for Paste Documents… (ADR 0036). */
+function copyFrom(view: CollectionView): (index: number | 'all') => void {
+  return (index) => {
+    const documents = view.results.state.documents;
+    const picked = index === 'all' ? documents : documents.slice(index, index + 1);
+    copyDocuments(
+      { profileId: view.target.profileId, db: view.target.db, collection: view.target.collection },
+      picked,
+    );
+  };
 }
 
 /** The query as a program (Node.js, Python, Java, C#, Go, PHP), or as mongosh in IntelliShell. */

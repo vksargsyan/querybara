@@ -49,7 +49,8 @@ import { Button, Icon, cx } from '../ui';
  * The three views of a MongoDB result (spec §9): tree, table and JSON. The collection view
  * passes document actions (edit, clone, delete, insert, and values edited in place);
  * IntelliShell shows results read-only. A right-click on a document opens Studio 3T's document
- * menu (ADR 0036): edit, clone, insert, remove, and copy as mongosh or Extended JSON; on a value
+ * menu (ADR 0036): edit, clone, insert, remove, copy (for Paste Documents…, and as mongosh or
+ * Extended JSON text) and paste; on a value
  * it adds Edit Value, Remove Field, Copy Value and Copy Field Path. A double-click on a value
  * edits it in place, typed (Enter saves, Escape cancels). Scrolling near the end fetches the
  * next page.
@@ -68,6 +69,10 @@ export interface DocumentActions {
   ) => Promise<boolean>;
   /** Removes one field (or array element) of a loaded document. */
   readonly removeField?: (index: number, path: DocumentPath) => void;
+  /** Copies documents for Paste Documents… (the given one, or every loaded one). */
+  readonly copy?: (index: number | 'all') => void;
+  /** Opens Paste Documents… on the collection. */
+  readonly paste?: () => void;
 }
 
 /** The value a right-click landed on: its path in the document, and how to edit it in place. */
@@ -170,12 +175,25 @@ function useDocumentMenu(results: DocumentResults, actions: DocumentActions | un
             </MenuItem>
           )}
           {actions && <DropdownMenu.Separator className="my-1 h-px bg-border" />}
-          <MenuItem icon="copy" onSelect={() => copy('shell')}>
+          <MenuItem
+            icon="copy"
+            onSelect={() => (actions?.copy ? actions.copy(at.index) : copy('shell'))}
+          >
             Copy Document
           </MenuItem>
+          {actions?.copy && (
+            <MenuItem icon="copy" onSelect={() => actions.copy!('all')}>
+              Copy All Documents
+            </MenuItem>
+          )}
           <MenuItem icon="copy" onSelect={() => copy('ejson')}>
             Copy as Extended JSON
           </MenuItem>
+          {actions?.paste && (
+            <MenuItem icon="import" onSelect={actions.paste}>
+              Paste Documents…
+            </MenuItem>
+          )}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
