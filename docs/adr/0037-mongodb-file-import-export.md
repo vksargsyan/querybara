@@ -78,6 +78,10 @@ job lists each refused one. Three modes:
   - a database's menu (Import Collection…), which names a new collection after the file;
   - the toolbar and the `mongo.import` command.
 - Several collections export to a folder, a file each.
+- An export can run on a schedule instead (Schedule…, ADR 0019): the schedule keeps the export
+  job without its path, and each run writes a new file, or folder, named from the schedule's
+  template. It stays an `export` task, holding the `mongo-export` job, so stored schedules need
+  no migration.
 
 ## Consequences
 
@@ -88,5 +92,4 @@ job lists each refused one. Three modes:
   holds them, and arrays round-trip only as Extended JSON text.
 - Relaxed Extended JSON does not tell Int32 from a whole Double. Canonical export keeps them
   apart.
-- querybara-cli's `import` and `export` stay SQL-only. Scheduled MongoDB exports are not offered
-  yet.
+- querybara-cli's `import` and `export` stay SQL-only.

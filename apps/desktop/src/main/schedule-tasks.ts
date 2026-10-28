@@ -1,6 +1,12 @@
 import { mkdir } from 'node:fs/promises';
 
-import { ENGINES, QuerybaraError, isSqlEngine, type ConnectionProfile } from '@querybara/core';
+import {
+  ENGINES,
+  QuerybaraError,
+  isSqlEngine,
+  type ConnectionProfile,
+  type EngineId,
+} from '@querybara/core';
 import {
   scheduleTaskSchema,
   type JobInfo,
@@ -39,6 +45,20 @@ export interface TaskServices {
 /** The secret store id of an encrypted backup schedule's passphrase. */
 export function passphraseRef(scheduleId: string): { id: string; policy: 'save' } {
   return { id: `schedule-passphrase-${scheduleId}`, policy: 'save' };
+}
+
+/**
+ * Why a task cannot run on a connection of `engine`, or undefined when it can: backups run on
+ * every engine, MongoDB exports on MongoDB, SQL files and other exports on SQL engines.
+ */
+export function unsupportedTask(task: ScheduleTask, engine: EngineId): string | undefined {
+  if (task.kind === 'backup' || task.kind === 'comparison') return undefined;
+  if (task.kind === 'export' && task.job.kind === 'mongo-export') {
+    return engine === 'mongodb' ? undefined : 'A MongoDB export runs on a MongoDB connection';
+  }
+  return isSqlEngine(engine)
+    ? undefined
+    : `${ENGINES[engine].displayName} connections do not run SQL files or exports`;
 }
 
 function failed(message: string, jobId: string | null = null): TaskOutcome {
@@ -129,11 +149,8 @@ async function runJob(
   const { store } = services;
   const profile = schedule.profileId === null ? undefined : store.profiles.get(schedule.profileId);
   if (!profile) return failed('The connection was deleted');
-  if (task.kind !== 'backup' && !isSqlEngine(profile.engine)) {
-    return failed(
-      `${ENGINES[profile.engine].displayName} connections do not run SQL files or exports`,
-    );
-  }
+  const unsupported = unsupportedTask(task, profile.engine);
+  if (unsupported !== undefined) return failed(unsupported);
 
   let spec: JobSpec;
   let written: string | undefined;

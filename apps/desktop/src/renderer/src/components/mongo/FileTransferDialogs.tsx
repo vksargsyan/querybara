@@ -5,6 +5,7 @@ import { errorMessage } from '../../lib/errors';
 import { mainApi } from '../../lib/main-client';
 import { confirm } from '../../state/dialogs';
 import { startJob } from '../../state/jobs';
+import { editSchedule, mongoExportDraft } from '../../state/schedules';
 import {
   IMPORT_FILTERS,
   MONGO_FORMAT_HINTS,
@@ -140,6 +141,13 @@ function Footer(props: {
   readonly action: string;
   readonly onAction: () => void;
   readonly onClose: () => void;
+  /** A second way to go on (Schedule…), beside the action. */
+  readonly extra?: {
+    readonly label: string;
+    readonly title: string;
+    readonly disabled: boolean;
+    readonly onClick: () => void;
+  };
 }) {
   return (
     <>
@@ -152,6 +160,15 @@ function Footer(props: {
       <Button variant="ghost" onClick={props.onClose}>
         Cancel
       </Button>
+      {props.extra && (
+        <Button
+          disabled={props.extra.disabled || props.busy}
+          title={props.extra.title}
+          onClick={props.extra.onClick}
+        >
+          {props.extra.label}
+        </Button>
+      )}
       <Button
         variant="primary"
         disabled={props.disabled || props.busy}
@@ -221,6 +238,20 @@ function MongoExportDialog(props: {
       setScanning(false);
     }
   };
+  const schedule = (): void => {
+    // The schedule's editor picks the folder; a file name here only gives the extension.
+    const path =
+      settings.path ??
+      (single ? exportFileName(collections[0]!, settings.format, settings.gzip) : '.');
+    const job = buildExportJob(target, { ...settings, collections, path });
+    const name = queried
+      ? `Export a query on ${collections[0]!}`
+      : `Export ${single ? collections[0]! : `${collections.length} collections`}`;
+    editSchedule(
+      mongoExportDraft(job, { profileName: target.profileName, database: target.db }, name),
+    );
+    props.onClose();
+  };
   const run = async (): Promise<void> => {
     if (issue !== undefined) return;
     setBusy(true);
@@ -258,6 +289,12 @@ function MongoExportDialog(props: {
           action="Export"
           onAction={() => void run()}
           onClose={props.onClose}
+          extra={{
+            label: 'Schedule…',
+            title: 'Export on a schedule instead, a new file each run',
+            disabled: collections.length === 0,
+            onClick: schedule,
+          }}
         />
       }
     >

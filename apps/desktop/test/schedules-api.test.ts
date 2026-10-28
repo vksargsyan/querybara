@@ -209,6 +209,39 @@ describe('schedules over the main contract', () => {
     await expect(main.schedules.save(sql(redis.id))).rejects.toMatchObject({
       code: 'NOT_SUPPORTED',
     });
+
+    // A MongoDB export runs on a MongoDB connection only.
+    const mongo = store.profiles.save(
+      profileInput({
+        name: 'Shop Mongo',
+        engine: 'mongodb',
+        endpoint: { kind: 'host', host: 'localhost', port: 27017 },
+        auth: { method: 'none' },
+      }),
+    );
+    const mongoExport = (profileId: string): ScheduleSaveInput => ({
+      ...backup(profileId, '/out'),
+      task: {
+        kind: 'export',
+        job: {
+          kind: 'mongo-export',
+          profileId,
+          database: 'shop',
+          collections: ['orders', 'people'],
+          format: 'bson',
+        },
+        outputKind: 'directory',
+        output: { folder: '/out', fileName: 'shop-{date}', keep: 7 },
+      },
+    });
+    expect(await main.schedules.save(mongoExport(mongo.id))).toMatchObject({
+      kind: 'export',
+      task: { job: { kind: 'mongo-export' } },
+    });
+    await expect(main.schedules.save(mongoExport(profile.id))).rejects.toMatchObject({
+      code: 'NOT_SUPPORTED',
+      message: 'A MongoDB export runs on a MongoDB connection',
+    });
   });
 
   it('warns when a run would fail as things stand', async () => {

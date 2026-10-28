@@ -11,8 +11,11 @@ export interface Namespace {
   readonly collection: string;
 }
 
-/** A find() query; the documents are Extended JSON text. */
-export interface FindQuery {
+/**
+ * A find() query; the documents are Extended JSON text. A type rather than an interface, so a
+ * job holding one counts as JSON (a scheduled export keeps it).
+ */
+export type FindQuery = {
   readonly filter?: string;
   readonly projection?: string;
   readonly sort?: string;
@@ -22,7 +25,7 @@ export interface FindQuery {
   /** Extended JSON of an index key pattern or of an index name (a JSON string). */
   readonly hint?: string;
   readonly maxTimeMS?: number;
-}
+};
 
 /** One page of documents from a cursor, as canonical Extended JSON. */
 export interface DocumentPage {

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -681,4 +681,37 @@ test('generates test documents from rules read from the collection', async () =>
       toEjson({ age: { $gte: 20, $lte: 39 }, name: { $regex: '^\\S+ \\S+$' } }),
     ),
   ).toBeGreaterThanOrEqual(1200);
+});
+
+test('schedules an export of a collection and runs it now', async () => {
+  const folder = join(files, 'scheduled');
+  mkdirSync(folder);
+  await treeMenu('orders', 'Export Collection…');
+  const exporting = page.getByRole('dialog', { name: 'Export' });
+  await exporting.getByRole('radio', { name: /^JSON Lines/ }).check();
+  await exporting.getByRole('button', { name: 'Schedule…' }).click();
+  const editor = page.getByTestId('schedule-editor');
+  await expect(editor).toContainText(`Export orders of ${NAME} · ${db} as JSONL`);
+  await stubDialog('open', folder);
+  await editor.getByRole('button', { name: 'Choose folder…' }).click();
+  await expect(editor.getByLabel('File name')).toHaveValue('{name}-{date}-{time}.jsonl');
+  await page.getByTestId('schedule-save').click();
+  const details = page
+    .getByTestId('schedules-panel')
+    .filter({ visible: true })
+    .getByTestId('schedule-details');
+  await details.getByTestId('schedule-run-now').click();
+  await expect(details.getByTestId('schedule-run').first()).toHaveAttribute(
+    'data-status',
+    'success',
+  );
+  const written = readdirSync(folder);
+  expect(written).toHaveLength(1);
+  expect(written[0]).toMatch(/^Export-orders-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}\.jsonl$/);
+  const lines = readFileSync(join(folder, written[0]!), 'utf8').trim().split('\n');
+  expect(lines).toHaveLength(await direct!.count({ db, collection: 'orders' }));
+  // Deleted, so the app does not ask about it when it quits.
+  await details.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click();
+  await expect(details).toHaveCount(0);
 });

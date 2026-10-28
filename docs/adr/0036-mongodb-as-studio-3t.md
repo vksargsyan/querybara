@@ -31,7 +31,7 @@ Studio 3T's workspace, as this decision maps it:
 | SQL Migration, data transfer                        | Transfer Data To… (MongoDB ↔ SQL and MongoDB ↔ MongoDB)    |
 | Index Manager, User Manager, Role Manager           | Manage Indexes, Manage Users, Manage Roles                 |
 | Server Status, Current Operations, Query Profiler   | Server tools: monitor, sessions, top queries               |
-| Tasks (scheduled)                                   | Schedules (ADR 0019)                                       |
+| Tasks (scheduled)                                   | Schedules (ADR 0019), MongoDB exports included             |
 | GridFS, Watch Changes                               | GridFS buckets, change streams                             |
 | Main toolbar and its keys                           | MongoDB toolbar and Studio 3T's default keys (this record) |
 | Import/Export wizards (JSON, CSV, BSON)             | Export and Import of collections and queries (ADR 0037)    |

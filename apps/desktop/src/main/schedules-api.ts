@@ -1,4 +1,4 @@
-import { ENGINES, QuerybaraError, describeRule, isSqlEngine } from '@querybara/core';
+import { QuerybaraError, describeRule } from '@querybara/core';
 import {
   scheduleTaskSchema,
   type HandlersOf,
@@ -11,7 +11,7 @@ import type { ScheduleRecord, Store } from '@querybara/storage';
 
 import type { FileGrants } from './jobs-api';
 import { checkJobSafety } from './jobs-api';
-import { passphraseRef } from './schedule-tasks';
+import { passphraseRef, unsupportedTask } from './schedule-tasks';
 import type { Scheduler } from './scheduler';
 import { subscriptionStream } from './updates';
 
@@ -163,11 +163,9 @@ function checkSave(
     const profile = store.profiles.get(input.profileId);
     if (!profile)
       throw new QuerybaraError({ code: 'NOT_FOUND', message: 'The connection was deleted' });
-    if (task.kind !== 'backup' && !isSqlEngine(profile.engine)) {
-      throw new QuerybaraError({
-        code: 'NOT_SUPPORTED',
-        message: `${ENGINES[profile.engine].displayName} connections do not run SQL files or exports`,
-      });
+    const unsupported = unsupportedTask(task, profile.engine);
+    if (unsupported !== undefined) {
+      throw new QuerybaraError({ code: 'NOT_SUPPORTED', message: unsupported });
     }
     // The write rules as a run will meet them (an output path stands in for the real one).
     if (task.kind === 'sql') checkJobSafety(task.job, profile);
