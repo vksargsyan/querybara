@@ -112,6 +112,20 @@ export type { CodeExportOptions, CodeLanguage, ExportTarget } from './codegen/co
 
 export { commandSafety } from './commands';
 export { copiedIndexes, indexSpecOf } from './index-spec';
+export {
+  RESHAPE_ACTIONS,
+  RESHAPE_OUTPUT_MODES,
+  RESHAPE_TYPES,
+  outputStage,
+  reshapeStages,
+} from './reshape';
+export type {
+  ReshapeAction,
+  ReshapeOptions,
+  ReshapeOutputMode,
+  ReshapeRule,
+  ReshapeType,
+} from './reshape';
 export type { CommandSafety } from './commands';
 
 export type * from './wire';

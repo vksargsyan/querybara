@@ -240,6 +240,36 @@ export function registerMongoCommands(): () => void {
         ),
     },
     {
+      id: 'mongo.reschema',
+      category: 'MongoDB',
+      title: 'Reschema…',
+      icon: 'design',
+      keywords: ['restructure', 'rename fields', 'convert types', 'migrate'],
+      enabled: anyMongo,
+      run: () =>
+        onCollection((context, { db, collection }) =>
+          openMongoTool({
+            tool: 'reshape',
+            target: { profileId: context.profile.id, db, collection, kind: 'reschema' },
+          }),
+        ),
+    },
+    {
+      id: 'mongo.mask',
+      category: 'MongoDB',
+      title: 'Data Masking…',
+      icon: 'eye-off',
+      keywords: ['anonymise', 'anonymize', 'obfuscate', 'redact', 'pii'],
+      enabled: anyMongo,
+      run: () =>
+        onCollection((context, { db, collection }) =>
+          openMongoTool({
+            tool: 'reshape',
+            target: { profileId: context.profile.id, db, collection, kind: 'mask' },
+          }),
+        ),
+    },
+    {
       id: 'mongo.export',
       category: 'MongoDB',
       title: 'Export…',

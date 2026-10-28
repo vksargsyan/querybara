@@ -329,6 +329,32 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
             Watch Changes
           </MenuItem>
         )}
+        {object.kind !== 'view' && (
+          <>
+            <MenuItem
+              icon="design"
+              onSelect={() =>
+                openMongoTool({
+                  tool: 'reshape',
+                  target: { profileId, db, collection: object.name, kind: 'reschema' },
+                })
+              }
+            >
+              Reschema…
+            </MenuItem>
+            <MenuItem
+              icon="eye-off"
+              onSelect={() =>
+                openMongoTool({
+                  tool: 'reshape',
+                  target: { profileId, db, collection: object.name, kind: 'mask' },
+                })
+              }
+            >
+              Data Masking…
+            </MenuItem>
+          </>
+        )}
         <MenuItem
           icon="export"
           onSelect={() => void openMongoExport({ profileId, db, collections: [object.name] })}

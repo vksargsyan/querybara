@@ -122,7 +122,11 @@ What works today:
   collection and view options, a change stream viewer, a GridFS browser, and users and roles;
   export of collections or a query to JSON, JSON Lines (relaxed or canonical Extended JSON), CSV
   or BSON, and import of such files (mongoexport's and mongodump's included) with insert, upsert
-  by _id or replace modes; values edited in place in the table and tree views, typed. A
+  by _id or replace modes; values edited in place in the table and tree views, typed; the
+  collection tab's query history and saved queries; copy and paste of documents and of whole
+  collections across databases and connections; Reschema (move, nest, convert, drop and compute
+  fields) and Data Masking (mask characters, replace, null, randomise numbers and dates) into
+  another collection, run on the server. A
   SQL tab translates a SELECT to find() or aggregate() as it is typed, runs it, and opens it in
   the collection tab, IntelliShell or the aggregation editor; any query exports as a Node.js,
   Python, Java, C#, Go or PHP program for the official driver. A MongoDB toolbar and Studio 3T's

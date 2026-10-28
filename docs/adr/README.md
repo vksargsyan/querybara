@@ -42,3 +42,4 @@ supersede it with a new one.
 | [0035](0035-mongodb-compare.md)                  | MongoDB structure and data compare through the SQL compare's paths   | Accepted                   |
 | [0036](0036-mongodb-as-studio-3t.md)             | MongoDB as Studio 3T's: IntelliShell on an embedded mongosh          | Accepted                   |
 | [0037](0037-mongodb-file-import-export.md)       | MongoDB file import and export: Extended JSON, CSV and BSON jobs     | Accepted                   |
+| [0038](0038-mongodb-reschema-and-masking.md)     | Reschema and Data Masking: field rules compiled to a pipeline        | Accepted                   |

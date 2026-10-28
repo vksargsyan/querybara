@@ -5,6 +5,7 @@ import { CollectionView } from '../../state/mongo/collection-view';
 import { GridFsBrowser } from '../../state/mongo/gridfs';
 import { IndexManager } from '../../state/mongo/indexes';
 import { getMongoPanel } from '../../state/mongo/panels';
+import { Reshape } from '../../state/mongo/reshape';
 import { SchemaPanelState } from '../../state/mongo/schema';
 import { SqlQuery } from '../../state/mongo/sql-query';
 import { UsersRoles } from '../../state/mongo/users';
@@ -15,6 +16,7 @@ import { CollectionPanel } from './CollectionPanel';
 import { GridFsPanel } from './GridFsPanel';
 import { IndexesPanel } from './IndexesPanel';
 import { IntelliShellPanel } from './IntelliShellPanel';
+import { ReshapePanel } from './ReshapePanel';
 import { SchemaPanel } from './SchemaPanel';
 import { SqlQueryPanel } from './SqlQueryPanel';
 import { UsersPanel } from './UsersPanel';
@@ -22,7 +24,7 @@ import { UsersPanel } from './UsersPanel';
 /**
  * A MongoDB dock panel (spec §9): a collection view, an IntelliShell (ADR 0036), a SQL tab, or
  * one of the tool panels (aggregation, indexes, schema, options, change stream, GridFS, users
- * and roles).
+ * and roles, Reschema and Data Masking).
  */
 export function MongoPanel(props: { readonly panelId: string }) {
   const panel = getMongoPanel(props.panelId);
@@ -36,5 +38,6 @@ export function MongoPanel(props: { readonly panelId: string }) {
   if (panel instanceof ChangeStreamViewer) return <ChangeStreamPanel viewer={panel} />;
   if (panel instanceof GridFsBrowser) return <GridFsPanel browser={panel} />;
   if (panel instanceof UsersRoles) return <UsersPanel panel={panel} />;
+  if (panel instanceof Reshape) return <ReshapePanel panel={panel} />;
   return <IntelliShellPanel shell={panel} />;
 }

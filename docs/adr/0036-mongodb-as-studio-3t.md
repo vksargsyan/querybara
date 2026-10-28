@@ -38,7 +38,7 @@ Studio 3T's workspace, as this decision maps it:
 | In-place editing in Table and Tree views            | Values edited in place, typed (this record)                |
 | Query History, saved queries                        | The collection tab's History and Saved (this record)       |
 | Copy/Paste documents and collections                | Copy and Paste across collections and connections          |
-| Reschema, Data Masking                              | Not yet                                                    |
+| Reschema, Data Masking                              | Reschema and Data Masking panels (ADR 0038)                |
 
 ## Decision
 
@@ -130,5 +130,4 @@ mongosh completer with collection and field names sampled from the database.
 - Completion is the classic completer's plus sampled field names, without the TypeScript
   autocompleter's type-aware suggestions.
 - querybara-cli keeps running command documents (`querybara query`); scripts are the app's.
-- Reschema and Data Masking remain to be built for parity with Studio 3T; file import and
-  export came with ADR 0037.
+- File import and export came with ADR 0037, Reschema and Data Masking with ADR 0038.

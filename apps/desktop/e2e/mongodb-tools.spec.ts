@@ -610,3 +610,50 @@ test('copies documents into another collection, and a collection into another da
   const indexes = await direct!.listIndexes({ db: other!.name, collection: 'orders' });
   expect(indexes.map((index) => index.name)).toContain('_id_');
 });
+
+test('reschemas a collection into another one, and masks a field', async () => {
+  await treeMenu('orders', 'Reschema…');
+  const reshape = visible('mongo-reshape');
+  await expect(reshape.locator('tr[data-rule="status"]')).toBeVisible();
+  await reshape.getByRole('textbox', { name: 'New path of status' }).fill('state.code');
+  await reshape.getByRole('combobox', { name: 'Rule for total' }).selectOption('convert');
+  await reshape.getByRole('combobox', { name: 'Type of total' }).selectOption('string');
+  await reshape.getByRole('combobox', { name: 'Rule for at' }).selectOption('exclude');
+  await reshape.getByRole('button', { name: 'Preview' }).click();
+  const after = reshape.getByRole('region', { name: 'After' });
+  await expect(after.getByTestId('mongo-json-text')).toContainText(
+    "{ _id: 1, total: '0', state: { code: 'open' } }",
+  );
+  await reshape.getByRole('textbox', { name: 'Output collection' }).fill('orders_v2');
+  await shot('mongo2-reschema');
+  await reshape.getByRole('button', { name: 'Run', exact: true }).click();
+  await confirmWith('Run and write', '$out');
+  const orders = await direct!.count({ db, collection: 'orders' });
+  await expect(reshape.getByText(`orders_v2 now holds ${orders} documents.`)).toBeVisible();
+  let first: string | undefined;
+  for await (const found of direct!.find(
+    { db, collection: 'orders_v2' },
+    { filter: toEjson({ _id: 1 }) },
+  )) {
+    first ??= found.documents[0];
+  }
+  expect(JSON.parse(first!)).toEqual({
+    _id: { $numberInt: '1' },
+    total: '0',
+    state: { code: 'open' },
+  });
+
+  await treeMenu('people', 'Data Masking…');
+  const masking = visible('mongo-reshape');
+  await masking.getByRole('combobox', { name: 'Rule for name' }).selectOption('mask');
+  await masking.getByRole('textbox', { name: 'Characters shown at the start of name' }).fill('1');
+  await masking.getByRole('button', { name: 'Run', exact: true }).click();
+  await confirmWith('Run and write');
+  await expect(masking.getByText(/people_masked now holds \d+ documents\./)).toBeVisible();
+  expect(
+    await direct!.count({ db, collection: 'people_masked' }, toEjson({ name: 'P*******' })),
+  ).toBeGreaterThan(0);
+  expect(
+    await direct!.count({ db, collection: 'people_masked' }, toEjson({ name: 'Person 0' })),
+  ).toBe(0);
+});
