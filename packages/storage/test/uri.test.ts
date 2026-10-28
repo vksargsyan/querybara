@@ -425,6 +425,43 @@ const CASES: readonly Case[] = [
     password: 'p',
   },
   {
+    // AWS IAM: the access key ID and secret access key, signing in through $external.
+    uri: 'mongodb+srv://AKIAEXAMPLE:wJalr%2Fx@cluster0.abcde.mongodb.net/?authSource=%24external&authMechanism=MONGODB-AWS',
+    endpoint: { kind: 'srv', host: 'cluster0.abcde.mongodb.net' },
+    tls: { mode: 'verify-full' },
+    auth: { method: 'password', user: 'AKIAEXAMPLE', password: REF, mechanism: 'MONGODB-AWS' },
+    password: 'wJalr/x',
+  },
+  {
+    // AWS IAM from the AWS credential chain: no keys in the URI.
+    uri: 'mongodb+srv://cluster0.abcde.mongodb.net/?authMechanism=MONGODB-AWS',
+    endpoint: { kind: 'srv', host: 'cluster0.abcde.mongodb.net' },
+    tls: { mode: 'verify-full' },
+    auth: { method: 'password', mechanism: 'MONGODB-AWS' },
+  },
+  {
+    // OIDC from a workload's identity: its properties become the profile's.
+    uri: 'mongodb://app@h/?authMechanism=MONGODB-OIDC&authMechanismProperties=ENVIRONMENT:azure,TOKEN_RESOURCE:api://querybara',
+    endpoint: { kind: 'host', host: 'h', port: 27017 },
+    auth: { method: 'password', user: 'app', mechanism: 'MONGODB-OIDC' },
+    profileOptions: { oidcEnvironment: 'azure', oidcTokenResource: 'api://querybara' },
+  },
+  {
+    // OIDC through the browser.
+    uri: 'mongodb://h/?authMechanism=MONGODB-OIDC',
+    endpoint: { kind: 'host', host: 'h', port: 27017 },
+    auth: { method: 'password', mechanism: 'MONGODB-OIDC' },
+  },
+  {
+    // An OIDC environment the profile does not know stays in the URI.
+    uri: 'mongodb://h/?authMechanism=MONGODB-OIDC&authMechanismProperties=ENVIRONMENT:custom',
+    endpoint: {
+      kind: 'uri',
+      uri: 'mongodb://h/?authMechanism=MONGODB-OIDC&authMechanismProperties=ENVIRONMENT%3Acustom',
+    },
+    auth: { method: 'password', mechanism: 'MONGODB-OIDC' },
+  },
+  {
     uri: 'mongodb://%2Ftmp%2Fmongodb-27017.sock',
     endpoint: { kind: 'uri', uri: 'mongodb://%2Ftmp%2Fmongodb-27017.sock' },
   },

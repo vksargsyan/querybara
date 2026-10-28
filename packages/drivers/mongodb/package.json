@@ -15,6 +15,8 @@
     "test:integration": "vitest run test/integration --testTimeout=60000 --hookTimeout=60000"
   },
   "dependencies": {
+    "@aws-sdk/credential-providers": "^3.1158.0",
+    "@mongodb-js/oidc-plugin": "^2.2.0",
     "@mongosh/autocomplete": "^5.9.2",
     "@mongosh/service-provider-core": "^5.6.0",
     "@mongosh/service-provider-node-driver": "^5.6.2",

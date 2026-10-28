@@ -57,6 +57,7 @@ import { mapMongoError, type MongoErrorContext } from './errors';
 import { executeCommand, parseCommand } from './execute';
 import * as gridfs from './gridfs';
 import { introspectMongo } from './introspect';
+import { oidcSignInOptions } from './oidc';
 import type {
   AggregateOptions,
   AnalyzeSchemaOptions,
@@ -104,7 +105,10 @@ export function isMongoSession(session: Session): session is MongoSession {
  * the context its errors are mapped with. Failures come back mapped (AUTH_FAILED, TLS_FAILED...).
  * Sessions and the embedded shell (ADR 0036) both start here.
  */
-export async function connectMongoClient(resolved: ResolvedProfile): Promise<{
+export async function connectMongoClient(
+  resolved: ResolvedProfile,
+  opts: { readonly oidcState?: string } = {},
+): Promise<{
   readonly client: MongoClient;
   readonly plan: MongoClientPlan;
   readonly errorContext: MongoErrorContext;
@@ -119,9 +123,12 @@ export async function connectMongoClient(resolved: ResolvedProfile): Promise<{
       ? { timeoutMs: plan.options.serverSelectionTimeoutMS }
       : {}),
   };
+  const options = plan.browserSignIn
+    ? await oidcSignInOptions(resolved.profile.id, plan.options, opts.oidcState)
+    : plan.options;
   let client: MongoClient;
   try {
-    client = new MongoClient(plan.url, plan.options);
+    client = new MongoClient(plan.url, options);
   } catch (error) {
     throw mapMongoError(error, errorContext);
   }

@@ -224,7 +224,7 @@ Copy tone: confident, concrete, short. Every sentence names a real capability. N
 
 **MongoDB**
 
-- Connecting (SRV, SCRAM, LDAP, X.509)
+- Connecting (SRV, SCRAM, LDAP, X.509, AWS IAM, OIDC)
 - Explorer
 - Collection tab and query bar
 - Visual query builder

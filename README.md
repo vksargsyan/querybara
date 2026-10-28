@@ -105,7 +105,8 @@ What works today:
   per object, optional AES-256-GCM encryption with a passphrase); pg_dump and mysqldump when
   installed; restores of everything or selected objects into any database, listing what would
   be dropped before asking; a Redis BGSAVE button.
-- **MongoDB**, laid out as Studio 3T's: host lists, SRV, SCRAM, LDAP and X.509 sign-in; an
+- **MongoDB**, laid out as Studio 3T's: host lists, SRV, SCRAM, LDAP, X.509, AWS IAM and
+  OIDC sign-in (in the browser, or as an Azure, GCP or Kubernetes workload); an
   explorer of databases, collections, views, time series, GridFS buckets, indexes, users and
   roles, with Studio 3T's menus (copy name, rename, duplicate with indexes, clear, statistics);
   **IntelliShell**, an embedded mongosh (5.9, on driver 7) with completion of collections,

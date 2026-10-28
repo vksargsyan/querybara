@@ -193,6 +193,26 @@ test('turns TLS on for SRV and asks X.509 for TLS, a certificate and a key', asy
   await field(dialog, 'Mechanism').selectOption('PLAIN');
   await expect(field(dialog, 'Authentication database')).toHaveValue('$external');
   await expect(field(dialog, 'Authentication database')).toBeDisabled();
+
+  // AWS IAM: an access key and its secret, or none for the AWS credential chain.
+  await field(dialog, 'Mechanism').selectOption('MONGODB-AWS');
+  await expect(field(dialog, 'Access key ID')).toBeVisible();
+  await expect(field(dialog, 'Secret access key')).toBeVisible();
+  await expect(field(dialog, 'Authentication database')).toHaveValue('$external');
+  // OIDC: no password; a workload on Azure or GCP needs the token's audience.
+  await field(dialog, 'Mechanism').selectOption('MONGODB-OIDC');
+  await expect(field(dialog, 'Identity')).toHaveValue('');
+  await expect(dialog.getByText(/opens the identity provider's sign-in page/)).toBeVisible();
+  await expect(dialog.locator('#cx-password')).toHaveCount(0);
+  await field(dialog, 'Identity').selectOption('azure');
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(
+    dialog.getByText("Enter the token's audience, e.g. api://<application id>"),
+  ).toBeVisible();
+  await field(dialog, 'Token resource').fill('api://querybara');
+  await expect(
+    dialog.getByText("Enter the token's audience, e.g. api://<application id>"),
+  ).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Cancel' }).click();
 });
 

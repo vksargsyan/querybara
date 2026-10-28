@@ -39,6 +39,7 @@ Studio 3T's workspace, as this decision maps it:
 | Query History, saved queries                        | The collection tab's History and Saved (this record)       |
 | Copy/Paste documents and collections                | Copy and Paste across collections and connections          |
 | Reschema, Data Masking                              | Reschema and Data Masking panels (ADR 0038)                |
+| Authentication: SCRAM, LDAP, X.509, AWS IAM, OIDC   | The same, Kerberos aside (ADR 0039)                        |
 
 ## Decision
 
@@ -130,4 +131,5 @@ mongosh completer with collection and field names sampled from the database.
 - Completion is the classic completer's plus sampled field names, without the TypeScript
   autocompleter's type-aware suggestions.
 - querybara-cli keeps running command documents (`querybara query`); scripts are the app's.
-- File import and export came with ADR 0037, Reschema and Data Masking with ADR 0038.
+- File import and export came with ADR 0037, Reschema and Data Masking with ADR 0038, AWS IAM
+  and OIDC sign-in with ADR 0039.

@@ -99,8 +99,30 @@ export const ENGINE_AUTH_METHODS: Readonly<Record<DialogEngine, readonly FormAut
  * MongoDB SASL mechanisms for a user and password. PLAIN is LDAP, whose users live in the
  * `$external` database; '' lets the driver negotiate with the server (SCRAM-SHA-256 when the
  * user has such credentials, else SCRAM-SHA-1), which is what a URI without authMechanism means.
+ * MONGODB-AWS takes an access key ID and secret access key (or the AWS credential chain without
+ * them); MONGODB-OIDC signs in at an identity provider, in the browser or as a workload.
  */
-export const MONGO_MECHANISMS = ['SCRAM-SHA-256', 'SCRAM-SHA-1', 'PLAIN', ''] as const;
+export const MONGO_MECHANISMS = [
+  'SCRAM-SHA-256',
+  'SCRAM-SHA-1',
+  'PLAIN',
+  'MONGODB-AWS',
+  'MONGODB-OIDC',
+  '',
+] as const;
+
+/** The workloads MONGODB-OIDC can take its token from instead of a sign-in in the browser. */
+export const OIDC_ENVIRONMENTS = ['azure', 'gcp', 'k8s'] as const;
+
+/** Whether a MongoDB mechanism's users sign in through `$external` (LDAP, AWS IAM, OIDC). */
+export function isExternalMechanism(mechanism: string): boolean {
+  return mechanism === 'PLAIN' || mechanism === 'MONGODB-AWS' || mechanism === 'MONGODB-OIDC';
+}
+
+/** Whether an OIDC workload needs the token's audience (TOKEN_RESOURCE). */
+export function needsTokenResource(environment: string): boolean {
+  return environment === 'azure' || environment === 'gcp';
+}
 
 /** The database that holds LDAP and X.509 users in MongoDB. */
 export const EXTERNAL_AUTH_SOURCE = '$external';
@@ -250,6 +272,10 @@ export const connectionFormSchema = z
     directConnection: z.boolean(),
     /** MongoDB: empty uses the driver's default (primary). */
     readPreference: z.union([z.literal(''), z.enum(READ_PREFERENCES)]),
+    /** MongoDB OIDC: the workload that supplies the token; empty signs in in the browser. */
+    oidcEnvironment: z.union([z.literal(''), z.enum(OIDC_ENVIRONMENTS)]),
+    /** MongoDB OIDC on Azure or GCP: the token's audience. */
+    oidcTokenResource: z.string().trim().max(1024),
     /** Redis key browser delimiter; empty uses ":". Not trimmed: a space is a delimiter too. */
     keyDelimiter: z.string().max(16, 'Use a delimiter of at most 16 characters'),
     tlsMode: tlsModeSchema,
@@ -365,8 +391,20 @@ function authIssues(form: ConnectionFormValues, issue: IssueAt): void {
     issue(['authMethod'], `${ENGINES[form.engine].displayName} does not offer this sign-in`);
     return;
   }
-  if (form.engine === 'mongodb' && form.authMethod === 'password' && form.user === '') {
-    issue(['user'], 'Enter the user name');
+  if (form.engine === 'mongodb' && form.authMethod === 'password') {
+    // AWS IAM without a key uses the AWS credential chain; OIDC's user name is only a hint.
+    const userOptional = form.mechanism === 'MONGODB-AWS' || form.mechanism === 'MONGODB-OIDC';
+    if (form.user === '' && !userOptional) issue(['user'], 'Enter the user name');
+    if (form.mechanism === 'MONGODB-AWS' && form.user !== '' && form.passwordMode === 'none') {
+      issue(['passwordMode'], 'Choose how Querybara keeps the secret access key');
+    }
+    if (
+      form.mechanism === 'MONGODB-OIDC' &&
+      needsTokenResource(form.oidcEnvironment) &&
+      form.oidcTokenResource === ''
+    ) {
+      issue(['oidcTokenResource'], "Enter the token's audience, e.g. api://<application id>");
+    }
   }
   if (form.authMethod === 'clientCertificate') {
     if (form.tlsMode === 'disable') issue(['tlsMode'], 'X.509 authentication needs TLS');
@@ -557,8 +595,8 @@ export function showsDatabase(
 }
 
 /**
- * Whether the form edits MongoDB's authentication database: for a user and SCRAM password. LDAP
- * and X.509 users always live in `$external`.
+ * Whether the form edits MongoDB's authentication database: for a user and SCRAM password. LDAP,
+ * AWS IAM, OIDC and X.509 users always live in `$external`.
  */
 export function showsAuthSource(
   form: Pick<ConnectionFormValues, 'engine' | 'endpointKind' | 'authMethod' | 'mechanism'>,
@@ -567,7 +605,7 @@ export function showsAuthSource(
     form.engine === 'mongodb' &&
     form.endpointKind !== 'uri' &&
     form.authMethod === 'password' &&
-    form.mechanism !== 'PLAIN'
+    !isExternalMechanism(form.mechanism)
   );
 }
 
@@ -640,6 +678,8 @@ export function defaultFormValues(engine: DialogEngine = 'postgres'): Connection
     authSource: '',
     directConnection: false,
     readPreference: '',
+    oidcEnvironment: '',
+    oidcTokenResource: '',
     keyDelimiter: ':',
     // Off until chosen: most servers a new connection points at (local, in a private network)
     // have no TLS, and a stated TLS mode (sslmode, rediss://, https://) comes with a pasted URI.
@@ -709,6 +749,8 @@ export function switchEngine(
     authSource: '',
     directConnection: false,
     readPreference: '',
+    oidcEnvironment: '',
+    oidcTokenResource: '',
     keyDelimiter: fresh.keyDelimiter,
     urls: fresh.urls,
     cloudId: fresh.cloudId,
@@ -812,6 +854,8 @@ export function profileToForm(profile: ConnectionProfile): ConnectionFormValues 
     authSource: options.authSource ?? '',
     directConnection: options.directConnection === true,
     readPreference: options.readPreference ?? '',
+    oidcEnvironment: options.oidcEnvironment ?? '',
+    oidcTokenResource: options.oidcTokenResource ?? '',
     keyDelimiter: options.keyDelimiter ?? '',
     sniff: options.sniff === true,
     mapNodesToSeeds: options.mapNodesToSeeds === true,
@@ -920,7 +964,9 @@ export function formToProfile(
 ): ProfileFromForm {
   const usesPassword =
     isSqlEngine(form.engine) ||
-    form.authMethod === 'password' ||
+    // OIDC signs in at the identity provider.
+    (form.authMethod === 'password' &&
+      !(form.engine === 'mongodb' && form.mechanism === 'MONGODB-OIDC')) ||
     form.authMethod === 'apiKey' ||
     form.authMethod === 'bearer';
   const previousRef = previousSecretRef(existing?.auth);
@@ -1051,6 +1097,8 @@ function optionsFromForm(
     authSource: previousAuthSource,
     directConnection: previousDirect,
     readPreference: previousReadPreference,
+    oidcEnvironment: _oidcEnvironment,
+    oidcTokenResource: _oidcTokenResource,
     keyDelimiter: _keyDelimiter,
     sniff: _sniff,
     mapNodesToSeeds: _mapNodesToSeeds,
@@ -1081,6 +1129,13 @@ function optionsFromForm(
           : previousDirect === false
             ? false
             : undefined;
+    const oidc = form.authMethod === 'password' && form.mechanism === 'MONGODB-OIDC';
+    if (oidc && form.oidcEnvironment !== '') {
+      options.oidcEnvironment = form.oidcEnvironment;
+      if (needsTokenResource(form.oidcEnvironment)) {
+        options.oidcTokenResource = optional(form.oidcTokenResource);
+      }
+    }
   }
   if (form.engine === 'redis') options.keyDelimiter = optional(form.keyDelimiter);
   if (form.engine === 'redis' && form.endpointKind === 'cluster' && form.mapNodesToSeeds) {
@@ -1094,12 +1149,12 @@ function optionsFromForm(
 
 /**
  * MongoDB's authSource for the form's sign-in: what the user typed for SCRAM, `$external` for
- * LDAP (the only place LDAP users can be), and for X.509 only an explicit `$external` (its
+ * LDAP, AWS IAM and OIDC (the only place their users can be), and for X.509 only an explicit `$external` (its
  * default; any other database would be refused by the driver).
  */
 function mongoAuthSource(form: ConnectionFormValues): string | undefined {
   if (form.authMethod === 'password') {
-    return form.mechanism === 'PLAIN' ? EXTERNAL_AUTH_SOURCE : optional(form.authSource);
+    return isExternalMechanism(form.mechanism) ? EXTERNAL_AUTH_SOURCE : optional(form.authSource);
   }
   if (form.authMethod === 'clientCertificate') {
     return form.authSource === EXTERNAL_AUTH_SOURCE ? EXTERNAL_AUTH_SOURCE : undefined;

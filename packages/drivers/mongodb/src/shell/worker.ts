@@ -23,7 +23,10 @@ export function serveShellWorker(port: ShellPort): void {
 
   const open = async (message: Extract<HostToShell, { type: 'open' }>): Promise<void> => {
     try {
-      const { client, plan } = await connectMongoClient(message.resolved);
+      const { client, plan } = await connectMongoClient(
+        message.resolved,
+        message.oidcState !== undefined ? { oidcState: message.oidcState } : {},
+      );
       const build = await client.db('admin').command({ buildInfo: 1 });
       runtime = await ShellRuntime.open({
         client,

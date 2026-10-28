@@ -3,6 +3,7 @@ export type { MongoCheckDeps } from './check';
 export {
   authOptions,
   buildMongoClientPlan,
+  oidcAllowedHosts,
   parseHostList,
   redactSecrets,
   splitMongoUri,
@@ -17,6 +18,7 @@ export { indexDef } from './introspect';
 export { MONGO_FOLDERS } from './browse';
 export { gridFsBuckets } from './gridfs';
 export { MongoDbSession, connectMongoClient, isMongoSession, mongoCapabilities } from './session';
+export { forgetOidcSignIn, openInBrowser } from './oidc';
 export type {
   AggregateOptions,
   AnalyzeSchemaOptions,

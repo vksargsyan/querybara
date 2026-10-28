@@ -71,14 +71,16 @@ const notices = thirdPartyNotices({
   ],
 });
 
-/** The MongoDB driver's optional peer dependencies (lib/deps.js), none of which the app ships. */
+/**
+ * The MongoDB driver's optional peer dependencies (lib/deps.js) that the app does not ship. The
+ * AWS SDK's credential providers are bundled: MONGODB-AWS needs them even for explicit keys.
+ */
 export const MONGODB_OPTIONAL_PEERS = [
   'kerberos',
   'snappy',
   '@mongodb-js/zstd',
   'gcp-metadata',
   'mongodb-client-encryption',
-  '@aws-sdk/credential-providers',
 ];
 
 /**

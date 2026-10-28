@@ -578,7 +578,7 @@ test('works as Studio 3T: the MongoDB toolbar, its keys, and findOne()', async (
     'Find Query (line 1)',
   );
   // With no collection in front, a tool asks for one in the shell's database.
-  await toolbar.getByRole('button', { name: 'Schema' }).click();
+  await toolbar.getByRole('button', { name: 'Schema', exact: true }).click();
   const pick = page.getByRole('dialog', { name: 'Choose' });
   await expect(pick.getByRole('combobox')).toHaveAccessibleName(`Which collection of ${db}?`);
   await pick.getByRole('option', { name: `orders ${db}`, exact: true }).click();

@@ -32,6 +32,8 @@ export type HostToShell =
       readonly database: string | undefined;
       readonly policy: ShellPolicyMessage;
       readonly pageSize?: number;
+      /** The host's OIDC browser sign-in, so the shell does not sign in again. */
+      readonly oidcState?: string;
     }
   | { readonly type: 'evaluate'; readonly runId: string; readonly script: string }
   | {

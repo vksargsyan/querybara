@@ -150,6 +150,13 @@ export const connectionOptionsSchema = z.object({
   authSource: z.string().min(1).optional(),
   /** MongoDB: talk to the one host given instead of discovering the replica set from it. */
   directConnection: z.boolean().optional(),
+  /**
+   * MongoDB OIDC (MONGODB-OIDC): the workload identity that supplies the token, Azure, GCP or
+   * Kubernetes, instead of a sign-in in the browser.
+   */
+  oidcEnvironment: z.enum(['azure', 'gcp', 'k8s']).optional(),
+  /** MongoDB OIDC on Azure or GCP: the token's audience (TOKEN_RESOURCE). */
+  oidcTokenResource: z.string().min(1).optional(),
   /** MongoDB: which members reads may go to (the driver's default: primary). */
   readPreference: z
     .enum(['primary', 'primaryPreferred', 'secondary', 'secondaryPreferred', 'nearest'])

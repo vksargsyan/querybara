@@ -7,6 +7,7 @@ import {
 } from '@querybara/core';
 import type { ShellEvent, ShellInfo, ShellPromptAnswer } from '@querybara/mongo-tools';
 
+import { oidcState } from '../oidc';
 import type {
   HostToShell,
   ShellPolicyMessage,
@@ -139,12 +140,14 @@ export class ShellClient {
     const opened = new Promise<ShellInfo>((resolve, reject) => {
       this.#opening = { resolve, reject };
     });
+    const signIn = await oidcState(this.#options.resolved.profile.id);
     this.#post({
       type: 'open',
       resolved: this.#options.resolved,
       database,
       policy: this.#options.policy,
       ...(this.#options.pageSize !== undefined ? { pageSize: this.#options.pageSize } : {}),
+      ...(signIn !== undefined ? { oidcState: signIn } : {}),
     });
     try {
       const info = await opened;
