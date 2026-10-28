@@ -444,6 +444,69 @@ describe('jobs', () => {
     await main.jobs.start({ job: { ...sqlFile, profileId: readOnly.saved.id } });
   });
 
+  it('runs MongoDB file jobs on MongoDB connections only, under the write rules', async () => {
+    const { main, runners } = setup({ open: '/data/orders.jsonl', save: '/out/orders.json' });
+    await main.dialogs.openFile({});
+    await main.dialogs.saveFile({});
+    const mongo = {
+      engine: 'mongodb' as const,
+      endpoint: { kind: 'host' as const, host: 'localhost', port: 27017 },
+    };
+    const dev = await saveProfile(main, mongo);
+    const importJob = (profileId: string, patch: Record<string, unknown> = {}): JobSpec => ({
+      kind: 'mongo-import',
+      profileId,
+      database: 'shop',
+      collection: 'orders',
+      file: { path: '/data/orders.jsonl', format: 'jsonl' },
+      mode: 'insert',
+      ...patch,
+    });
+    const exportJob = (profileId: string): JobSpec => ({
+      kind: 'mongo-export',
+      profileId,
+      database: 'shop',
+      collections: ['orders'],
+      format: 'json',
+      output: { kind: 'file', path: '/out/orders.json' },
+    });
+    await main.jobs.start({ job: exportJob(dev.saved.id) });
+    await main.jobs.start({ job: importJob(dev.saved.id) });
+    expect(runners[0]!.sent.filter((m) => m.type === 'start')).toHaveLength(2);
+    await expect(
+      main.jobs.start({ job: importJob(dev.saved.id, { mode: 'replace' }) }),
+    ).rejects.toMatchObject({ code: 'CONFIRMATION_REQUIRED' });
+    await main.jobs.start({ job: importJob(dev.saved.id, { mode: 'replace', confirmed: true }) });
+    await expect(
+      main.jobs.start({
+        job: importJob(dev.saved.id, { file: { path: '/etc/passwd', format: 'jsonl' } }),
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    const readOnly = await saveProfile(main, { ...mongo, ...presentation({ readOnly: true }) });
+    await expect(
+      main.jobs.start({ job: importJob(readOnly.saved.id, { confirmed: true }) }),
+    ).rejects.toMatchObject({ code: 'READ_ONLY' });
+    await main.jobs.start({ job: exportJob(readOnly.saved.id) });
+    const production = await saveProfile(main, {
+      ...mongo,
+      ...presentation({ environment: 'production' }),
+    });
+    await expect(main.jobs.start({ job: importJob(production.saved.id) })).rejects.toMatchObject({
+      code: 'CONFIRMATION_REQUIRED',
+    });
+
+    const sql = await saveProfile(main);
+    await expect(main.jobs.start({ job: exportJob(sql.saved.id) })).rejects.toMatchObject({
+      code: 'NOT_SUPPORTED',
+    });
+    await expect(
+      main.jobs.start({
+        job: importSpec(dev.saved.id, { file: { path: '/data/orders.jsonl', format: 'jsonl' } }),
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_SUPPORTED' });
+  });
+
   it('keeps the job history in the local store across app runs', async () => {
     const { main, store } = setup({ open: '/data/people.csv' });
     const { saved } = await saveProfile(main);
@@ -538,6 +601,30 @@ describe('job descriptions', () => {
       describeJob({ kind: 'run-sql-file', profileId: 'p', path: '/x/migrate.sql', onError: 'stop' })
         .title,
     ).toBe('Run migrate.sql');
+    expect(
+      describeJob({
+        kind: 'mongo-export',
+        profileId: 'p',
+        database: 'shop',
+        collections: ['orders'],
+        query: { filter: '{}' },
+        format: 'jsonl',
+        output: { kind: 'file', path: '/out/orders.jsonl' },
+      }),
+    ).toEqual({
+      title: 'Export orders query results to JSON Lines',
+      target: { file: '/out/orders.jsonl', table: 'orders', format: 'jsonl', database: 'shop' },
+    });
+    expect(
+      describeJob({
+        kind: 'mongo-import',
+        profileId: 'p',
+        database: 'shop',
+        collection: 'orders',
+        file: { path: '/in/orders.bson', format: 'bson' },
+        mode: 'upsert',
+      }).title,
+    ).toBe('Import orders.bson into orders');
   });
 
   it('words the desktop notification', () => {

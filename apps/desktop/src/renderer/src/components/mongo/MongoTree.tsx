@@ -34,6 +34,7 @@ import { MenuItem } from '../MenuItem';
 import { CompareItems } from '../ObjectMenu';
 import { Row } from '../Sidebar';
 import { Icon } from '../ui';
+import { openMongoExport, openMongoImport } from '../../state/mongo/file-transfer';
 import { CollectionNameDialog } from './CollectionNameDialog';
 import { MongoCreateDialogs } from './CreateDialogs';
 import { openIntelliShell, openMongoCollection, openMongoSql, openMongoTool } from './open';
@@ -304,6 +305,20 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
           </MenuItem>
         )}
         <MenuItem
+          icon="export"
+          onSelect={() => void openMongoExport({ profileId, db, collections: [object.name] })}
+        >
+          Export Collection…
+        </MenuItem>
+        {!readOnly && object.kind !== 'view' && (
+          <MenuItem
+            icon="import"
+            onSelect={() => void openMongoImport({ profileId, db, collection: object.name })}
+          >
+            Import into Collection…
+          </MenuItem>
+        )}
+        <MenuItem
           icon="transfer"
           onSelect={() => openTransferFrom(profile, { database: db, objects: [object.name] })}
         >
@@ -362,6 +377,14 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
               Add View…
             </MenuItem>
           </>
+        )}
+        <MenuItem icon="export" onSelect={() => void openMongoExport({ profileId, db })}>
+          Export Collections…
+        </MenuItem>
+        {!readOnly && (
+          <MenuItem icon="import" onSelect={() => void openMongoImport({ profileId, db })}>
+            Import Collection…
+          </MenuItem>
         )}
         <MenuItem icon="transfer" onSelect={() => openTransferFrom(profile, { database: db })}>
           Transfer Data To…
@@ -459,6 +482,14 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
           {!readOnly && (
             <MenuItem icon="table-new" onSelect={() => openCreateCollection(profileId, db)}>
               Add Collection…
+            </MenuItem>
+          )}
+          <MenuItem icon="export" onSelect={() => void openMongoExport({ profileId, db })}>
+            Export Collections…
+          </MenuItem>
+          {!readOnly && (
+            <MenuItem icon="import" onSelect={() => void openMongoImport({ profileId, db })}>
+              Import Collection…
             </MenuItem>
           )}
         </>

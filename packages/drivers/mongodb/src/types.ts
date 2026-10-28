@@ -17,6 +17,7 @@ import type {
   IndexInfo,
   IndexSpec,
   InsertManyResult,
+  UpsertManyResult,
   InsertOneResult,
   MongoServerInfo,
   Namespace,
@@ -181,6 +182,11 @@ export interface MongoSession extends Session {
     documents: string,
     opts?: MongoOpOptions & { readonly ordered?: boolean },
   ): Promise<InsertManyResult>;
+  /**
+   * Writes documents by their `_id`: each replaces the stored one or is inserted (upsert); one
+   * without an `_id` is inserted. Ordered: a refused document stops the batch.
+   */
+  upsertMany(ns: Namespace, documents: string, opts?: MongoOpOptions): Promise<UpsertManyResult>;
   /**
    * Replaces the document with `original`'s _id, only while the stored document still equals
    * `original`; otherwise throws CONFLICT whose `detail` is the current document (canonical

@@ -7,6 +7,7 @@ import type {
   InsertManyResult,
   Namespace,
   SchemaAnalysis,
+  UpsertManyResult,
   WriteSummary,
 } from '@querybara/mongo-tools';
 
@@ -34,6 +35,8 @@ export interface MongoTransferSession extends Session {
     documents: string,
     opts?: Signalled & { readonly ordered?: boolean },
   ): Promise<InsertManyResult>;
+  /** Replaces or inserts each document by its `_id` (ordered); a file import's upsert mode. */
+  upsertMany?(ns: Namespace, documents: string, opts?: Signalled): Promise<UpsertManyResult>;
   deleteMany(ns: Namespace, filter: string, opts?: Signalled): Promise<WriteSummary>;
   collectionInfo(ns: Namespace): Promise<CollectionInfo>;
   createCollection(ns: Namespace): Promise<void>;

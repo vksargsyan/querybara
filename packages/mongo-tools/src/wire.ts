@@ -40,6 +40,17 @@ export interface InsertManyResult {
   readonly insertedIds: readonly string[];
 }
 
+/** A bulk upsert by `_id` (an import's upsert mode). */
+export interface UpsertManyResult {
+  /** Documents that replaced a stored one with their `_id`. */
+  readonly matchedCount: number;
+  readonly modifiedCount: number;
+  /** Documents with an `_id` no stored document had. */
+  readonly upsertedCount: number;
+  /** Documents without an `_id`, inserted with a new one. */
+  readonly insertedCount: number;
+}
+
 /** An update or delete; a dry run reports only `matchedCount` and changes nothing. */
 export interface WriteSummary {
   readonly dryRun: boolean;

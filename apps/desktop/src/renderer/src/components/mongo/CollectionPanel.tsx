@@ -22,6 +22,7 @@ import { CodeExportView } from './CodeExportDialog';
 import { BulkDialog, DocumentEditorDialog } from './DocumentDialogs';
 import { ExplainView } from './ExplainView';
 import { defaultShellScript } from '../../state/mongo/explorer';
+import { openMongoExport, openMongoImport } from '../../state/mongo/file-transfer';
 import { openIntelliShell, openMongoSql, openMongoTool } from './open';
 import { QueryBuilderPanel } from './QueryBuilderPanel';
 import { ResultViews } from './ResultViews';
@@ -629,6 +630,33 @@ function ResultSection(props: { readonly view: CollectionView; readonly writable
           <Icon name="trash" className="h-3.5 w-3.5" />
           Bulk delete…
         </Button>
+        <span className="mx-1 h-4 w-px bg-border" />
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void openMongoExport(view.fileExport())}
+          title="Export what the query finds, or the whole collection, to a file"
+        >
+          <Icon name="export" className="h-3.5 w-3.5" />
+          Export…
+        </Button>
+        {writable && view.target.kind !== 'view' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() =>
+              void openMongoImport({
+                profileId: view.target.profileId,
+                db: view.target.db,
+                collection: view.target.collection,
+              })
+            }
+            title="Import a JSON, CSV or BSON file into this collection"
+          >
+            <Icon name="import" className="h-3.5 w-3.5" />
+            Import…
+          </Button>
+        )}
         <span className="flex-1" />
         <ResultViewSelect
           value={mode}

@@ -29,6 +29,7 @@ import type {
   IndexInfo,
   IndexSpec,
   InsertManyResult,
+  UpsertManyResult,
   InsertOneResult,
   MongoServerInfo,
   Namespace,
@@ -347,6 +348,10 @@ export class MongoDbSession implements MongoSession {
     opts?: MongoOpOptions & { readonly ordered?: boolean },
   ): Promise<InsertManyResult> {
     return documents.insertMany(this.ctx, ns, docs, opts);
+  }
+
+  upsertMany(ns: Namespace, docs: string, opts?: MongoOpOptions): Promise<UpsertManyResult> {
+    return documents.upsertMany(this.ctx, ns, docs, opts);
   }
 
   replaceOne(

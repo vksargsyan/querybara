@@ -119,7 +119,10 @@ What works today:
   Extended JSON types and conflict detection, bulk update and delete with a matched-count
   preview, and visual explain that flags collection scans; an aggregation editor with per-stage
   previews, an index manager, schema analysis exported as JSON Schema or applied as a validator,
-  collection and view options, a change stream viewer, a GridFS browser, and users and roles. A
+  collection and view options, a change stream viewer, a GridFS browser, and users and roles;
+  export of collections or a query to JSON, JSON Lines (relaxed or canonical Extended JSON), CSV
+  or BSON, and import of such files (mongoexport's and mongodump's included) with insert, upsert
+  by _id or replace modes; values edited in place in the table and tree views, typed. A
   SQL tab translates a SELECT to find() or aggregate() as it is typed, runs it, and opens it in
   the collection tab, IntelliShell or the aggregation editor; any query exports as a Node.js,
   Python, Java, C#, Go or PHP program for the official driver. A MongoDB toolbar and Studio 3T's

@@ -11,6 +11,7 @@ import {
   type BsonValue,
   type DocumentPath,
   type ExplainVerbosity,
+  type FindQuery,
   type Namespace,
   type QueryModel,
 } from '@querybara/mongo-tools';
@@ -292,6 +293,31 @@ export class CollectionView {
     const request = this.codeRequest();
     if (!request) this.#set({ notice: { kind: 'error', text: 'Fix the query first.' } });
     return request;
+  }
+
+  /**
+   * What Export… takes from the tab (ADR 0037): the collection, and the query in the bar to
+   * export just what it finds. Without a valid query, the whole collection.
+   */
+  fileExport(): {
+    readonly profileId: string;
+    readonly db: string;
+    readonly collections: readonly string[];
+    readonly query?: { collection: string; query: FindQuery; text: string };
+  } {
+    const s = this.state;
+    const base = {
+      profileId: this.target.profileId,
+      db: this.target.db,
+      collections: [this.target.collection],
+    };
+    if (s.findIssue || Object.keys(s.issues).length > 0) return base;
+    try {
+      const query = toFindQuery(modelOf(s.fields, s.extras));
+      return { ...base, query: { collection: this.target.collection, query, text: s.findText } };
+    } catch {
+      return base;
+    }
   }
 
   /** Replaces the query with `fields` (a query opened from elsewhere) and runs it. */

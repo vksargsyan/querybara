@@ -41,3 +41,4 @@ supersede it with a new one.
 | [0034](0034-apache-2-licence.md)                 | Open source under Apache-2.0; name and logo stay trademarks          | Accepted                   |
 | [0035](0035-mongodb-compare.md)                  | MongoDB structure and data compare through the SQL compare's paths   | Accepted                   |
 | [0036](0036-mongodb-as-studio-3t.md)             | MongoDB as Studio 3T's: IntelliShell on an embedded mongosh          | Accepted                   |
+| [0037](0037-mongodb-file-import-export.md)       | MongoDB file import and export: Extended JSON, CSV and BSON jobs     | Accepted                   |

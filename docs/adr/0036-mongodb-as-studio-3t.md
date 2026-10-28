@@ -19,23 +19,23 @@ about 129 MB of dependencies.
 
 Studio 3T's workspace, as this decision maps it:
 
-| Studio 3T                                           | Querybara                                                       |
-| --------------------------------------------------- | --------------------------------------------------------------- |
-| IntelliShell (mongosh, Query Assist, result tabs)   | IntelliShell on the embedded mongosh (this record)              |
-| Collection tab: query bar, Tree/Table/JSON, Explain | Collection tab in Studio 3T's layout (this record)              |
-| Visual Query Builder                                | Visual Query Builder, docked on the collection tab's right      |
-| Query Code                                          | Query Code section: Node.js, Python, Java, C#, Go and PHP       |
-| Aggregation Editor, SQL Query                       | Aggregation Editor, SQL query tab                               |
-| Schema Explorer                                     | Analyze Schema                                                  |
-| Compare (structure and data)                        | Structure and data compare (ADR 0035)                           |
-| SQL Migration, data transfer                        | Transfer Data To… (MongoDB ↔ SQL and MongoDB ↔ MongoDB)         |
-| Index Manager, User Manager, Role Manager           | Manage Indexes, Manage Users, Manage Roles                      |
-| Server Status, Current Operations, Query Profiler   | Server tools: monitor, sessions, top queries                    |
-| Tasks (scheduled)                                   | Schedules (ADR 0019)                                            |
-| GridFS, Watch Changes                               | GridFS buckets, change streams                                  |
-| Main toolbar and its keys                           | MongoDB toolbar and Studio 3T's default keys (this record)      |
-| Import/Export wizards (JSON, CSV, BSON), Reschema,  | Not yet: file import/export is SQL-only; Transfer covers moving |
-| Data Masking                                        | collections between servers                                     |
+| Studio 3T                                           | Querybara                                                  |
+| --------------------------------------------------- | ---------------------------------------------------------- |
+| IntelliShell (mongosh, Query Assist, result tabs)   | IntelliShell on the embedded mongosh (this record)         |
+| Collection tab: query bar, Tree/Table/JSON, Explain | Collection tab in Studio 3T's layout (this record)         |
+| Visual Query Builder                                | Visual Query Builder, docked on the collection tab's right |
+| Query Code                                          | Query Code section: Node.js, Python, Java, C#, Go and PHP  |
+| Aggregation Editor, SQL Query                       | Aggregation Editor, SQL query tab                          |
+| Schema Explorer                                     | Analyze Schema                                             |
+| Compare (structure and data)                        | Structure and data compare (ADR 0035)                      |
+| SQL Migration, data transfer                        | Transfer Data To… (MongoDB ↔ SQL and MongoDB ↔ MongoDB)    |
+| Index Manager, User Manager, Role Manager           | Manage Indexes, Manage Users, Manage Roles                 |
+| Server Status, Current Operations, Query Profiler   | Server tools: monitor, sessions, top queries               |
+| Tasks (scheduled)                                   | Schedules (ADR 0019)                                       |
+| GridFS, Watch Changes                               | GridFS buckets, change streams                             |
+| Main toolbar and its keys                           | MongoDB toolbar and Studio 3T's default keys (this record) |
+| Import/Export wizards (JSON, CSV, BSON)             | Export and Import of collections and queries (ADR 0037)    |
+| Reschema, Data Masking                              | Not yet                                                    |
 
 ## Decision
 
@@ -114,5 +114,5 @@ mongosh completer with collection and field names sampled from the database.
 - Completion is the classic completer's plus sampled field names, without the TypeScript
   autocompleter's type-aware suggestions.
 - querybara-cli keeps running command documents (`querybara query`); scripts are the app's.
-- MongoDB file import and export (JSON, CSV, BSON), Reschema and Data Masking remain to be built
-  for parity with Studio 3T.
+- Reschema and Data Masking remain to be built for parity with Studio 3T; file import and
+  export came with ADR 0037.

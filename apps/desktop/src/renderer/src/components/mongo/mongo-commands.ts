@@ -13,6 +13,7 @@ import {
   type MongoContext,
 } from '../../state/mongo/context';
 import { defaultShellScript } from '../../state/mongo/explorer';
+import { openMongoExport, openMongoImport } from '../../state/mongo/file-transfer';
 import type { ResultMode } from '../../state/mongo/results';
 import { openServerTools } from '../../state/server-tools/panels';
 import { openStructureCompare } from '../../state/sync/panels';
@@ -236,6 +237,50 @@ export function registerMongoCommands(): () => void {
               ? { objects: [context.collection] }
               : {}),
           }),
+        ),
+    },
+    {
+      id: 'mongo.export',
+      category: 'MongoDB',
+      title: 'Export…',
+      icon: 'export',
+      keywords: ['json', 'csv', 'bson', 'mongoexport', 'file'],
+      enabled: anyMongo,
+      run: async () => {
+        const view = activeCollectionView();
+        if (view) {
+          void openMongoExport(view.fileExport());
+          return;
+        }
+        await onDatabase(
+          (context, db) =>
+            void openMongoExport({
+              profileId: context.profile.id,
+              db,
+              ...(context.collection !== undefined && context.db === db
+                ? { collections: [context.collection] }
+                : {}),
+            }),
+        );
+      },
+    },
+    {
+      id: 'mongo.import',
+      category: 'MongoDB',
+      title: 'Import…',
+      icon: 'import',
+      keywords: ['json', 'csv', 'bson', 'mongoimport', 'file'],
+      enabled: anyMongo,
+      run: () =>
+        onDatabase(
+          (context, db) =>
+            void openMongoImport({
+              profileId: context.profile.id,
+              db,
+              ...(context.collection !== undefined && context.db === db && context.kind !== 'view'
+                ? { collection: context.collection }
+                : {}),
+            }),
         ),
     },
     {

@@ -11,7 +11,8 @@ import { useMongoToolbar } from './mongo-commands';
 
 /**
  * The MongoDB toolbar (ADR 0036), Studio 3T's row of tools under the title bar: Connect,
- * Collection, IntelliShell, SQL, Aggregate, Query Profiler, Compare, Schema, Transfer, Users,
+ * Collection, IntelliShell, SQL, Aggregate, Query Profiler, Export, Import, Compare, Schema,
+ * Transfer, Users,
  * Roles, Server Status and Tasks, each a command acting on the connection, database and
  * collection in view (asking when none is). It shows while a MongoDB connection is open;
  * Ctrl+Alt+B (View › Toggle MongoDB Toolbar) hides it.
@@ -31,6 +32,10 @@ const GROUPS: readonly (readonly Tool[])[] = [
     { command: 'mongo.openSql', label: 'SQL', icon: 'query' },
     { command: 'mongo.openAggregation', label: 'Aggregate', icon: 'filter' },
     { command: 'mongo.profiler', label: 'Query Profiler', icon: 'history' },
+  ],
+  [
+    { command: 'mongo.export', label: 'Export', icon: 'export' },
+    { command: 'mongo.import', label: 'Import', icon: 'import' },
   ],
   [
     { command: 'mongo.compare', label: 'Compare', icon: 'compare' },

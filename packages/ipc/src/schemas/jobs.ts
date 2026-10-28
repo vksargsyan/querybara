@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { openFileInputSchema } from './app';
 import { backupJobSchema, restoreJobSchema } from './backup';
 import { idSchema } from './common';
+import { mongoFindQuerySchema } from './mongo';
 import { cellValueSchema } from './results';
 import { SYNC_JOB_KINDS } from './sync';
 import { transferJobSchema } from './transfer-db';
@@ -379,6 +380,75 @@ export const exportJobSchema = z.object({
 });
 export type ExportJob = z.infer<typeof exportJobSchema>;
 
+/** MongoDB file formats (mirrors @querybara/transfer's MONGO_FILE_FORMATS; ADR 0037). */
+export const MONGO_FILE_FORMATS = ['json', 'jsonl', 'csv', 'bson'] as const;
+export const mongoFileFormatSchema = z.enum(MONGO_FILE_FORMATS);
+export type MongoFileFormat = z.infer<typeof mongoFileFormatSchema>;
+
+/** How a MongoDB import writes (mirrors @querybara/transfer's MONGO_IMPORT_MODES). */
+export const MONGO_IMPORT_MODES = ['insert', 'upsert', 'replace'] as const;
+export const mongoImportModeSchema = z.enum(MONGO_IMPORT_MODES);
+export type MongoImportMode = z.infer<typeof mongoImportModeSchema>;
+
+const delimiterSchema = z.string().length(1);
+
+/** Collections (or the collection tab's query) to JSON, JSON Lines, CSV or BSON files. */
+export const mongoExportJobSchema = z.object({
+  kind: z.literal('mongo-export'),
+  profileId: idSchema,
+  database: z.string().min(1).max(256),
+  /** One collection to a file, or several to a folder (a file each, named after it). */
+  collections: z.array(nameSchema).min(1).max(10_000),
+  /** One collection's documents as the collection tab finds them; all of them by default. */
+  query: mongoFindQuerySchema.optional(),
+  format: mongoFileFormatSchema,
+  /** JSON and JSON Lines: relaxed (mongoexport's default) or canonical Extended JSON. */
+  ejson: z.enum(['relaxed', 'canonical']).optional(),
+  pretty: z.boolean().optional(),
+  /** CSV: the dotted fields, in order; by default those of the first 1000 documents. */
+  fields: z.array(z.string().min(1).max(1024)).max(4096).optional(),
+  csv: z
+    .object({
+      delimiter: delimiterSchema.optional(),
+      header: z.boolean().optional(),
+      lineEnding: z.enum(['\n', '\r\n']).optional(),
+    })
+    .optional(),
+  gzip: z.boolean().optional(),
+  output: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('file'), path: filePathSchema }),
+    z.object({ kind: z.literal('directory'), path: filePathSchema }),
+  ]),
+});
+export type MongoExportJob = z.infer<typeof mongoExportJobSchema>;
+
+/** A JSON, JSON Lines, CSV or BSON file into a collection. */
+export const mongoImportJobSchema = z.object({
+  kind: z.literal('mongo-import'),
+  profileId: idSchema,
+  database: z.string().min(1).max(256),
+  collection: nameSchema,
+  file: z.object({
+    path: filePathSchema,
+    format: mongoFileFormatSchema,
+    encoding: encodingSchema.optional(),
+    csv: z
+      .object({
+        delimiter: delimiterSchema.optional(),
+        header: z.boolean().optional(),
+        types: z.enum(['infer', 'string']).optional(),
+        empty: z.enum(['omit', 'null', 'string']).optional(),
+      })
+      .optional(),
+  }),
+  mode: mongoImportModeSchema,
+  onError: z.enum(['stop', 'skip']).optional(),
+  batchSize: z.number().int().min(1).max(100_000).optional(),
+  /** Needed on profiles that confirm writes, and for the replace mode (it deletes first). */
+  confirmed: z.boolean().optional(),
+});
+export type MongoImportJob = z.infer<typeof mongoImportJobSchema>;
+
 export const runSqlFileJobSchema = z.object({
   kind: z.literal('run-sql-file'),
   ...jobBase,
@@ -394,6 +464,8 @@ export type RunSqlFileJob = z.infer<typeof runSqlFileJobSchema>;
 export const jobSpecSchema = z.discriminatedUnion('kind', [
   importJobSchema,
   exportJobSchema,
+  mongoImportJobSchema,
+  mongoExportJobSchema,
   runSqlFileJobSchema,
   transferJobSchema,
   backupJobSchema,
@@ -490,6 +562,8 @@ export const jobInfoSchema = z.object({
   kind: z.enum([
     'import',
     'export',
+    'mongo-import',
+    'mongo-export',
     'run-sql-file',
     'transfer',
     'backup',

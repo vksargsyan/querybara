@@ -19,6 +19,7 @@ import { BackupDialogs } from './components/backup/BackupDialogs';
 import { Prompts } from './components/Prompts';
 import { ScheduleDialog } from './components/schedules/ScheduleDialog';
 import { registerMongoCommands } from './components/mongo/mongo-commands';
+import { MongoFileDialogs } from './components/mongo/FileTransferDialogs';
 import { MongoToolbar } from './components/mongo/MongoToolbar';
 import { openRedisTool } from './components/redis/RedisTree';
 import { Sidebar } from './components/Sidebar';
@@ -181,6 +182,7 @@ export function App() {
       <TransferDialogs />
       <TransferDbHost />
       <BackupDialogs />
+      <MongoFileDialogs />
       <ConnectionFilesDialogs />
       <AboutDialog />
       <CommandPalette />

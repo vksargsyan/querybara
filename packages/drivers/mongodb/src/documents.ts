@@ -15,6 +15,7 @@ import {
   type Namespace,
   type SchemaAnalysis,
   type StagePreview,
+  type UpsertManyResult,
   type WriteSummary,
 } from '@querybara/mongo-tools';
 import type {
@@ -224,6 +225,46 @@ export function insertMany(
       .insertMany(docs, { session: exec.session, ordered: opts.ordered ?? true });
     const ids = docs.map((_, i) => toEjson(result.insertedIds[i]));
     return { insertedCount: result.insertedCount, insertedIds: ids };
+  });
+}
+
+/**
+ * Writes documents by their `_id` (an import's upsert mode): each replaces the stored document
+ * with its `_id`, or is inserted when there is none; a document without an `_id` is inserted
+ * with a new one. Ordered, so a refused document stops the batch and the error's
+ * `writeErrors[0].index` says which, as `insertMany`'s does.
+ */
+export function upsertMany(
+  ctx: MongoContext,
+  ns: Namespace,
+  documents: string,
+  opts: MongoOpOptions = {},
+): Promise<UpsertManyResult> {
+  return ctx.run(opts, async (exec) => {
+    const docs = documentsArg(documents, 'document');
+    if (docs.length === 0) {
+      return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0, insertedCount: 0 };
+    }
+    const result = await ctx.plainCollection(ns).bulkWrite(
+      docs.map((doc) =>
+        '_id' in doc
+          ? {
+              replaceOne: {
+                filter: driverDoc<Filter<Document>>({ _id: doc['_id']! }),
+                replacement: doc,
+                upsert: true,
+              },
+            }
+          : { insertOne: { document: doc } },
+      ),
+      { session: exec.session, ordered: true },
+    );
+    return {
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+      upsertedCount: result.upsertedCount,
+      insertedCount: result.insertedCount,
+    };
   });
 }
 

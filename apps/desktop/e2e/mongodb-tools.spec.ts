@@ -483,3 +483,78 @@ test('creates a view from the stage cards', async () => {
   // Read on another connection: the new view can take a moment to show there.
   await expect.poll(() => direct!.count({ db, collection: 'open_orders' })).toBe(30);
 });
+
+test('exports a collection to JSON Lines and imports the file into a new collection', async () => {
+  const count = await direct!.count({ db, collection: 'orders' });
+  await treeMenu('orders', 'Export Collection…');
+  const exporting = page.getByRole('dialog', { name: 'Export' });
+  await exporting.getByRole('radio', { name: /^JSON Lines/ }).check();
+  const file = join(files, 'orders.jsonl');
+  await stubDialog('save', file);
+  await exporting.getByRole('button', { name: 'Choose file…' }).click();
+  await expect(exporting.getByTestId('mongo-export-path')).toHaveText(file);
+  await shot('mongo2-export');
+  await exporting.getByRole('button', { name: 'Export', exact: true }).click();
+  await expect(exporting).toBeHidden();
+  const exported = page.getByTestId('job-item').filter({ hasText: 'Export orders to JSON Lines' });
+  await expect(exported.getByTestId('job-summary')).toContainText(`${count} documents exported`);
+  const lines = readFileSync(file, 'utf8').trim().split('\n');
+  expect(lines).toHaveLength(count);
+  expect(JSON.parse(lines[0]!)).toMatchObject({ _id: 1, status: 'open', total: 0 });
+
+  await treeMenu(db, 'Import Collection…');
+  const importing = page.getByRole('dialog', { name: 'Import' });
+  await stubDialog('open', file);
+  await importing.getByRole('button', { name: 'Choose file…' }).click();
+  await expect(importing.getByTestId('mongo-import-path')).toHaveText(file);
+  const collection = importing.getByRole('textbox', { name: 'Collection' });
+  await expect(collection).toHaveValue('orders');
+  await collection.fill('orders_imported');
+  await shot('mongo2-import');
+  await importing.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(importing).toBeHidden();
+  const imported = page
+    .getByTestId('job-item')
+    .filter({ hasText: 'Import orders.jsonl into orders_imported' });
+  await expect(imported.getByTestId('job-summary')).toContainText(`${count} documents imported`);
+  expect(await direct!.count({ db, collection: 'orders_imported' })).toBe(count);
+  await expect(treeRow('orders_imported')).toBeVisible();
+
+  // Again with upsert: the same _ids are replaced, nothing is added.
+  await treeMenu('orders_imported', 'Import into Collection…');
+  await stubDialog('open', file);
+  await importing.getByRole('button', { name: 'Choose file…' }).click();
+  await importing.getByRole('radio', { name: /^Upsert by _id/ }).check();
+  await importing.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(
+    page
+      .getByTestId('job-item')
+      .filter({ hasText: 'Import orders.jsonl into orders_imported' })
+      .first(),
+  ).toContainText(`${count} documents imported`);
+  expect(await direct!.count({ db, collection: 'orders_imported' })).toBe(count);
+});
+
+test("exports the collection tab's query to CSV", async () => {
+  await treeRow('orders').click();
+  const panel = visible('mongo-collection-panel');
+  await panel.getByTestId('mongo-filter').fill("{ status: 'shipped' }");
+  await panel.getByTestId('mongo-filter').press('Enter');
+  await expect(panel.getByTestId('mongo-loaded')).toHaveText('30 documents loaded');
+  await panel.getByRole('button', { name: 'Export…' }).click();
+  const exporting = page.getByRole('dialog', { name: 'Export' });
+  await expect(exporting.getByRole('radio', { name: /^What the query finds/ })).toBeChecked();
+  await exporting.getByRole('radio', { name: /^CSV/ }).check();
+  const file = join(files, 'shipped.csv');
+  await stubDialog('save', file);
+  await exporting.getByRole('button', { name: 'Choose file…' }).click();
+  await exporting.getByRole('button', { name: 'Export', exact: true }).click();
+  const job = page
+    .getByTestId('job-item')
+    .filter({ hasText: 'Export orders query results to CSV' });
+  await expect(job.getByTestId('job-summary')).toContainText('30 documents exported');
+  const rows = readFileSync(file, 'utf8').trim().split('\r\n');
+  expect(rows[0]).toBe('_id,status,total,at');
+  expect(rows).toHaveLength(31);
+  expect(rows[1]).toBe('2,shipped,5,2026-01-02T00:00:00.000Z');
+});
