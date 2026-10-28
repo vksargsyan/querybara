@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process';
 
 import { QuerybaraError } from '@querybara/core';
+import type * as OidcPlugin from '@mongodb-js/oidc-plugin';
 import type { MongoDBOIDCPlugin } from '@mongodb-js/oidc-plugin';
 import type { MongoClientOptions } from 'mongodb';
 
@@ -16,7 +17,7 @@ import type { MongoClientOptions } from 'mongodb';
  */
 
 const plugins = new Map<string, MongoDBOIDCPlugin>();
-let pluginModule: Promise<typeof import('@mongodb-js/oidc-plugin')> | undefined;
+let pluginModule: Promise<typeof OidcPlugin> | undefined;
 
 /** Opens an http(s) address in the system browser. */
 export function openInBrowser({ url }: { readonly url: string }): Promise<void> {
