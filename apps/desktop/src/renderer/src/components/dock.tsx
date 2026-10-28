@@ -63,7 +63,7 @@ import { ObjectsPanel } from './ObjectsPanel';
 import { RedisPanel } from './redis/RedisPanel';
 import { MongoPanel } from './mongo/MongoPanel';
 import { SyncPanel } from './sync/SyncPanel';
-import { openMongoConsole, openMongoSql } from './mongo/open';
+import { openIntelliShell, openMongoSql } from './mongo/open';
 import { ServerToolsPanel } from './server-tools/ServerToolsPanel';
 import { openSearchConsole } from './search/open';
 import { SearchPanel } from './search/SearchPanel';
@@ -223,7 +223,7 @@ export function openQueryTab(options: {
   /** The database the tab's session connects to; the connection's own when unset. */
   readonly database?: string;
 }): string {
-  // A MongoDB connection's "query tab" is its command console (spec §9), or a SQL tab for a
+  // A MongoDB connection's "query tab" is its IntelliShell (ADR 0036), or a SQL tab for a
   // SELECT (a query history entry of one).
   const engine = cachedProfile(options.profileId)?.engine;
   if (engine === 'mongodb') {
@@ -239,7 +239,11 @@ export function openQueryTab(options: {
         title: `${options.database} SQL`,
       });
     }
-    return openMongoConsole(options);
+    return openIntelliShell({
+      profileId: options.profileId,
+      ...(options.database === undefined ? {} : { database: options.database }),
+      ...(options.text === undefined ? {} : { text: options.text }),
+    });
   }
   // An Elasticsearch connection's "query tab" is its console (spec §11).
   if (engine === 'elasticsearch') return openSearchConsole(options);
@@ -274,10 +278,11 @@ registerRestorer('sql', (entry, profile) =>
         ...(entry.database === null ? {} : { database: entry.database }),
       }),
 );
+// IntelliShell keeps the command console's autosave kind, so its buffers reopen as shells.
 registerRestorer('mongo-console', (entry, profile) =>
-  openMongoConsole({
+  openIntelliShell({
     profileId: profile.id,
-    title: entry.title || `${profile.name} console`,
+    ...(entry.title && !entry.title.endsWith(' console') ? { title: entry.title } : {}),
     ...(entry.database === null ? {} : { database: entry.database }),
     text: entry.text,
   }),

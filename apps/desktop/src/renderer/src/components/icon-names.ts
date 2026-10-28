@@ -2,6 +2,8 @@
 export type IconName =
   | 'play'
   | 'play-all'
+  | 'play-step'
+  | 'play-selection'
   | 'stop'
   | 'plus'
   | 'refresh'
@@ -49,6 +51,7 @@ export type IconName =
   | 'view-json'
   | 'view-tree'
   | 'query'
+  | 'shell'
   | 'file-run'
   | 'builder'
   | 'diagram'

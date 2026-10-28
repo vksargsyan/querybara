@@ -18,6 +18,7 @@ import {
 } from '../../state/mongo/explorer';
 import { openCreateCollection, openCreateView } from '../../state/mongo/create-dialogs';
 import { mongoObjectsPathFor } from '../../state/objects-model';
+import { shortcutLabel } from '../../state/keybindings';
 import { showObjects, useObjectsView } from '../../state/objects-view';
 import { openServerTools } from '../../state/server-tools/panels';
 import { openTransferFrom } from '../../state/transfer-db/api';
@@ -27,7 +28,13 @@ import { CompareItems } from '../ObjectMenu';
 import { Row } from '../Sidebar';
 import { Icon } from '../ui';
 import { MongoCreateDialogs } from './CreateDialogs';
-import { openMongoCollection, openMongoConsole, openMongoSql, openMongoTool } from './open';
+import {
+  defaultShellScript,
+  openIntelliShell,
+  openMongoCollection,
+  openMongoSql,
+  openMongoTool,
+} from './open';
 
 /**
  * A MongoDB connection's object tree (spec §5): databases, then collections, views, time series
@@ -506,16 +513,19 @@ export function MongoNodeMenu(props: {
       <ToolItems profile={profile} node={node} />
       {database !== undefined && (node.kind === 'database' || opens) && (
         <MenuItem
-          icon="query"
+          icon="shell"
+          shortcut={shortcutLabel('mongo.openIntelliShell')}
           onSelect={() =>
-            openMongoConsole({
+            openIntelliShell({
               profileId: profile.id,
-              title: `${database} console`,
               database,
+              ...(opens && object && 'name' in object
+                ? { text: defaultShellScript(object.name) }
+                : {}),
             })
           }
         >
-          Open console
+          Open IntelliShell
         </MenuItem>
       )}
       {node.hasChildren && (

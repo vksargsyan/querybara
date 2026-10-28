@@ -14,7 +14,7 @@ import { connectMongo, scratchMongoDatabase, withoutTls } from './mongo-db';
  * The MongoDB tool panels against the test replica set (spec §9, "Query tools" and "Schema and
  * admin"): the aggregation editor with per-stage previews and a disabled stage, the index manager
  * (TTL and partial indexes), schema analysis applied as a validator that the document editor then
- * hits, capped and time series collections, a change stream fed from the console, the GridFS
+ * hits, capped and time series collections, a change stream fed from IntelliShell, the GridFS
  * browser and the users editor. With QUERYBARA_E2E_SHOTS set, screenshots of each panel are saved
  * there as mongo2-*.png.
  */
@@ -330,8 +330,9 @@ test('watches a change stream while the console inserts, updates and deletes', a
   await panel.getByTestId('changes-clear').click();
   await expect(rows).toHaveCount(0);
 
-  await treeMenu(db, 'Open console');
-  const consolePanel = visible('mongo-console');
+  await treeMenu(db, 'Open IntelliShell');
+  const shell = visible('intellishell');
+  await expect(shell.getByTestId('intellishell-output')).toContainText('mongosh');
   const status = async (): Promise<string | null> => {
     for await (const found of direct!.find(
       { db, collection: 'orders' },
@@ -342,17 +343,14 @@ test('watches a change stream while the console inserts, updates and deletes', a
     }
     return null;
   };
-  const commands: [string, string | null][] = [
-    ["{ insert: 'orders', documents: [{ _id: 1000, status: 'new' }] }", 'new'],
-    [
-      "{ update: 'orders', updates: [{ q: { _id: 1000 }, u: { $set: { status: 'changed' } } }] }",
-      'changed',
-    ],
-    ["{ delete: 'orders', deletes: [{ q: { _id: 1000 }, limit: 1 }] }", null],
+  const scripts: [string, string | null][] = [
+    ["db.orders.insertOne({ _id: 1000, status: 'new' })", 'new'],
+    ["db.orders.updateOne({ _id: 1000 }, { $set: { status: 'changed' } })", 'changed'],
+    ['db.orders.deleteOne({ _id: 1000 })', null],
   ];
-  for (const [command, after] of commands) {
-    await replaceText(consolePanel.getByTestId('mongo-console-editor'), command);
-    await consolePanel.getByRole('button', { name: 'Run', exact: true }).click();
+  for (const [script, after] of scripts) {
+    await replaceText(shell.getByTestId('intellishell-editor'), script);
+    await shell.getByTestId('intellishell-run').click();
     await expect.poll(status).toBe(after);
   }
   await shot('mongo2-console-writes');

@@ -18,6 +18,8 @@ export function Prompts() {
       return <Secrets prompt={prompt} />;
     case 'confirm':
       return <Confirm prompt={prompt} />;
+    case 'shell':
+      return <ShellQuestion prompt={prompt} />;
   }
 }
 
@@ -212,6 +214,108 @@ function Confirm({ prompt }: { readonly prompt: Extract<Prompt, { kind: 'confirm
           className="mt-3 max-h-48 overflow-auto rounded border border-border bg-panel-2 p-2 font-mono text-xs whitespace-pre-wrap select-text"
         >
           {prompt.detail}
+        </pre>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * IntelliShell's questions (ADR 0036): a write the profile's rules ask about, with Run for this
+ * one and Run all for the rest of the script, or a password the script prompts for.
+ */
+function ShellQuestion({ prompt }: { readonly prompt: Extract<Prompt, { kind: 'shell' }> }) {
+  const [text, setText] = useState('');
+  const { kind, question, operation } = prompt.prompt;
+  if (kind === 'password' || kind === 'confirm') {
+    const password = kind === 'password';
+    return (
+      <Modal
+        open
+        role={password ? 'dialog' : 'alertdialog'}
+        onOpenChange={(open) => !open && prompt.resolve({ kind: 'deny' })}
+        title={password ? 'The script asks for a password' : 'The script asks'}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => prompt.resolve({ kind: 'deny' })}>
+              {password ? 'Cancel' : 'No'}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() =>
+                prompt.resolve(password ? { kind: 'text', text } : { kind: 'allow', scope: 'once' })
+              }
+            >
+              {password ? 'OK' : 'Yes'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[13px] whitespace-pre-wrap">{question}</p>
+        {password && (
+          <form
+            className="mt-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              prompt.resolve({ kind: 'text', text });
+            }}
+          >
+            <Input
+              type="password"
+              autoComplete="off"
+              autoFocus
+              aria-label="Password"
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+            />
+          </form>
+        )}
+      </Modal>
+    );
+  }
+  const destructive = kind === 'destructive';
+  return (
+    <Modal
+      open
+      role="alertdialog"
+      onOpenChange={(open) => !open && prompt.resolve({ kind: 'deny' })}
+      title={
+        prompt.production
+          ? 'Write on a production connection?'
+          : destructive
+            ? 'Run this operation?'
+            : 'Run this write?'
+      }
+      description={
+        destructive
+          ? 'It can remove or change a lot of data.'
+          : `"${prompt.connectionName}" asks before every write.`
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => prompt.resolve({ kind: 'deny' })}>
+            Don’t run
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => prompt.resolve({ kind: 'allow', scope: 'run' })}
+            title="Run this write and every other one this script makes"
+          >
+            Run all writes
+          </Button>
+          <Button variant="danger" onClick={() => prompt.resolve({ kind: 'allow', scope: 'once' })}>
+            Run
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[13px]">{question}</p>
+      {operation !== undefined && (
+        <pre
+          data-testid="shell-prompt-operation"
+          className="mt-3 rounded border border-border bg-panel-2 p-2 font-mono text-xs whitespace-pre-wrap select-text"
+        >
+          {operation}
         </pre>
       )}
     </Modal>

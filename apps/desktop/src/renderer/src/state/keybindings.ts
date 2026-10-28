@@ -68,6 +68,14 @@ export function useBindingOf(commandId: string): string | undefined {
   });
 }
 
+/** A command's binding as a menu shows it ("⌘L", "Ctrl+L"), or undefined when it has none. */
+export function shortcutLabel(commandId: string): string | undefined {
+  const binding = bindingOf(commandId);
+  return binding === undefined
+    ? undefined
+    : bindingLabel(binding, useWindowState.getState().platform === 'darwin');
+}
+
 /** Commands sharing a binding with others: binding → command ids. */
 export function conflicts(bindings: ReadonlyMap<string, string>): ReadonlyMap<string, string[]> {
   const byKey = new Map<string, string[]>();

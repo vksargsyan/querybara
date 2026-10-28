@@ -6,16 +6,16 @@ import { AggregationEditor, type AggregationTarget } from './aggregation';
 import { ChangeStreamViewer } from './change-stream';
 import { CollectionOptions, type CollectionOptionsTarget } from './collection-options';
 import { CollectionView, type CollectionTarget } from './collection-view';
-import { MongoConsole, type ConsoleTarget } from './console';
 import { GridFsBrowser, type GridFsTarget } from './gridfs';
 import { IndexManager, type IndexManagerTarget } from './indexes';
+import { IntelliShell, type IntelliShellTarget } from './intellishell';
 import type { QueryFields } from './query-bar';
 import { SchemaPanelState, type SchemaTarget } from './schema';
 import { SqlQuery, type SqlQueryTarget } from './sql-query';
 import { UsersRoles, type UsersRolesTarget } from './users';
 
 /**
- * The MongoDB module's dock panels: collection views, command consoles, SQL tabs and the tool
+ * The MongoDB module's dock panels: collection views, IntelliShells, SQL tabs and the tool
  * panels (aggregation editor, index manager, schema analysis, collection options, change streams,
  * GridFS, users and roles). The dock renders them all through one `mongo` panel component; this
  * registry holds each panel's state object and disposes it (closing its session) when the
@@ -24,7 +24,7 @@ import { UsersRoles, type UsersRolesTarget } from './users';
 
 export type MongoPanel =
   | CollectionView
-  | MongoConsole
+  | IntelliShell
   | SqlQuery
   | AggregationEditor
   | IndexManager
@@ -75,8 +75,8 @@ export function createCollectionPanel(
   return { id, opened: true };
 }
 
-/** Creates a console's state and registers its panel. */
-export function createConsolePanel(target: ConsoleTarget, title: string): string {
+/** Creates an IntelliShell's state and registers its panel (ADR 0036). */
+export function createShellPanel(target: IntelliShellTarget, title: string): string {
   const id = newId();
   registerPanel({
     id,
@@ -85,9 +85,9 @@ export function createConsolePanel(target: ConsoleTarget, title: string): string
     title,
     database: target.database,
   });
-  const console = new MongoConsole(id, target);
-  panels.set(id, console);
-  void console.init();
+  const shell = new IntelliShell(id, target);
+  panels.set(id, shell);
+  void shell.init();
   return id;
 }
 

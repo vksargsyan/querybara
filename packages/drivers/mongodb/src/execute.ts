@@ -25,10 +25,15 @@ export const DOCUMENT_COLUMN: ColumnMeta = {
 };
 
 /** Commands whose reply is a cursor, streamed page by page. */
-const CURSOR_COMMANDS = new Set(['find', 'aggregate', 'listCollections', 'listIndexes']);
+export const CURSOR_COMMANDS: ReadonlySet<string> = new Set([
+  'find',
+  'aggregate',
+  'listCollections',
+  'listIndexes',
+]);
 
 /** Commands that only run against the admin database; they are sent there whatever is current. */
-const ADMIN_COMMANDS = new Set([
+export const ADMIN_COMMANDS: ReadonlySet<string> = new Set([
   'listDatabases',
   'currentOp',
   'killOp',

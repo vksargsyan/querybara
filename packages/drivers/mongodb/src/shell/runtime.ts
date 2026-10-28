@@ -19,9 +19,12 @@ import { ShellEvaluator } from '@mongosh/shell-evaluator';
 import { QuerybaraError, newId } from '@querybara/core';
 import {
   ShellParseError,
+  commandSafety,
   isBsonDocument,
+  parseShell,
   splitScript,
   toEjson,
+  type BsonDocument,
   type FindQuery,
   type Namespace,
   type ScriptStatement,
@@ -35,6 +38,7 @@ import {
 import type { MongoClient } from 'mongodb';
 
 import { RAW_BSON } from '../context';
+import { ADMIN_COMMANDS, CURSOR_COMMANDS } from '../execute';
 import { formatPrintable } from './format';
 import { ShellWriteRefused, guardServiceProvider, type ShellWrite } from './guard';
 
@@ -169,6 +173,14 @@ function rawConstruction(
         args: [db, pipeline, optionsWithRawBson(aggOptions), dbOptions],
       } as CursorConstructionOptions;
     }
+    case 'runCursorCommand': {
+      const [db, spec, cursorOptions, dbOptions] = options.args;
+      if (!isPlainObject(spec) || commandSafety(spec as BsonDocument).writes) return undefined;
+      return {
+        ...options,
+        args: [db, spec, optionsWithRawBson(cursorOptions), dbOptions],
+      } as CursorConstructionOptions;
+    }
     default:
       return undefined;
   }
@@ -223,7 +235,42 @@ function namespaceOf(options: CursorConstructionOptions | undefined): Namespace 
     const [db, collection] = options.args;
     return { db, collection };
   }
+  if (options.method === 'runCursorCommand') {
+    const [db, spec] = options.args;
+    const name = isPlainObject(spec) ? Object.keys(spec)[0] : undefined;
+    const target = name === undefined ? undefined : (spec as Record<string, unknown>)[name];
+    if ((name === 'find' || name === 'aggregate') && typeof target === 'string') {
+      return { db, collection: target };
+    }
+  }
   return undefined;
+}
+
+/**
+ * A script that is one command document (`{ find: "orders", filter: {...} }`, in shell syntax or
+ * Extended JSON), as the command console ran them: rewritten to run it, through the shell's
+ * cursor command (so the reply pages as a cursor) for cursor commands and db.adminCommand for
+ * admin-only ones. The document crosses as Extended JSON so its values keep their BSON types.
+ * Undefined for any other script.
+ */
+export function commandScript(script: string): string | undefined {
+  const text = script.trim();
+  if (!text.startsWith('{')) return undefined;
+  let value: unknown;
+  try {
+    value = parseShell(text);
+  } catch {
+    return undefined;
+  }
+  if (!isBsonDocument(value)) return undefined;
+  const name = Object.keys(value)[0];
+  if (name === undefined) return undefined;
+  const method = ADMIN_COMMANDS.has(name)
+    ? 'db.adminCommand'
+    : CURSOR_COMMANDS.has(name) && value['explain'] === undefined
+      ? 'db._runCursorCommand'
+      : 'db.runCommand';
+  return `${method}(EJSON.parse(${JSON.stringify(toEjson(value))}, { relaxed: false }))`;
 }
 
 /** The fields of an error that the page shows. */
@@ -234,6 +281,8 @@ function errorFields(error: unknown): {
   codeName?: string;
 } {
   if (!(error instanceof Error)) return { message: String(error) };
+  // The app's own refusals (the write rules) speak for themselves.
+  if (error instanceof QuerybaraError) return { message: error.message };
   const { code, codeName } = error as { code?: unknown; codeName?: unknown };
   return {
     message: error.message,
@@ -372,8 +421,20 @@ export class ShellRuntime {
     let ran = 0;
     try {
       let statements: ScriptStatement[];
+      const command = commandScript(script);
       try {
-        statements = splitScript(script);
+        statements =
+          command === undefined
+            ? splitScript(script)
+            : [
+                {
+                  start: script.length - script.trimStart().length,
+                  end: script.trimEnd().length,
+                  text: command,
+                  line: 1,
+                  command: false,
+                },
+              ];
       } catch (error) {
         if (!(error instanceof ShellParseError)) throw error;
         sink.emit({
@@ -427,7 +488,7 @@ export class ShellRuntime {
           sink.emit({
             type: 'result',
             ...range,
-            source: statement.text,
+            source: script.slice(statement.start, statement.end),
             value,
             durationMs: Math.round(performance.now() - begun),
           });
@@ -536,7 +597,10 @@ export class ShellRuntime {
     if (isShellCursor(raw)) return this.#cursorValue(raw);
     if (isChangeStreamCursor(raw)) return this.#openCursor(raw, 'changeStream', false, {});
     const printable: unknown = result.printable;
-    if (result.type === 'Document' && isDocument(printable)) {
+    // findOne(), runCommand() and plain objects; results with types of their own
+    // (InsertOneResult, StatsResult...) print as mongosh prints them.
+    const documentTypes: readonly (string | null)[] = ['Document', 'CommandResult', null];
+    if (documentTypes.includes(result.type) && isDocument(printable)) {
       return {
         kind: 'documents',
         documents: [toEjson(printable)],
@@ -574,12 +638,9 @@ export class ShellRuntime {
         : cursor instanceof AggregationCursor
           ? 'aggregate'
           : 'command';
-    const info = {
-      ...(namespaceOf(options) ? { ns: namespaceOf(options)! } : {}),
-      ...(options && cursorQuery(options, cursor._chains)
-        ? { query: cursorQuery(options, cursor._chains)! }
-        : {}),
-    };
+    const ns = namespaceOf(options);
+    const query = options ? cursorQuery(options, cursor._chains) : undefined;
+    const info = { ...(ns ? { ns } : {}), ...(query ? { query } : {}) };
     const raw = options ? rawConstruction(options) : undefined;
     const untouched =
       cursor._transform === null &&

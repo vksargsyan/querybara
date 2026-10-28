@@ -209,6 +209,27 @@ describe.skipIf(!MONGO_URL)('the embedded mongosh', () => {
     expect(end(events)).toMatchObject({ status: 'error', ran: 1 });
   });
 
+  it('runs a command document as the command console did, with exact types', async () => {
+    const { events } = await run(
+      shell,
+      '{ find: "items", filter: { _id: { $lte: 2 } }, sort: { _id: 1 } }',
+    );
+    const [value] = values(events);
+    expect(value).toMatchObject({
+      kind: 'cursor',
+      cursorType: 'command',
+      ns: { db, collection: 'items' },
+      exactTypes: true,
+    });
+    expect(value?.kind === 'cursor' && value.documents[0]).toContain(
+      '"dbl":{"$numberDouble":"3.0"}',
+    );
+    const ping = values((await run(shell, '{ "ping": { "$numberInt": "1" } }')).events)[0];
+    expect(ping).toMatchObject({ kind: 'documents', single: true });
+    const admin = values((await run(shell, '{ listDatabases: 1, nameOnly: true }')).events)[0];
+    expect(admin?.kind === 'documents' && admin.documents[0]).toContain('"databases"');
+  });
+
   it('refuses every write on a read-only connection', async () => {
     const readOnly = await open({ ...DEV, readOnly: true });
     for (const script of [

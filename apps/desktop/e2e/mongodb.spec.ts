@@ -13,7 +13,7 @@ import { connectMongo, scratchMongoDatabase, withoutTls } from './mongo-db';
  * object tree, the collection view (query bar and find() text, tree, table with drill-down and
  * JSON), the document editor with a conflicting change made elsewhere, insert, clone and delete,
  * a bulk update counted before it runs, explain before and after an index, and the command
- * console. With QUERYBARA_E2E_SHOTS set, screenshots of the collection view are saved there.
+ * IntelliShell. With QUERYBARA_E2E_SHOTS set, screenshots of the collection view are saved there.
  */
 
 const MONGO_URL = process.env['QUERYBARA_TEST_MONGODB_URL'];
@@ -338,28 +338,106 @@ test('explains a collection scan, then the index scan once an index exists', asy
   await shot('mongo-explain');
 });
 
-test('runs a command in the console and records it in the history', async () => {
-  await page.getByRole('button', { name: 'New query' }).click();
-  const consolePanel = page.getByTestId('mongo-console').filter({ visible: true });
-  await expect(consolePanel).toBeVisible();
-  await consolePanel.getByTestId('mongo-console-database').selectOption(db);
-  const command = '{ find: "orders", filter: { total: { $gt: 700 } }, sort: { total: -1 } }';
-  await replaceText(consolePanel.getByTestId('mongo-console-editor'), command);
-  await consolePanel.getByRole('button', { name: 'Run', exact: true }).click();
-  await expect(consolePanel.getByTestId('mongo-console-count')).toContainText('9 documents');
-  await expect(consolePanel.getByRole('button', { name: 'Document 1', exact: true })).toContainText(
-    '_id: 150',
-  );
-  await consolePanel.getByRole('radio', { name: 'Table' }).click();
-  await expect(consolePanel.getByTestId('mongo-table').locator('tbody tr')).toHaveCount(9);
-  await shot('mongo-console');
+/** Brings the IntelliShell tab to the front. */
+async function showShell(): Promise<void> {
+  await page.locator('.dv-tab', { hasText: `IntelliShell: ${NAME}` }).click();
+}
 
-  // A destructive command asks first; declining runs nothing.
-  await replaceText(consolePanel.getByTestId('mongo-console-editor'), '{ drop: "customers" }');
-  await consolePanel.getByRole('button', { name: 'Run', exact: true }).click();
-  await confirmDialog('Cancel');
+function shellPanel(): Locator {
+  return page.getByTestId('intellishell').filter({ visible: true });
+}
+
+/** Replaces IntelliShell's script and runs it whole (F5's button). */
+async function runScript(script: string): Promise<void> {
+  await replaceText(shellPanel().getByTestId('intellishell-editor'), script);
+  await shellPanel().getByTestId('intellishell-run').click();
+}
+
+test('runs mongosh scripts in IntelliShell, a result tab per find()', async () => {
+  await page.getByRole('button', { name: 'New query' }).click();
+  await expect(shellPanel()).toBeVisible();
+  await expect(page.locator('.dv-tab', { hasText: `IntelliShell: ${NAME}` })).toHaveCount(1);
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText('mongosh');
+  await shellPanel().getByTestId('intellishell-database').selectOption(db);
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText(
+    `switched to db ${db}`,
+  );
+
+  await runScript(
+    'const big = { total: { $gt: 700 } }\nprint("orders over 700:", db.orders.countDocuments(big))\ndb.orders.find(big).sort({ total: -1 })',
+  );
+  const tab = shellPanel().getByTestId('intellishell-result-tab');
+  await expect(tab).toHaveText('Find Query (line 3)');
+  await expect(shellPanel().getByTestId('intellishell-result-count')).toHaveText(
+    'Documents 1 to 9',
+  );
+  await expect(shellPanel().getByTestId('mongo-table').locator('tbody tr')).toHaveCount(9);
+  await expect(shellPanel().getByTestId('mongo-table').locator('tbody tr').first()).toContainText(
+    '150',
+  );
+  await shot('mongo-intellishell');
+  await shellPanel().getByTestId('intellishell-raw-tab').click();
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText('orders over 700: 9');
+
+  // The command console's documents still run, as cursor commands.
+  await runScript('{ find: "orders", filter: { total: { $gt: 700 } }, sort: { total: -1 } }');
+  await expect(tab).toHaveText('Command (line 1)');
+  await expect(shellPanel().getByTestId('intellishell-result-count')).toHaveText(
+    'Documents 1 to 9',
+  );
+
+  // A destructive write asks first; declining runs nothing.
+  await runScript('db.customers.drop()');
+  const question = page.getByRole('alertdialog');
+  await expect(question).toContainText('dropCollection');
+  await question.getByRole('button', { name: 'Don’t run' }).click();
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText('was not run');
   expect(await direct!.count({ db, collection: 'customers' })).toBe(1);
 
-  await page.getByRole('button', { name: 'History' }).click();
-  await expect(page.getByTestId('history-list')).toContainText('{ find: "orders"');
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await expect(page.getByTestId('history-list')).toContainText('db.orders.find(big)');
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+});
+
+test('completes collections, methods and fields, and runs the statement at the cursor', async () => {
+  const editor = shellPanel().getByTestId('intellishell-editor');
+  await replaceText(editor, '');
+  await page.keyboard.insertText('db.ord');
+  await page.keyboard.press('Control+Space');
+  await expect(
+    page.locator('.suggest-widget .monaco-list-row', { hasText: 'orders' }).first(),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.keyboard.insertText('ers.find({ cust');
+  await page.keyboard.press('Control+Space');
+  await expect(
+    page.locator('.suggest-widget .monaco-list-row', { hasText: 'customer' }).first(),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await replaceText(editor, 'db.orders.findOne({ _id: 1 })\n\ndb.orders.findOne({ _id: 2 })');
+  // The cursor is on the last line: F6 runs that statement alone.
+  await page.keyboard.press('F6');
+  await shellPanel().getByTestId('intellishell-raw-tab').click();
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText('_id: 2');
+  await expect(shellPanel().getByTestId('intellishell-last-run')).toContainText('Ran 1 statement');
+});
+
+test('opens a result in the collection tab, and restarts a script that does not stop', async () => {
+  await runScript('db.orders.find({ status: "open" }).sort({ _id: -1 }).limit(5)');
+  await shellPanel().getByRole('button', { name: 'Open in collection tab' }).click();
+  await expect(panel().getByTestId('mongo-filter')).toHaveValue("{ status: 'open' }");
+  await expect(panel().getByTestId('mongo-limit')).toHaveValue('5');
+  await showShell();
+
+  await runScript('while (true) {}');
+  await expect(shellPanel().getByTestId('intellishell-stop')).toBeEnabled();
+  await shellPanel().getByTestId('intellishell-stop').click();
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText('restarted', {
+    timeout: 30_000,
+  });
+  await runScript('1 + 1');
+  await expect(shellPanel().getByTestId('intellishell-output').locator('pre').last()).toHaveText(
+    '2',
+  );
 });
