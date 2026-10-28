@@ -92,6 +92,8 @@ export class ShellClient {
   readonly #runs = new Map<string, EventQueue>();
   #opening:
     { resolve: (info: ShellInfo) => void; reject: (error: QuerybaraError) => void } | undefined;
+  /** The thread being opened (a restart's, say): what runs and requests wait for. */
+  #starting: Promise<ShellInfo> | undefined;
   #closed = false;
 
   private constructor(options: ShellClientOptions) {
@@ -116,6 +118,16 @@ export class ShellClient {
   }
 
   async #open(database: string | undefined): Promise<ShellInfo> {
+    const starting = this.#start(database);
+    this.#starting = starting;
+    try {
+      return await starting;
+    } finally {
+      if (this.#starting === starting) this.#starting = undefined;
+    }
+  }
+
+  async #start(database: string | undefined): Promise<ShellInfo> {
     const worker = this.#options.spawn();
     this.#worker = worker;
     worker.port.on('message', (data) => {
@@ -206,7 +218,9 @@ export class ShellClient {
     if (this.#closed) {
       throw new QuerybaraError({ code: 'NOT_FOUND', message: 'This shell is closed' });
     }
-    if (!this.#worker) await this.#open(this.#info?.database ?? this.#options.database);
+    // A thread still connecting has no shell yet: what is posted to it waits until it has one.
+    if (this.#starting) await this.#starting;
+    else if (!this.#worker) await this.#open(this.#info?.database ?? this.#options.database);
   }
 
   /**

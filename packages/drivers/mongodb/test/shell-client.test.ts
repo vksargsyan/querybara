@@ -22,7 +22,17 @@ class FakeWorker implements ShellWorkerHandle {
   #exit: ((error?: Error) => void) | undefined;
   terminated = false;
 
-  constructor(readonly options: { readonly stuck?: boolean; readonly database?: string } = {}) {}
+  /** Whether the shell has connected; as the real worker, it runs nothing before that. */
+  #open = false;
+
+  constructor(
+    readonly options: {
+      readonly stuck?: boolean;
+      readonly database?: string;
+      /** How long connecting takes. */
+      readonly openMs?: number;
+    } = {},
+  ) {}
 
   readonly port = {
     postMessage: (message: unknown): void => {
@@ -46,16 +56,24 @@ class FakeWorker implements ShellWorkerHandle {
   #handle(request: HostToShell): void {
     switch (request.type) {
       case 'open':
-        this.#reply({
-          type: 'opened',
-          info: {
-            database: request.database ?? this.options.database ?? 'test',
-            mongoshVersion: '5.9.5',
-            serverVersion: '8.0.0',
-          },
-        });
+        setTimeout(() => {
+          this.#open = true;
+          this.#reply({
+            type: 'opened',
+            info: {
+              database: request.database ?? this.options.database ?? 'test',
+              mongoshVersion: '5.9.5',
+              serverVersion: '8.0.0',
+            },
+          });
+        }, this.options.openMs ?? 0);
         return;
       case 'evaluate':
+        if (!this.#open) {
+          this.#event(request.runId, { type: 'error', message: 'Not connected' });
+          this.#event(request.runId, { type: 'end', status: 'error', durationMs: 0, ran: 0 });
+          return;
+        }
         this.#event(request.runId, { type: 'statement', index: 0, start: 0, end: 1, line: 1 });
         if (this.options.stuck) return;
         this.#event(request.runId, { type: 'database', name: 'shop' });
@@ -139,6 +157,32 @@ describe('ShellClient', () => {
     expect(workers[0]!.terminated).toBe(true);
     expect(workers[0]!.sent.map((m) => m.type)).toContain('interrupt');
     expect(workers[1]!.sent[0]).toMatchObject({ type: 'open', database: 'shop' });
+    await client.close();
+  });
+
+  it('runs a script sent while a restarted thread is still connecting once it connects', async () => {
+    const workers: FakeWorker[] = [];
+    const client = await ShellClient.start({
+      spawn: () => {
+        const first = workers.length === 0;
+        const worker = new FakeWorker({ stuck: first, openMs: first ? 0 : 40 });
+        workers.push(worker);
+        return worker;
+      },
+      resolved: RESOLVED,
+      database: 'shop',
+      policy: POLICY,
+      interruptGraceMs: 20,
+    });
+    const run = collect(client.evaluate('while (true) {}'));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const stopping = client.interrupt();
+    // The stuck run ends as the restart begins, before the new thread has connected.
+    expect((await run).at(-1)).toMatchObject({ type: 'end', status: 'cancelled' });
+    const next = await collect(client.evaluate('1 + 1'));
+    expect(next.at(-1)).toMatchObject({ type: 'end', status: 'success' });
+    await stopping;
+    expect(workers[1]!.sent.map((m) => m.type)).toEqual(['open', 'evaluate']);
     await client.close();
   });
 
