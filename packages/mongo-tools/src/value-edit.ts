@@ -1,7 +1,6 @@
 import { QuerybaraError } from '@querybara/core';
 
 import {
-  Binary,
   Decimal128,
   Double,
   Int32,
@@ -9,6 +8,7 @@ import {
   ObjectId,
   UUID,
   bsonTypeOf,
+  type Binary,
   type BsonTypeName,
   type BsonValue,
 } from './bson';
