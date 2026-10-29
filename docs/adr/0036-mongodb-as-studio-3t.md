@@ -34,7 +34,7 @@ Studio 3T's workspace, as this decision maps it:
 | Tasks (scheduled)                                   | Schedules (ADR 0019), MongoDB exports included             |
 | GridFS, Watch Changes                               | GridFS buckets, change streams                             |
 | Main toolbar and its keys                           | MongoDB toolbar and Studio 3T's default keys (this record) |
-| Import/Export wizards (JSON, CSV, BSON)             | Export and Import of collections and queries (ADR 0037)    |
+| Import/Export wizards (JSON, CSV, BSON, SQL)        | Export and Import of collections and queries (ADR 0037)    |
 | In-place editing in Table and Tree views            | Values edited in place, typed (this record)                |
 | Query History, saved queries                        | The collection tab's History and Saved (this record)       |
 | Copy/Paste documents and collections                | Copy and Paste across collections and connections          |
@@ -137,3 +137,9 @@ mongosh completer with collection and field names sampled from the database.
 - File import and export came with ADR 0037, Reschema and Data Masking with ADR 0038, AWS IAM
   and OIDC sign-in with ADR 0039, the Data Generator with ADR 0040, the collection history with
   ADR 0041.
+- Three of Studio 3T's features are not offered:
+  - Kerberos (GSSAPI) sign-in: it needs a native module per platform (ADR 0039).
+  - The AI Helper: it needs a model provider, and would send queries and field names off the
+    machine.
+  - Team Sharing: it needs a hosted service. Connections and queries move between machines as
+    files instead (encrypted connection exports, query files).
