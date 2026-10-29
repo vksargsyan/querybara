@@ -6,6 +6,7 @@ import {
   nodeText,
   parseJsonTree,
 } from '@querybara/search-tools';
+import { create } from 'zustand';
 
 import { decideSearchWrite, searchWritePolicy } from '../../../../shared/search-writes';
 import { errorMessage } from '../../lib/errors';
@@ -19,6 +20,17 @@ import { SessionLane } from '../session-lane';
  * replicas, the mapping and any further settings as JSON, and aliases. The dialog shows the
  * exact request before it runs; the write rules apply as everywhere else.
  */
+
+/** The connection the Create index dialog is open for (the tree's menu or the toolbar). */
+export const useCreateIndexRequest = create<{ readonly profileId?: string }>()(() => ({}));
+
+export function openCreateIndex(profileId: string): void {
+  useCreateIndexRequest.setState({ profileId });
+}
+
+export function closeCreateIndex(): void {
+  useCreateIndexRequest.setState({ profileId: undefined });
+}
 
 export interface CreateIndexForm {
   readonly name: string;

@@ -1,9 +1,9 @@
 import { newId, type BrowseNode, type EngineId } from '@querybara/core';
-import { create } from 'zustand';
 
 import { currentDock } from '../components/dock';
 import { loadChildren, pathKey, useExplorer } from './explorer';
 import { objectsPathFor } from './objects-model';
+import { useObjectsView } from './objects-location';
 import { panelWithKey, patchPanel, registerPanel, unregisterPanel } from './panels';
 
 /**
@@ -18,21 +18,7 @@ import { panelWithKey, patchPanel, registerPanel, unregisterPanel } from './pane
  * the view load, refresh and fail together.
  */
 
-export interface ObjectsLocation {
-  readonly profileId: string;
-  /** The explorer path whose children the view lists. */
-  readonly path: readonly string[];
-  /** Display names along the path, for the breadcrumb. */
-  readonly trail: readonly string[];
-  /** The tree node that was clicked (a schema lists its tables folder), marked in the tree. */
-  readonly source: readonly string[];
-}
-
-interface ObjectsViewState {
-  readonly location?: ObjectsLocation;
-}
-
-export const useObjectsView = create<ObjectsViewState>()(() => ({}));
+export { useObjectsView, type ObjectsLocation } from './objects-location';
 
 const PANEL_KEY = 'objects';
 

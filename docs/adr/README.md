@@ -46,3 +46,4 @@ supersede it with a new one.
 | [0039](0039-mongodb-aws-and-oidc-sign-in.md)     | MongoDB sign-in with AWS IAM and OIDC (browser or workload)          | Accepted                   |
 | [0040](0040-mongodb-data-generator.md)           | A Data Generator from field rules, inserted in batches               | Accepted                   |
 | [0041](0041-mongodb-collection-history.md)       | Collection History: changes made in the app, kept locally to undo    | Accepted                   |
+| [0042](0042-a-toolbar-for-every-connection.md)   | A toolbar for every connection, following the one in front           | Accepted                   |
