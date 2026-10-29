@@ -625,6 +625,35 @@ export const mongoPipelineScopeSchema = z.object({
  * a saved query of the local store. `text` is the editor's pipeline text in mongosh syntax,
  * disabled stages included as `//` comments.
  */
+/** The largest document version a change keeps (MongoDB's 16 MB, as Extended JSON). */
+const changeDocumentSchema = z.string().min(2).max(32_000_000);
+
+/**
+ * A document changed through the MongoDB views (ADR 0041), as the collection history keeps it:
+ * canonical Extended JSON of its `_id`, and of the document before (null for an insert) and
+ * after (null for a delete).
+ */
+export const mongoCollectionChangeSchema = z.object({
+  id: idSchema,
+  operation: z.enum(['insert', 'update', 'delete']),
+  documentId: z.string().min(1).max(4096),
+  before: changeDocumentSchema.nullable(),
+  after: changeDocumentSchema.nullable(),
+  changedAt: z.string(),
+  revertedAt: z.string().nullable(),
+});
+export type MongoCollectionChange = z.infer<typeof mongoCollectionChangeSchema>;
+
+/** A change to record, in a collection. */
+export const mongoRecordChangeInputSchema = mongoPipelineScopeSchema.extend(
+  mongoCollectionChangeSchema.pick({
+    operation: true,
+    documentId: true,
+    before: true,
+    after: true,
+  }).shape,
+);
+
 export const mongoSavedPipelineSchema = z.object({
   id: idSchema,
   name: z.string().trim().min(1).max(200),

@@ -28,6 +28,7 @@ import { patchPanel } from '../panels';
 import { SessionLane } from '../session-lane';
 import { BulkFlow, bulkState, type BulkKind, type BulkState } from './bulk-flow';
 import type { CodeExportRequest } from './code-export';
+import { insertedDocument, recordChange } from './collection-history';
 import { EditorFlow, cloneState, editState, insertState, type EditorState } from './editor-flow';
 import { namespaceReference } from './explorer';
 import {
@@ -787,7 +788,7 @@ export class CollectionView {
             `${this.#nsRef()}.replaceOne({ _id: ${this.#idText(id)} }, ${formatShellInline(fromEjson(replacement))})`,
           );
           if (!confirmed) throw new QuerybaraError({ code: 'CANCELLED', message: 'Not saved' });
-          return this.#lane.run((host, sessionId) =>
+          const summary = await this.#lane.run((host, sessionId) =>
             host.mongo.replaceOne({
               sessionId,
               ns: this.ns,
@@ -796,6 +797,8 @@ export class CollectionView {
               confirmed: this.state.confirmWrites,
             }),
           );
+          recordChange(this.target, { operation: 'update', before: original, after: replacement });
+          return summary;
         },
         insert: async (document) => {
           const confirmed = await this.#confirmWrite(
@@ -803,7 +806,7 @@ export class CollectionView {
             `${this.#nsRef()}.insertOne(${formatShellInline(fromEjson(document))})`,
           );
           if (!confirmed) throw new QuerybaraError({ code: 'CANCELLED', message: 'Not saved' });
-          return this.#lane.run((host, sessionId) =>
+          const result = await this.#lane.run((host, sessionId) =>
             host.mongo.insertOne({
               sessionId,
               ns: this.ns,
@@ -811,6 +814,11 @@ export class CollectionView {
               confirmed: this.state.confirmWrites,
             }),
           );
+          recordChange(this.target, {
+            operation: 'insert',
+            after: insertedDocument(document, result.insertedId),
+          });
+          return result;
         },
       },
       (next) => this.#set({ editor: { ...next, index: editIndex } }),
@@ -908,10 +916,15 @@ export class CollectionView {
       danger: true,
     });
     if (!ok) return;
+    // Recorded only as a whole document (not one read with a projection), so it can go back.
+    const before = this.editable ? this.results.state.documents[index] : undefined;
     try {
       const summary = await this.#lane.run((host, sessionId) =>
         host.mongo.deleteOne({ sessionId, ns: this.ns, id, confirmed: true }),
       );
+      if (summary.deletedCount > 0 && before !== undefined) {
+        recordChange(this.target, { operation: 'delete', before });
+      }
       if (summary.deletedCount > 0) this.results.removeAt(index);
       this.#set({
         notice: {
@@ -988,6 +1001,7 @@ export class CollectionView {
         }),
       );
       this.results.replaceAt(index, replacement);
+      recordChange(this.target, { operation: 'update', before: original, after: replacement });
       this.#set({
         notice: {
           kind: 'success',

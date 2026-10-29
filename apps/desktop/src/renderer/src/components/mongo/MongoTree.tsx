@@ -364,6 +364,17 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
             >
               Generate Data…
             </MenuItem>
+            <MenuItem
+              icon="history"
+              onSelect={() =>
+                openMongoTool({
+                  tool: 'collection-history',
+                  target: { profileId, db, collection: object.name },
+                })
+              }
+            >
+              Collection History…
+            </MenuItem>
           </>
         )}
         <MenuItem

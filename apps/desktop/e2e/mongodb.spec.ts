@@ -349,6 +349,46 @@ test('edits values in place in the table and tree views, keeping their types', a
   expect(after['customer']).toEqual({ name: 'Customer 2', address: { city: 'Lyon' } });
 });
 
+test('lists the changes made in the collection tab, and undoes an edit and a delete', async () => {
+  await treeMenu('orders', 'Collection History…');
+  const history = page.getByTestId('mongo-collection-history').filter({ visible: true });
+  const changes = history.getByRole('listbox', { name: 'Changes' });
+  // Newest first: the field removed in place, on order 3.
+  const newest = changes.getByRole('option').first();
+  await expect(newest).toContainText('Edited');
+  await expect(newest).toContainText('3');
+  await expect(history.getByRole('region', { name: 'Before' })).toContainText('status');
+  await expect(history.getByRole('region', { name: 'After' })).not.toContainText('status');
+  await shot('mongo-collection-history');
+  await history.getByRole('button', { name: 'Undo' }).click();
+  const confirm = page.getByRole('alertdialog').last();
+  await expect(confirm.getByTestId('confirm-detail')).toContainText('.replaceOne({ _id: 3 }');
+  await confirmDialog('Undo');
+  await expect(history.getByText('Change undone')).toBeVisible();
+  expect((await stored(3))['status']).toBeDefined();
+  // The undo is a change too, and the undone one says so.
+  await expect(changes.getByRole('option').nth(1)).toContainText('undone');
+
+  // The deleted order 1000 comes back.
+  await changes.getByRole('option').filter({ hasText: 'Deleted' }).first().click();
+  await history.getByRole('button', { name: 'Undo' }).click();
+  await confirmDialog('Undo');
+  await expect(history.getByText('Change undone')).toBeVisible();
+  expect(await stored(1000)).toMatchObject({ status: 'new' });
+  // Its insert is undone too, now that it is as inserted again.
+  await changes
+    .getByRole('option')
+    .filter({ hasText: 'Inserted' })
+    .filter({ hasText: '1000' })
+    .last()
+    .click();
+  await history.getByRole('button', { name: 'Undo' }).click();
+  await confirmDialog('Undo');
+  await expect(history.getByText('Change undone')).toBeVisible();
+  expect(await direct!.count({ db, collection: 'orders' }, toEjson({ _id: 1000 }))).toBe(0);
+  await page.getByRole('tab', { name: 'orders', exact: true }).click();
+});
+
 test('runs a query again from its history, and saves, opens and deletes a query', async () => {
   await panel().getByRole('button', { name: 'Reset' }).click();
   await setField('filter', "{ status: 'shipped' }");

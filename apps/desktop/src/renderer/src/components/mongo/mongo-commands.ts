@@ -270,6 +270,21 @@ export function registerMongoCommands(): () => void {
         ),
     },
     {
+      id: 'mongo.collectionHistory',
+      category: 'MongoDB',
+      title: 'Collection History…',
+      icon: 'history',
+      keywords: ['undo', 'changes', 'revert', 'audit'],
+      enabled: anyMongo,
+      run: () =>
+        onCollection((context, { db, collection }) =>
+          openMongoTool({
+            tool: 'collection-history',
+            target: { profileId: context.profile.id, db, collection },
+          }),
+        ),
+    },
+    {
       id: 'mongo.generate',
       category: 'MongoDB',
       title: 'Data Generator…',

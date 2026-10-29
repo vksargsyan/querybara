@@ -110,6 +110,16 @@ export {
   type ScheduleRunStart,
 } from './repositories/schedules';
 export {
+  CHANGES_KEPT,
+  CHANGE_OPERATIONS,
+  CollectionChangeRepository,
+  collectionChangeSchema,
+  type ChangeOperation,
+  type CollectionChange,
+  type CollectionChangeInput,
+  type CollectionScope,
+} from './repositories/collection-changes';
+export {
   gridColumnStateSchema,
   gridLayoutSchema,
   gridSortTermSchema,

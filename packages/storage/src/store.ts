@@ -3,6 +3,7 @@ import { migrate } from './migrations';
 import { SavedComparisonRepository } from './repositories/comparisons';
 import { ErModelDraftRepository } from './repositories/er-model-drafts';
 import { ScheduleRepository } from './repositories/schedules';
+import { CollectionChangeRepository } from './repositories/collection-changes';
 import { EditorAutosaveRepository } from './repositories/editor-autosave';
 import { FolderRepository } from './repositories/folders';
 import { GridViewRepository } from './repositories/grid-views';
@@ -46,6 +47,8 @@ export interface Store {
   readonly erModelDrafts: ErModelDraftRepository;
   /** Scheduled jobs and their run history. */
   readonly schedules: ScheduleRepository;
+  /** Documents changed through the MongoDB views, to undo (ADR 0041). */
+  readonly collectionChanges: CollectionChangeRepository;
   /** Saved table views: column layout, sort and filter per profile and table (spec §7). */
   readonly gridViews: GridViewRepository;
   /** Unsaved editor buffers and the app's run marker, for crash restore (spec §18). */
@@ -87,6 +90,7 @@ export function createStore(db: SqliteDatabase, options: StoreOptions): Store {
     comparisons: new SavedComparisonRepository(context),
     erModelDrafts: new ErModelDraftRepository(context),
     schedules: new ScheduleRepository(context),
+    collectionChanges: new CollectionChangeRepository(context),
     gridViews: new GridViewRepository(context),
     autosave: new EditorAutosaveRepository(context),
     close() {

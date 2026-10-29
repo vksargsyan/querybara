@@ -45,3 +45,4 @@ supersede it with a new one.
 | [0038](0038-mongodb-reschema-and-masking.md)     | Reschema and Data Masking: field rules compiled to a pipeline        | Accepted                   |
 | [0039](0039-mongodb-aws-and-oidc-sign-in.md)     | MongoDB sign-in with AWS IAM and OIDC (browser or workload)          | Accepted                   |
 | [0040](0040-mongodb-data-generator.md)           | A Data Generator from field rules, inserted in batches               | Accepted                   |
+| [0041](0041-mongodb-collection-history.md)       | Collection History: changes made in the app, kept locally to undo    | Accepted                   |

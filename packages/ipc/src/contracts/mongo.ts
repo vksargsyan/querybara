@@ -32,7 +32,9 @@ import {
   mongoPrivilegeSchema,
   mongoRoleInfoSchema,
   mongoRoleRefSchema,
+  mongoCollectionChangeSchema,
   mongoPipelineScopeSchema,
+  mongoRecordChangeInputSchema,
   mongoRoleSpecSchema,
   mongoSavePipelineInputSchema,
   mongoSavedPipelineSchema,
@@ -474,6 +476,17 @@ export const mongoMainContractShape = {
     save: { input: mongoSavePipelineInputSchema, output: mongoSavedPipelineSchema },
     /** Unknown ids are ignored. */
     delete: { input: z.object({ id: idSchema }), output: done },
+  },
+  /**
+   * The collection history (ADR 0041): documents changed through the MongoDB views, newest
+   * first, to undo. The page records a change once its write succeeded.
+   */
+  changes: {
+    list: { input: mongoPipelineScopeSchema, output: z.array(mongoCollectionChangeSchema) },
+    record: { input: mongoRecordChangeInputSchema, output: done },
+    /** Unknown ids are ignored. */
+    markReverted: { input: z.object({ id: idSchema }), output: done },
+    clear: { input: mongoPipelineScopeSchema, output: done },
   },
   /**
    * Writes exported text (a JSON Schema, a validator) to a path this window picked with

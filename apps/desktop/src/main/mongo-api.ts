@@ -19,7 +19,7 @@ import type { ConnectionSupervisor } from './supervisor';
  *
  * Saved aggregation pipelines, and the collection tab's saved find() queries, are saved queries
  * of the local store, scoped to the profile and database and tagged with the collection, so they
- * stay with the connection and go when it does.
+ * stay with the connection and go when it does. So does the collection history (ADR 0041).
  * Exported text (a JSON Schema) is written under the same file grants as a download.
  */
 
@@ -92,7 +92,7 @@ function savedPerCollection(
 export function mongoMainHandlers<P>(
   services: {
     readonly supervisor: ConnectionSupervisor<P>;
-    readonly store: Pick<Store, 'savedQueries'>;
+    readonly store: Pick<Store, 'savedQueries' | 'collectionChanges'>;
   },
   grants: FileGrants,
 ): MongoMainHandlers {
@@ -155,6 +155,21 @@ export function mongoMainHandlers<P>(
     },
     pipelines: savedPerCollection(store, PIPELINE_TAG, 'saved pipeline'),
     queries: savedPerCollection(store, FIND_TAG, 'saved query'),
+    changes: {
+      list: ({ profileId, db, collection }) =>
+        store.collectionChanges
+          .list({ profileId, database: db, collection })
+          .map(({ profileId: _p, database: _d, collection: _c, ...change }) => change),
+      record: ({ profileId, db, collection, ...change }) => {
+        store.collectionChanges.record({ profileId, database: db, collection, ...change });
+      },
+      markReverted: ({ id }) => {
+        store.collectionChanges.markReverted(id);
+      },
+      clear: ({ profileId, db, collection }) => {
+        store.collectionChanges.clear({ profileId, database: db, collection });
+      },
+    },
     writeText: async ({ path, text }) => {
       grants.checkWrite(path);
       const bytes = Buffer.from(text, 'utf8');

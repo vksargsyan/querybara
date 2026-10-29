@@ -270,6 +270,48 @@ describe('saved pipelines and exported text in main', () => {
     expect(await handlers.queries.list(orders, context())).toEqual([]);
   });
 
+  it('records the collection history per collection, and marks and clears changes', async () => {
+    const { handlers } = handlersWithProfile();
+    const orders = { profileId: 'm1', db: 'shop', collection: 'orders' };
+    await handlers.changes.record(
+      {
+        ...orders,
+        operation: 'update',
+        documentId: '{"$numberInt":"1"}',
+        before: '{"_id":{"$numberInt":"1"},"n":"a"}',
+        after: '{"_id":{"$numberInt":"1"},"n":"b"}',
+      },
+      context(),
+    );
+    await handlers.changes.record(
+      {
+        ...orders,
+        collection: 'users',
+        operation: 'insert',
+        documentId: '{"$numberInt":"2"}',
+        before: null,
+        after: '{"_id":{"$numberInt":"2"}}',
+      },
+      context(),
+    );
+    const [change, ...rest] = await handlers.changes.list(orders, context());
+    expect(rest).toEqual([]);
+    expect(change).toMatchObject({
+      operation: 'update',
+      documentId: '{"$numberInt":"1"}',
+      after: '{"_id":{"$numberInt":"1"},"n":"b"}',
+      revertedAt: null,
+    });
+    expect(change).not.toHaveProperty('profileId');
+    await handlers.changes.markReverted({ id: change!.id }, context());
+    expect((await handlers.changes.list(orders, context()))[0]?.revertedAt).not.toBeNull();
+    await handlers.changes.clear(orders, context());
+    expect(await handlers.changes.list(orders, context())).toEqual([]);
+    expect(await handlers.changes.list({ ...orders, collection: 'users' }, context())).toHaveLength(
+      1,
+    );
+  });
+
   it('writes exported text only where the save dialog pointed', async () => {
     const { grants, handlers } = handlersWithProfile();
     const dir = mkdtempSync(join(tmpdir(), 'querybara-mongo-'));

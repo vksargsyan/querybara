@@ -245,6 +245,7 @@ Copy tone: confident, concrete, short. Every sentence names a real capability. N
 - Copy and paste of documents and collections
 - Reschema and Data Masking
 - Data Generator
+- Collection History
 - The MongoDB toolbar and keyboard shortcuts
 
 **Redis and Valkey**

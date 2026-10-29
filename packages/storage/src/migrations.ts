@@ -302,6 +302,33 @@ const schedules: Migration = {
   },
 };
 
+const collectionChanges: Migration = {
+  version: 7,
+  name: 'collection history',
+  up(db) {
+    // Documents changed through the app's MongoDB views (ADR 0041), each with its version
+    // before and after, so a change can be undone; with the connection they were made on.
+    db.exec(`
+      CREATE TABLE collection_changes (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT NOT NULL REFERENCES profiles (id) ON DELETE CASCADE,
+        database_name TEXT NOT NULL,
+        collection_name TEXT NOT NULL,
+        operation TEXT NOT NULL CHECK (operation IN ('insert', 'update', 'delete')),
+        document_id TEXT NOT NULL,
+        before TEXT,
+        after TEXT,
+        changed_at TEXT NOT NULL,
+        reverted_at TEXT,
+        CHECK (operation = 'insert' OR before IS NOT NULL),
+        CHECK (operation = 'delete' OR after IS NOT NULL)
+      ) STRICT;
+      CREATE INDEX collection_changes_by_collection
+        ON collection_changes (profile_id, database_name, collection_name, changed_at);
+    `);
+  },
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   initialSchema,
   historyFullText,
@@ -309,6 +336,7 @@ export const MIGRATIONS: readonly Migration[] = [
   gridViewsAndAutosave,
   erModelDrafts,
   schedules,
+  collectionChanges,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

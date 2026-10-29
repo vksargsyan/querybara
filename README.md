@@ -129,7 +129,8 @@ What works today:
   collections across databases and connections; Reschema (move, nest, convert, drop and compute
   fields) and Data Masking (mask characters, replace, null, randomise numbers and dates) into
   another collection, run on the server; a Data Generator that fills a collection with test
-  documents from a rule per field, read from its own documents. A SQL tab translates a SELECT to
+  documents from a rule per field, read from its own documents; a collection history of the
+  documents inserted, edited and deleted in the app, each change undoable. A SQL tab translates a SELECT to
   find() or aggregate() as it is typed, runs it, and opens it in the collection tab, IntelliShell
   or the aggregation editor; any query exports as a Node.js, Python, Java, C#, Go, PHP or Ruby
   program for the official driver, or as a mongosh script. A MongoDB toolbar and Studio 3T's
