@@ -14,8 +14,8 @@ catalog:
   turbo: ^2.11.5
   typescript: ~6.0.3
   typescript-eslint: ^8.71.0
-  vitest: ^5.0.2
-  zod: ^4.6.5
+  vitest: ^5.0.5
+  zod: ^4.6.6
 
 onlyBuiltDependencies:
   - electron
@@ -31,6 +31,9 @@ overrides:
   # devtools-proxy-support > pac-proxy-agent > get-uri, which asks for ^5. 6.x keeps the Client
   # calls get-uri makes. Drop once get-uri asks for a patched release.
   'get-uri>basic-ftp': ^6.2.3
+  # dompurify <=3.4.16 (GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr): monaco-editor 0.57 pins
+  # 3.4.15 exactly. Drop once a monaco-editor release asks for a patched one.
+  'monaco-editor>dompurify': ^3.4.17
 
 # Advisories `pnpm audit` should not fail on, each with why and when to drop it.
 auditConfig:
