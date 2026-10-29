@@ -1,7 +1,7 @@
 {
   "name": "@querybara/desktop",
   "productName": "Querybara",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "private": true,
   "license": "Apache-2.0",
   "description": "Querybara desktop app: Electron main, sandboxed preload, React renderer and connection hosts.",
