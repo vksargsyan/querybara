@@ -3,14 +3,31 @@ import { useMemo, useState } from 'react';
 
 import {
   EMPTY_CREATE_INDEX,
+  closeCreateIndex,
   createIndexBody,
   createIndexIssues,
   createSearchIndex,
+  useCreateIndexRequest,
   type CreateIndexForm,
 } from '../../state/search/create-index';
 import { useTheme } from '../theme';
 import { Button, Field, Input, Modal } from '../ui';
 import { JsonEditor } from './JsonEditor';
+import { openSearchTool } from './open';
+
+/** The Create index dialog while one is asked for (state/search/create-index.ts). */
+export function CreateIndexHost() {
+  const profileId = useCreateIndexRequest((state) => state.profileId);
+  if (profileId === undefined) return null;
+  return (
+    <CreateIndexDialog
+      key={profileId}
+      profileId={profileId}
+      onClose={closeCreateIndex}
+      onCreated={(name) => openSearchTool({ tool: 'index', profileId, index: name })}
+    />
+  );
+}
 
 /**
  * Create an index (spec §11): its name (checked against the server's rules as it is typed),

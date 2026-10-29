@@ -28,7 +28,12 @@ What works today:
   `robo3t.json`; stepwise Test Connection.
 - **Command palette**: ⌘P (Ctrl+P) goes to a table, view or collection by a few of its
   letters; ⌘⇧P (Ctrl+Shift+P) runs any command; key bindings as VS Code's, with chords, and a
-  Keyboard Shortcuts editor (⌘K ⌘S) to change them.
+  Keyboard Shortcuts editor (⌘K ⌘S) to change them. A toolbar under the title bar shows the
+  tools of the connection in front and follows it from tab to tab: for MySQL, MariaDB and
+  PostgreSQL, query, query builder, SQL file, table, new table and database, ER diagram,
+  import, export, transfer, backup, restore, structure and data compare, and the server tools;
+  for MongoDB, Redis and Elasticsearch, their own tools. Each acts on the database, schema,
+  table, collection or index in front and asks for the rest; Ctrl+Alt+B hides it.
 - **Explorer**: a side bar you resize by dragging its edge and hide with ⌘B (Ctrl+B), with search
   and a filter by engine, environment and state; a click on a database, schema or folder lists
   its objects in the Objects tab with rows, sizes, engine, dates and comments (documents, sizes
@@ -133,8 +138,8 @@ What works today:
   documents inserted, edited and deleted in the app, each change undoable. A SQL tab translates a SELECT to
   find() or aggregate() as it is typed, runs it, and opens it in the collection tab, IntelliShell
   or the aggregation editor; any query exports as a Node.js, Python, Java, C#, Go, PHP or Ruby
-  program for the official driver, or as a mongosh script. A MongoDB toolbar and Studio 3T's
-  keys reach it all: Ctrl+L IntelliShell, Ctrl+Shift+L SQL, F4 aggregation, Ctrl+Alt+1/2/3 the
+  program for the official driver, or as a mongosh script. The toolbar's MongoDB tools and
+  Studio 3T's keys reach it all: Ctrl+L IntelliShell, Ctrl+Shift+L SQL, F4 aggregation, Ctrl+Alt+1/2/3 the
   tree, table and JSON views, Ctrl+D insert, Ctrl+U update, F8 delete, Ctrl+G Query Code.
 - **Redis and Valkey**: standalone, Sentinel and Cluster with ACL users (Cluster nodes behind NAT,
   Docker or Kubernetes NodePorts reached through the seed that answers as each); a SCAN-based key

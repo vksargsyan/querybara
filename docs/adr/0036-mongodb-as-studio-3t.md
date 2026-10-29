@@ -100,7 +100,8 @@ mongosh completer with collection and field names sampled from the database.
   The Visual Query Builder docks on the right. The chosen view is remembered (Table first).
 - A MongoDB toolbar under the title bar (Connect, Collection, IntelliShell, SQL, Aggregate,
   Query Profiler, Compare, Schema, Transfer, Tasks, Users, Roles, Server Status) shows while a
-  MongoDB connection is open; View › Toggle MongoDB Toolbar hides it.
+  MongoDB connection is open; View › Toggle MongoDB Toolbar hides it. ADR 0042 made it the
+  connection toolbar, which shows these tools while a MongoDB connection is in front.
 - Each tool is a `mongo.*` command in the palette and key bindings (ADR 0031). It acts on the
   active tab's connection, database and collection, else on the side bar's selection, else on
   the only MongoDB connection open, and asks for what is still missing. Studio 3T's keys are the

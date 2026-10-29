@@ -1,12 +1,13 @@
 import type { BrowseNode } from '@querybara/core';
 import type { StoredProfile } from '@querybara/ipc';
 import { DropdownMenu } from 'radix-ui';
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import { errorMessage } from '../../lib/errors';
 import { formatCount } from '../../lib/format';
 import { confirm } from '../../state/dialogs';
 import { loadChildren, pathKey, toggleNode, useExplorer } from '../../state/explorer';
+import { openCreateIndex } from '../../state/search/create-index';
 import {
   deleteRequest,
   deleteSearchObject,
@@ -19,7 +20,6 @@ import {
 import { MenuItem } from '../MenuItem';
 import { Row } from '../Sidebar';
 import { Icon, cx } from '../ui';
-import { CreateIndexDialog } from './CreateIndexDialog';
 import { openSearchConsole, openSearchTool } from './open';
 import { formatBytes } from './parts';
 
@@ -215,14 +215,13 @@ export function SearchTree(props: {
   readonly onError: (message: string) => void;
 }) {
   const { profile, depth } = props;
-  const [creating, setCreating] = useState(false);
   const openConsole = (): void => {
     openSearchConsole({ profileId: profile.id, title: `${profile.name} console` });
   };
   const profileId = profile.id;
   return (
     <>
-      <SearchChildren {...props} path={[]} onCreateIndex={() => setCreating(true)} />
+      <SearchChildren {...props} path={[]} onCreateIndex={() => openCreateIndex(profileId)} />
       <ToolRow depth={depth} icon="console" label="Console" kind="console" onOpen={openConsole} />
       <ToolRow
         depth={depth}
@@ -252,13 +251,6 @@ export function SearchTree(props: {
         kind="snapshots"
         onOpen={() => openSearchTool({ tool: 'snapshots', profileId })}
       />
-      {creating && (
-        <CreateIndexDialog
-          profileId={profileId}
-          onClose={() => setCreating(false)}
-          onCreated={(name) => openSearchTool({ tool: 'index', profileId, index: name })}
-        />
-      )}
     </>
   );
 }

@@ -28,6 +28,7 @@ import { openPalette, quickPick } from '../state/palette';
 import { panelInfo } from '../state/panels';
 import { openSchedulesPanel } from '../state/schedules';
 import { showSidebar } from '../state/sidebar';
+import { setToolbarVisible, useToolbar } from '../state/toolbar';
 import { activeCollectionView, activeIntelliShell } from '../state/mongo/context';
 import { getTableView } from '../state/table-view';
 import { openAbout } from '../state/updates';
@@ -361,6 +362,20 @@ export function registerAppCommands(actions: () => AppActions): () => void {
       icon: 'sidebar',
       keywords: ['sidebar', 'connections', 'hide', 'show'],
       run: () => showSidebar(),
+    },
+    {
+      id: 'view.toggleToolbar',
+      category: 'View',
+      title: 'Toggle Toolbar',
+      icon: 'wrench',
+      keywords: ['toolbar', 'tools', 'studio 3t', 'hide', 'show'],
+      run: () => {
+        const visible = !useToolbar.getState().visible;
+        setToolbarVisible(visible);
+        if (visible && connected().length === 0) {
+          showStatus('info', 'The toolbar shows while a connection is open.', 3000);
+        }
+      },
     },
     {
       id: 'view.closeTab',

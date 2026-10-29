@@ -588,8 +588,9 @@ async function treeMenu(text: string, item: string): Promise<void> {
 }
 
 test('works as Studio 3T: the MongoDB toolbar, its keys, and findOne()', async () => {
-  const toolbar = page.getByTestId('mongo-toolbar');
+  const toolbar = page.getByRole('toolbar', { name: 'MongoDB' });
   await expect(toolbar).toBeVisible();
+  await expect(toolbar).toHaveAttribute('data-engine', 'mongodb');
   await page.getByRole('tab', { name: 'orders', exact: true }).click();
   await expect(panel()).toBeVisible();
   // Ctrl+Alt+3 is JSON View, Ctrl+Alt+2 Table View, in the collection tab in front.

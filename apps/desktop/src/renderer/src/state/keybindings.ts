@@ -32,6 +32,7 @@ export const DEFAULT_KEYBINDINGS: Readonly<Record<string, string>> = {
   'view.previousTab': 'ctrl+shift+tab',
   'view.refresh': 'f5',
   'tools.jobs': 'mod+shift+j',
+  'view.toggleToolbar': 'mod+alt+b',
   // MongoDB, as Studio 3T binds them (ADR 0036).
   'mongo.openIntelliShell': 'mod+l',
   'mongo.openSql': 'mod+shift+l',
@@ -43,7 +44,6 @@ export const DEFAULT_KEYBINDINGS: Readonly<Record<string, string>> = {
   'mongo.updateDialog': 'mod+u',
   'mongo.deleteDialog': 'f8',
   'mongo.queryCode': 'mod+g',
-  'view.toggleMongoToolbar': 'mod+alt+b',
 };
 
 interface KeybindingsState {
@@ -58,12 +58,18 @@ export const useKeybindings = create<KeybindingsState>()(() => ({
   recording: false,
 }));
 
+/** Commands whose id changed: a binding the user set for the old id applies to the new one. */
+const RENAMED: Readonly<Record<string, string>> = {
+  // The MongoDB toolbar became the connection toolbar (ADR 0042).
+  'view.toggleMongoToolbar': 'view.toggleToolbar',
+};
+
 /** Each command's binding: the user's where they set one ("" for none), else the default. */
 export function effectiveBindings(
   overrides: readonly KeybindingOverride[],
 ): ReadonlyMap<string, string> {
   const bindings = new Map(Object.entries(DEFAULT_KEYBINDINGS));
-  for (const { command, key } of overrides) bindings.set(command, key);
+  for (const { command, key } of overrides) bindings.set(RENAMED[command] ?? command, key);
   return bindings;
 }
 

@@ -1,6 +1,4 @@
-import { create } from 'zustand';
-
-import { registerCommands, showStatus } from '../../state/commands';
+import { registerCommands } from '../../state/commands';
 import {
   activeCollectionView,
   activeIntelliShell,
@@ -25,32 +23,8 @@ import { openIntelliShell, openMongoCollection, openMongoSql, openMongoTool } fr
  * connection, database and collection in view (state/mongo/context.ts). Their default keys are
  * Studio 3T's: Ctrl+L IntelliShell, Ctrl+Shift+L SQL, F4 the Aggregation Editor, Ctrl+Alt+1/2/3
  * the Tree, Table and JSON views, Ctrl+D insert, Ctrl+U the update dialog, F8 the delete dialog,
- * Ctrl+G Query Code, Ctrl+Alt+B the toolbar.
+ * Ctrl+G Query Code. The toolbar that shows them is the connection toolbar's (ADR 0042).
  */
-
-/** Whether the MongoDB toolbar shows (a convenience kept in this browser profile). */
-export const useMongoToolbar = create<{ readonly visible: boolean }>()(() => ({
-  visible: readVisible(),
-}));
-
-const TOOLBAR_KEY = 'querybara.mongoToolbar';
-
-function readVisible(): boolean {
-  try {
-    return localStorage.getItem(TOOLBAR_KEY) !== 'hidden';
-  } catch {
-    return true;
-  }
-}
-
-export function setMongoToolbar(visible: boolean): void {
-  useMongoToolbar.setState({ visible });
-  try {
-    localStorage.setItem(TOOLBAR_KEY, visible ? 'shown' : 'hidden');
-  } catch {
-    // Not kept: the next window shows it.
-  }
-}
 
 const anyMongo = (): boolean => connectedMongo().length > 0;
 
@@ -447,20 +421,6 @@ export function registerMongoCommands(): () => void {
         const view = activeCollectionView();
         if (!view) return;
         view.builder.setMode(view.builder.state.mode === 'builder' ? 'fields' : 'builder');
-      },
-    },
-    {
-      id: 'view.toggleMongoToolbar',
-      category: 'View',
-      title: 'Toggle MongoDB Toolbar',
-      icon: 'wrench',
-      keywords: ['studio 3t', 'toolbar'],
-      run: () => {
-        const visible = !useMongoToolbar.getState().visible;
-        setMongoToolbar(visible);
-        if (visible && !anyMongo()) {
-          showStatus('info', 'The MongoDB toolbar shows while a MongoDB connection is open.', 3000);
-        }
       },
     },
   ]);

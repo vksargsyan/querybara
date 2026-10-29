@@ -68,6 +68,7 @@ import {
 import { BackupMenuItems } from './backup/BackupDialogs';
 import { MongoTree } from './mongo/MongoTree';
 import { NewDatabaseHost } from './NewDatabaseDialog';
+import { CreateIndexHost } from './search/CreateIndexDialog';
 import { RedisTree, openRedisTool } from './redis/RedisTree';
 import { SearchTree } from './search/SearchTree';
 import { openQueryTab } from './dock';
@@ -236,6 +237,7 @@ export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) =
       <SearchBar />
       <DropTableHost />
       <NewDatabaseHost />
+      <CreateIndexHost />
     </aside>
   );
 }
