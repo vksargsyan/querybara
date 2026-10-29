@@ -236,10 +236,12 @@ export { globMatch } from './db/redis-transfer';
 export { asMongo } from './db/sessions';
 export type { MongoTransferSession, RedisTransferSession } from './db/sessions';
 export {
+  MONGO_EXPORT_FORMATS,
   MONGO_FILE_FORMATS,
   MONGO_IMPORT_MODES,
   bsonDocuments,
   csvFieldText,
+  sqlLiteral,
   documentFields,
   exportCollection,
   importCollection,
@@ -255,6 +257,7 @@ export type {
   FileDocument,
   MongoExportOptions,
   MongoExportResult,
+  MongoExportFormat,
   MongoFileFormat,
   MongoImportCounts,
   MongoImportMode,

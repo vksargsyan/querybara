@@ -18,7 +18,7 @@ import type { JobContext, JobOutcome } from './tasks';
 /**
  * MongoDB collections to and from files in the job runner (ADR 0037): `mongo-export` writes one
  * collection (or the collection tab's query) to a file, or several to a folder, as JSON, JSON
- * Lines, CSV or BSON; `mongo-import` reads such a file into a collection. Main has checked the
+ * Lines, CSV, BSON or SQL INSERT statements; `mongo-import` reads such a file into a collection. Main has checked the
  * paths and the profile's write rules; a read-only profile is refused here again.
  */
 
@@ -27,6 +27,7 @@ const EXTENSIONS: Readonly<Record<MongoExportJob['format'], string>> = {
   jsonl: 'jsonl',
   csv: 'csv',
   bson: 'bson',
+  sql: 'sql',
 };
 
 /** A collection's file name in an export folder: `orders.json`, `orders.csv.gz`. */
@@ -93,6 +94,17 @@ export async function runMongoExport(
         ...(job.pretty === true ? { pretty: true } : {}),
         ...(job.fields !== undefined ? { fields: job.fields } : {}),
         ...(job.csv !== undefined ? { csv: job.csv } : {}),
+        // Several collections go to a table each, named after it.
+        ...(job.sql !== undefined
+          ? {
+              sql: {
+                ...(job.sql.createTable === true ? { createTable: true } : {}),
+                ...(job.sql.table !== undefined && job.collections.length === 1
+                  ? { table: job.sql.table }
+                  : {}),
+              },
+            }
+          : {}),
         signal,
         progress: (written, size) =>
           context.progress({
@@ -113,7 +125,10 @@ export async function runMongoExport(
       bytesWritten: result.bytes,
     });
     if (result.fields !== undefined && job.fields === undefined) {
-      context.log('info', `${collection}: ${result.fields.length} fields as CSV columns`);
+      context.log(
+        'info',
+        `${collection}: ${result.fields.length} fields as ${job.format === 'sql' ? 'SQL' : 'CSV'} columns`,
+      );
     }
     context.log(
       'info',

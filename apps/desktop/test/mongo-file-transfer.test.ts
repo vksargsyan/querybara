@@ -77,6 +77,31 @@ describe('export jobs', () => {
     });
   });
 
+  it('exports SQL with the table name and CREATE TABLE settings', () => {
+    const settings = {
+      ...exportSettings(EXPORT),
+      format: 'sql' as const,
+      useQuery: false,
+      sqlTable: 'legacy_orders',
+      createTable: false,
+      path: '/out/orders.sql',
+    };
+    expect(buildExportJob(EXPORT, settings)).toEqual({
+      kind: 'mongo-export',
+      profileId: 'p',
+      database: 'shop',
+      collections: ['orders'],
+      format: 'sql',
+      sql: { table: 'legacy_orders' },
+      output: { kind: 'file', path: '/out/orders.sql' },
+    });
+    // An empty table name is the collection's.
+    expect(buildExportJob(EXPORT, { ...settings, sqlTable: ' ', createTable: true }).sql).toEqual({
+      createTable: true,
+    });
+    expect(exportFileName('orders', 'sql', false)).toBe('orders.sql');
+  });
+
   it('says what is missing and names files after the collection', () => {
     const settings = exportSettings(EXPORT);
     expect(exportIssue({ ...settings, collections: [] })).toBe('Choose the collections to export');

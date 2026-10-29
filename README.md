@@ -122,8 +122,8 @@ What works today:
   preview, and visual explain that flags collection scans; an aggregation editor with per-stage
   previews, an index manager, schema analysis exported as JSON Schema or applied as a validator,
   collection and view options, a change stream viewer, a GridFS browser, and users and roles;
-  export of collections or a query to JSON, JSON Lines (relaxed or canonical Extended JSON), CSV
-  or BSON, and import of such files (mongoexport's and mongodump's included) with insert, upsert
+  export of collections or a query to JSON, JSON Lines (relaxed or canonical Extended JSON), CSV,
+  SQL INSERT statements (with a CREATE TABLE) or BSON, and import of such files (mongoexport's and mongodump's included) with insert, upsert
   by _id or replace modes; values edited in place in the table and tree views, typed; the
   collection tab's query history and saved queries; copy and paste of documents and of whole
   collections across databases and connections; Reschema (move, nest, convert, drop and compute

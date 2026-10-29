@@ -37,6 +37,14 @@ The formats live in `@querybara/transfer` (`mongo-files.ts`):
     those of the first 1,000 documents.
   - Plain types are written as text: numbers, strings, booleans, ISO dates, ObjectId hex and
     UUIDs. Arrays and other types are written as relaxed Extended JSON.
+- **SQL** (export only): an `INSERT INTO "table" (columns) VALUES (…);` per document, for
+  moving a collection into a relational database.
+  - The columns are chosen as for CSV. The table is the collection's name, or a name given for a
+    single collection. Identifiers are double-quoted (ANSI SQL, PostgreSQL, SQLite).
+  - Numbers, booleans and dates are written as SQL literals; the rest as CSV writes them, quoted.
+  - A `CREATE TABLE` can come first (on by default in the dialog). Its column types come from
+    the first 1,000 documents: BIGINT, DOUBLE PRECISION or NUMERIC for numbers (the widest
+    seen), BOOLEAN, TIMESTAMP, and TEXT for anything else or a mix.
 - **BSON**: documents back to back, as in mongodump's `.bson` files.
 - Any of them can be gzipped.
 

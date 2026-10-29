@@ -41,6 +41,10 @@ import type { RowError } from './types';
 export const MONGO_FILE_FORMATS = ['json', 'jsonl', 'csv', 'bson'] as const;
 export type MongoFileFormat = (typeof MONGO_FILE_FORMATS)[number];
 
+/** What an export writes: the file formats, and SQL INSERT statements (export only). */
+export const MONGO_EXPORT_FORMATS = [...MONGO_FILE_FORMATS, 'sql'] as const;
+export type MongoExportFormat = (typeof MONGO_EXPORT_FORMATS)[number];
+
 /**
  * How an import writes: `insert` adds documents (one whose `_id` is taken is an error),
  * `upsert` replaces the stored document with the same `_id` or adds it, `replace` deletes
@@ -215,13 +219,21 @@ function setField(document: BsonDocument, field: string, value: BsonValue): void
 // Export
 
 export interface MongoExportOptions {
-  readonly format: MongoFileFormat;
+  readonly format: MongoExportFormat;
   /** JSON and JSON Lines: Extended JSON as mongoexport writes it (relaxed) or canonical. */
   readonly ejson?: 'relaxed' | 'canonical';
   /** JSON: one field per line, indented by two spaces. */
   readonly pretty?: boolean;
-  /** CSV: the dotted fields, in order; empty or absent, those of the first 1000 documents. */
+  /** CSV and SQL: the dotted fields, in order; empty or absent, those of the first 1000 documents. */
   readonly fields?: readonly string[];
+  /**
+   * SQL: the table the INSERT statements name (the collection's name by default), and a
+   * CREATE TABLE first, its column types read from the first 1000 documents.
+   */
+  readonly sql?: {
+    readonly table?: string;
+    readonly createTable?: boolean;
+  };
   readonly csv?: {
     readonly delimiter?: string;
     readonly header?: boolean;
@@ -236,8 +248,66 @@ export interface MongoExportOptions {
 export interface MongoExportResult {
   readonly documents: number;
   readonly bytes: number;
-  /** CSV: the fields written. */
+  /** CSV and SQL: the fields written. */
   readonly fields?: readonly string[];
+}
+
+/** An SQL identifier in double quotes (ANSI SQL, PostgreSQL, SQLite; MySQL in ANSI_QUOTES). */
+function sqlIdentifier(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/** An SQL string literal. */
+function sqlString(text: string): string {
+  return `'${text.replace(/'/g, "''")}'`;
+}
+
+/** A value as an SQL literal: numbers, booleans and timestamps as such, the rest as text. */
+export function sqlLiteral(value: BsonValue | undefined): string {
+  if (value === undefined || value === null) return 'NULL';
+  switch (bsonTypeOf(value)) {
+    case 'int':
+    case 'long':
+    case 'decimal':
+      return valueEditText(value);
+    case 'double': {
+      const n = Number(valueEditText(value));
+      return Number.isFinite(n) ? String(n) : 'NULL';
+    }
+    case 'bool':
+      return value === true ? 'TRUE' : 'FALSE';
+    case 'date': {
+      const date = value as Date;
+      if (Number.isNaN(date.getTime())) return 'NULL';
+      return sqlString(date.toISOString().replace('T', ' ').replace('Z', ''));
+    }
+    default:
+      return sqlString(csvFieldText(value)!);
+  }
+}
+
+/** The SQL types of the BSON types a column keeps as such; the rest are TEXT. */
+const SQL_TYPES: Readonly<Partial<Record<string, string>>> = {
+  bool: 'BOOLEAN',
+  date: 'TIMESTAMP',
+};
+
+const NUMBER_TYPES = new Set(['int', 'long', 'double', 'decimal']);
+
+/**
+ * A column's SQL type from the values the first documents hold: numbers as BIGINT, DOUBLE
+ * PRECISION or NUMERIC (the widest seen), one Boolean or date type as such, else TEXT.
+ */
+function sqlColumnType(values: readonly (BsonValue | undefined)[]): string {
+  const types = new Set(
+    values.filter((value) => value !== undefined && value !== null).map((v) => bsonTypeOf(v!)),
+  );
+  if (types.size === 0) return 'TEXT';
+  if ([...types].every((type) => NUMBER_TYPES.has(type))) {
+    if (types.has('decimal')) return 'NUMERIC';
+    return types.has('double') ? 'DOUBLE PRECISION' : 'BIGINT';
+  }
+  return types.size === 1 ? (SQL_TYPES[[...types][0]!] ?? 'TEXT') : 'TEXT';
 }
 
 const encoder = new TextEncoder();
@@ -274,32 +344,55 @@ export async function exportCollection(
     ...(options.signal ? { signal: options.signal } : {}),
   });
   try {
-    if (options.format === 'csv') {
+    if (options.format === 'csv' || options.format === 'sql') {
+      const sql = options.format === 'sql';
       const formatter = new CsvFormatter({
         delimiter: options.csv?.delimiter ?? ',',
         lineEnding: options.csv?.lineEnding ?? '\r\n',
       });
+      const table = sqlIdentifier(options.sql?.table ?? ns.collection);
       let fields = options.fields && options.fields.length > 0 ? [...options.fields] : undefined;
-      const header = async (): Promise<void> => {
-        if (options.csv?.header !== false) await write(formatter.record(fields!));
+      let columns = '';
+      const header = async (sample: readonly BsonValue[]): Promise<void> => {
+        if (!sql) {
+          if (options.csv?.header !== false) await write(formatter.record(fields!));
+          return;
+        }
+        columns = fields!.map(sqlIdentifier).join(', ');
+        if (options.sql?.createTable) {
+          const definitions = fields!.map(
+            (field) =>
+              `  ${sqlIdentifier(field)} ${sqlColumnType(sample.map((d) => valueAtField(d, field)))}`,
+          );
+          await write(`CREATE TABLE ${table} (\n${definitions.join(',\n')}\n);\n`);
+        }
       };
       const row = async (document: BsonValue): Promise<void> => {
-        const values = fields!.map((field) => csvFieldText(valueAtField(document, field)));
-        await write(formatter.record(values));
+        if (sql) {
+          const values = fields!.map((field) => sqlLiteral(valueAtField(document, field)));
+          await write(`INSERT INTO ${table} (${columns}) VALUES (${values.join(', ')});\n`);
+        } else {
+          const values = fields!.map((field) => csvFieldText(valueAtField(document, field)));
+          await write(formatter.record(values));
+        }
         documents++;
       };
-      // Without fields, the first documents name them; they are held until then.
+      // The first documents name the fields when none are given, and give a CREATE TABLE its
+      // column types; they are held until then.
+      const sampling = fields === undefined || (sql && options.sql?.createTable === true);
       const held: BsonValue[] = [];
+      let started = !sampling;
       const start = async (): Promise<void> => {
-        fields = documentFields(held);
-        await header();
+        fields ??= documentFields(held);
+        await header(held);
+        started = true;
         for (const document of held.splice(0)) await row(document);
       };
-      if (fields) await header();
+      if (started) await header([]);
       for await (const page of pages) {
         for (const text of page.documents) {
           const document = EJSON.parse(text, { relaxed: false }) as BsonValue;
-          if (fields) await row(document);
+          if (started) await row(document);
           else {
             held.push(document);
             if (held.length >= FIELD_SAMPLE) await start();
@@ -307,7 +400,7 @@ export async function exportCollection(
         }
         options.progress?.(documents, bytes);
       }
-      if (!fields) await start();
+      if (!started) await start();
       options.progress?.(documents, bytes);
       await sink.close();
       return { documents, bytes, fields: fields ?? [] };

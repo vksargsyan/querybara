@@ -1,4 +1,10 @@
-import { MONGO_FILE_FORMATS, MONGO_IMPORT_MODES, type MongoFileFormat } from '@querybara/ipc';
+import {
+  MONGO_EXPORT_FORMATS,
+  MONGO_FILE_FORMATS,
+  MONGO_IMPORT_MODES,
+  type MongoExportFormat,
+  type MongoFileFormat,
+} from '@querybara/ipc';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { errorMessage } from '../../lib/errors';
@@ -353,13 +359,13 @@ function MongoExportDialog(props: {
         </Section>
         <Section title="Format">
           <div className="grid grid-cols-2 gap-2">
-            {MONGO_FILE_FORMATS.map((format) => (
+            {MONGO_EXPORT_FORMATS.map((format) => (
               <Radio
                 key={format}
                 name="mongo-export-format"
                 value={format}
                 checked={settings.format === format}
-                onChange={(next: MongoFileFormat) => set({ format: next, path: undefined })}
+                onChange={(next: MongoExportFormat) => set({ format: next, path: undefined })}
                 label={MONGO_FORMAT_LABELS[format]}
                 hint={MONGO_FORMAT_HINTS[format]}
               />
@@ -407,38 +413,38 @@ function MongoExportDialog(props: {
                 onChange={(header) => set({ header })}
               />
             </div>
-            <label className="flex flex-col gap-1 text-xs" htmlFor="mongo-export-fields">
-              <span className="flex items-center gap-2">
-                Fields, one per line
-                <span className="text-muted">(empty: those of the first 1,000 documents)</span>
-                {single && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="ml-auto"
-                    disabled={scanning}
-                    onClick={() => void scan()}
-                  >
-                    {scanning ? 'Scanning…' : 'Scan fields'}
-                  </Button>
-                )}
-              </span>
-              <textarea
-                id="mongo-export-fields"
-                rows={4}
-                value={settings.fields.join('\n')}
-                onChange={(event) =>
-                  set({
-                    fields: event.target.value
-                      .split('\n')
-                      .map((field) => field.trim())
-                      .filter((field) => field !== ''),
-                  })
-                }
-                className="rounded-sm border border-border bg-deep px-1.5 py-1 font-mono text-xs text-fg focus:border-focus focus:outline-none"
-                placeholder={'_id\ncustomer.name\ntotal'}
+            <ExportFields
+              fields={settings.fields}
+              onChange={(fields) => set({ fields })}
+              onScan={single ? () => void scan() : undefined}
+              scanning={scanning}
+            />
+          </Section>
+        )}
+        {settings.format === 'sql' && (
+          <Section title="SQL">
+            <label className="flex items-center gap-2 text-xs" htmlFor="mongo-export-table">
+              Table
+              <Input
+                id="mongo-export-table"
+                className="w-56"
+                value={settings.sqlTable}
+                placeholder={single ? collections[0] : 'each collection’s name'}
+                disabled={!single}
+                onChange={(event) => set({ sqlTable: event.target.value })}
               />
             </label>
+            <Check
+              label="Create the table first, its column types read from the documents"
+              checked={settings.createTable}
+              onChange={(createTable) => set({ createTable })}
+            />
+            <ExportFields
+              fields={settings.fields}
+              onChange={(fields) => set({ fields })}
+              onScan={single ? () => void scan() : undefined}
+              scanning={scanning}
+            />
           </Section>
         )}
         <Section title="Destination">
@@ -463,6 +469,49 @@ function MongoExportDialog(props: {
         </Section>
       </div>
     </Modal>
+  );
+}
+
+/** The CSV or SQL columns, one dotted field per line; empty for those of the first documents. */
+function ExportFields(props: {
+  readonly fields: readonly string[];
+  readonly onChange: (fields: string[]) => void;
+  readonly onScan: (() => void) | undefined;
+  readonly scanning: boolean;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-xs" htmlFor="mongo-export-fields">
+      <span className="flex items-center gap-2">
+        Fields, one per line
+        <span className="text-muted">(empty: those of the first 1,000 documents)</span>
+        {props.onScan && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            disabled={props.scanning}
+            onClick={props.onScan}
+          >
+            {props.scanning ? 'Scanning…' : 'Scan fields'}
+          </Button>
+        )}
+      </span>
+      <textarea
+        id="mongo-export-fields"
+        rows={4}
+        value={props.fields.join('\n')}
+        onChange={(event) =>
+          props.onChange(
+            event.target.value
+              .split('\n')
+              .map((field) => field.trim())
+              .filter((field) => field !== ''),
+          )
+        }
+        className="rounded-sm border border-border bg-deep px-1.5 py-1 font-mono text-xs text-fg focus:border-focus focus:outline-none"
+        placeholder={'_id\ncustomer.name\ntotal'}
+      />
+    </label>
   );
 }
 

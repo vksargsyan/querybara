@@ -385,6 +385,11 @@ export const MONGO_FILE_FORMATS = ['json', 'jsonl', 'csv', 'bson'] as const;
 export const mongoFileFormatSchema = z.enum(MONGO_FILE_FORMATS);
 export type MongoFileFormat = z.infer<typeof mongoFileFormatSchema>;
 
+/** What a MongoDB export writes: the file formats, and SQL INSERT statements (export only). */
+export const MONGO_EXPORT_FORMATS = [...MONGO_FILE_FORMATS, 'sql'] as const;
+export const mongoExportFormatSchema = z.enum(MONGO_EXPORT_FORMATS);
+export type MongoExportFormat = z.infer<typeof mongoExportFormatSchema>;
+
 /** How a MongoDB import writes (mirrors @querybara/transfer's MONGO_IMPORT_MODES). */
 export const MONGO_IMPORT_MODES = ['insert', 'upsert', 'replace'] as const;
 export const mongoImportModeSchema = z.enum(MONGO_IMPORT_MODES);
@@ -401,12 +406,19 @@ export const mongoExportJobSchema = z.object({
   collections: z.array(nameSchema).min(1).max(10_000),
   /** One collection's documents as the collection tab finds them; all of them by default. */
   query: mongoFindQuerySchema.optional(),
-  format: mongoFileFormatSchema,
+  format: mongoExportFormatSchema,
   /** JSON and JSON Lines: relaxed (mongoexport's default) or canonical Extended JSON. */
   ejson: z.enum(['relaxed', 'canonical']).optional(),
   pretty: z.boolean().optional(),
-  /** CSV: the dotted fields, in order; by default those of the first 1000 documents. */
+  /** CSV and SQL: the dotted fields, in order; by default those of the first 1000 documents. */
   fields: z.array(z.string().min(1).max(1024)).max(4096).optional(),
+  /** SQL: the table named (the collection's by default), and a CREATE TABLE first. */
+  sql: z
+    .object({
+      table: z.string().min(1).max(256).optional(),
+      createTable: z.boolean().optional(),
+    })
+    .optional(),
   csv: z
     .object({
       delimiter: delimiterSchema.optional(),

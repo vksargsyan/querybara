@@ -564,6 +564,28 @@ test("exports the collection tab's query to CSV", async () => {
   expect(rows[1]).toBe('2,shipped,5,2026-01-02T00:00:00.000Z');
 });
 
+test('exports a collection as SQL, its table created first', async () => {
+  const count = await direct!.count({ db, collection: 'orders' });
+  await treeMenu('orders', 'Export Collection…');
+  const exporting = page.getByRole('dialog', { name: 'Export' });
+  await exporting.getByRole('radio', { name: /^SQL/ }).check();
+  await exporting.getByRole('textbox', { name: 'Table' }).fill('legacy_orders');
+  await expect(exporting.getByRole('checkbox', { name: /^Create the table first/ })).toBeChecked();
+  const file = join(files, 'orders.sql');
+  await stubDialog('save', file);
+  await exporting.getByRole('button', { name: 'Choose file…' }).click();
+  await exporting.getByRole('button', { name: 'Export', exact: true }).click();
+  const job = page.getByTestId('job-item').filter({ hasText: 'Export orders to SQL' });
+  await expect(job.getByTestId('job-summary')).toContainText(`${count} documents exported`);
+  const lines = readFileSync(file, 'utf8').trim().split('\n');
+  expect(lines[0]).toBe('CREATE TABLE "legacy_orders" (');
+  // The column types come from the documents: orders' dates are TIMESTAMPs.
+  expect(lines.some((line) => /^ {2}"at" TIMESTAMP,?$/.test(line))).toBe(true);
+  const inserts = lines.filter((line) => line.startsWith('INSERT INTO "legacy_orders"'));
+  expect(inserts).toHaveLength(count);
+  expect(inserts[0]).toMatch(/^INSERT INTO "legacy_orders" \("_id", "status", "total", "at"/);
+});
+
 test('copies documents into another collection, and a collection into another database', async () => {
   await treeRow('orders').click();
   const panel = visible('mongo-collection-panel');

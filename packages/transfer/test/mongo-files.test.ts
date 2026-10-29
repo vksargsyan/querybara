@@ -108,7 +108,7 @@ const ORDER: BsonDocument = {
 };
 
 async function exported(
-  format: 'json' | 'jsonl' | 'csv' | 'bson',
+  format: 'json' | 'jsonl' | 'csv' | 'bson' | 'sql',
   docs: BsonDocument[],
   options: Record<string, unknown> = {},
 ): Promise<Uint8Array> {
@@ -216,6 +216,40 @@ describe('export and read back', () => {
     expect(
       text(await exported('csv', [ORDER], { fields: ['status'], csv: { header: false } })),
     ).toBe('open\r\n');
+  });
+
+  it('writes SQL INSERT statements, with a CREATE TABLE typed from the first documents', async () => {
+    const sql = text(
+      await exported('sql', [ORDER, { _id: new Int32(2), status: "it's", big: Long.fromInt(3) }], {
+        sql: { table: 'orders "x"', createTable: true },
+      }),
+    );
+    const table = '"orders ""x"""';
+    const columns =
+      '"_id", "status", "big", "price", "at", "ref", "customer.name", "customer.address.city", "tags", "note"';
+    expect(sql).toBe(
+      [
+        `CREATE TABLE ${table} (`,
+        '  "_id" BIGINT,',
+        '  "status" TEXT,',
+        '  "big" BIGINT,',
+        '  "price" NUMERIC,',
+        '  "at" TIMESTAMP,',
+        '  "ref" TEXT,',
+        '  "customer.name" TEXT,',
+        '  "customer.address.city" TEXT,',
+        '  "tags" TEXT,',
+        '  "note" TEXT',
+        ');',
+        `INSERT INTO ${table} (${columns}) VALUES (1, 'open', 9007199254740993, 10.50, '2026-01-02 03:04:05.000', '65a1b2c3d4e5f60718293a4b', 'Ada', 'Paris', '["red","big"]', NULL);`,
+        `INSERT INTO ${table} (${columns}) VALUES (2, 'it''s', 3, NULL, NULL, NULL, NULL, NULL, NULL, NULL);`,
+        '',
+      ].join('\n'),
+    );
+    // Chosen fields, no CREATE TABLE, the collection's name for the table.
+    expect(text(await exported('sql', [ORDER], { fields: ['status', 'at'] }))).toBe(
+      `INSERT INTO "orders" ("status", "at") VALUES ('open', '2026-01-02 03:04:05.000');\n`,
+    );
   });
 
   it('reads CSV back into documents, inferring types and nesting dotted fields', async () => {

@@ -2,6 +2,7 @@ import { requiresWriteConfirmation } from '@querybara/core';
 import type {
   JobInfo,
   MongoExportJob,
+  MongoExportFormat,
   MongoFileFormat,
   MongoImportJob,
   MongoImportMode,
@@ -105,18 +106,20 @@ export async function openMongoImport(target: {
   });
 }
 
-export const MONGO_FORMAT_LABELS: Readonly<Record<MongoFileFormat, string>> = {
+export const MONGO_FORMAT_LABELS: Readonly<Record<MongoExportFormat, string>> = {
   json: 'JSON',
   jsonl: 'JSON Lines',
   csv: 'CSV',
   bson: 'BSON',
+  sql: 'SQL',
 };
 
-export const MONGO_FORMAT_HINTS: Readonly<Record<MongoFileFormat, string>> = {
+export const MONGO_FORMAT_HINTS: Readonly<Record<MongoExportFormat, string>> = {
   json: 'An array of documents in Extended JSON',
   jsonl: 'One document per line, as mongoexport writes them',
   csv: 'A column per field, for spreadsheets',
   bson: "Documents back to back, as mongodump's .bson files",
+  sql: 'An INSERT statement per document, a column per field',
 };
 
 export const MONGO_IMPORT_MODE_LABELS: Readonly<Record<MongoImportMode, string>> = {
@@ -131,16 +134,17 @@ export const MONGO_IMPORT_MODE_HINTS: Readonly<Record<MongoImportMode, string>> 
   replace: 'Deletes every document of the collection first; indexes and validator stay',
 };
 
-const EXTENSIONS: Readonly<Record<MongoFileFormat, string>> = {
+const EXTENSIONS: Readonly<Record<MongoExportFormat, string>> = {
   json: 'json',
   jsonl: 'jsonl',
   csv: 'csv',
   bson: 'bson',
+  sql: 'sql',
 };
 
 /** The save dialog's filter for a format. */
 export function exportFilters(
-  format: MongoFileFormat,
+  format: MongoExportFormat,
   gzip: boolean,
 ): { name: string; extensions: string[] }[] {
   return [
@@ -150,7 +154,11 @@ export function exportFilters(
 }
 
 /** The file name an export suggests: `orders.json`, `orders.csv.gz`. */
-export function exportFileName(collection: string, format: MongoFileFormat, gzip: boolean): string {
+export function exportFileName(
+  collection: string,
+  format: MongoExportFormat,
+  gzip: boolean,
+): string {
   // eslint-disable-next-line no-control-regex
   const base = collection.replace(/[\u{0}-\u{1f}<>:"/\\|?*]/gu, '_').replace(/^\.+/, '_');
   return `${base || 'collection'}.${EXTENSIONS[format]}${gzip ? '.gz' : ''}`;
@@ -181,12 +189,16 @@ export interface MongoExportSettings {
   readonly collections: readonly string[];
   /** Export the tab's query instead of every document. */
   readonly useQuery: boolean;
-  readonly format: MongoFileFormat;
+  readonly format: MongoExportFormat;
   readonly ejson: 'relaxed' | 'canonical';
   readonly pretty: boolean;
+  /** CSV and SQL columns; empty for those of the first documents. */
   readonly fields: readonly string[];
   readonly delimiter: string;
   readonly header: boolean;
+  /** SQL: the table named (empty for the collection's name), and a CREATE TABLE first. */
+  readonly sqlTable: string;
+  readonly createTable: boolean;
   readonly gzip: boolean;
   readonly path: string | undefined;
 }
@@ -201,6 +213,8 @@ export function exportSettings(target: MongoExportTarget): MongoExportSettings {
     fields: [],
     delimiter: ',',
     header: true,
+    sqlTable: '',
+    createTable: true,
     gzip: false,
     path: undefined,
   };
@@ -231,10 +245,18 @@ export function buildExportJob(
     format: settings.format,
     ...(json ? { ejson: settings.ejson } : {}),
     ...(settings.format === 'json' && settings.pretty ? { pretty: true } : {}),
+    ...((settings.format === 'csv' || settings.format === 'sql') && settings.fields.length > 0
+      ? { fields: [...settings.fields] }
+      : {}),
     ...(settings.format === 'csv'
+      ? { csv: { delimiter: settings.delimiter, header: settings.header } }
+      : {}),
+    ...(settings.format === 'sql'
       ? {
-          ...(settings.fields.length > 0 ? { fields: [...settings.fields] } : {}),
-          csv: { delimiter: settings.delimiter, header: settings.header },
+          sql: {
+            ...(settings.sqlTable.trim() !== '' ? { table: settings.sqlTable.trim() } : {}),
+            ...(settings.createTable ? { createTable: true } : {}),
+          },
         }
       : {}),
     ...(settings.gzip ? { gzip: true } : {}),
