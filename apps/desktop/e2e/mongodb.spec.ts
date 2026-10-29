@@ -365,7 +365,8 @@ test('lists the changes made in the collection tab, and undoes an edit and a del
   await expect(confirm.getByTestId('confirm-detail')).toContainText('.replaceOne({ _id: 3 }');
   await confirmDialog('Undo');
   await expect(history.getByText('Change undone')).toBeVisible();
-  expect((await stored(3))['status']).toBeDefined();
+  // The notice stays up across undos, so each one waits for the stored document instead.
+  await expect.poll(async () => (await stored(3))['status']).toBeDefined();
   // The undo is a change too, and the undone one says so.
   await expect(changes.getByRole('option').nth(1)).toContainText('undone');
 
@@ -373,8 +374,7 @@ test('lists the changes made in the collection tab, and undoes an edit and a del
   await changes.getByRole('option').filter({ hasText: 'Deleted' }).first().click();
   await history.getByRole('button', { name: 'Undo' }).click();
   await confirmDialog('Undo');
-  await expect(history.getByText('Change undone')).toBeVisible();
-  expect(await stored(1000)).toMatchObject({ status: 'new' });
+  await expect.poll(() => stored(1000).catch(() => undefined)).toMatchObject({ status: 'new' });
   // Its insert is undone too, now that it is as inserted again.
   await changes
     .getByRole('option')
@@ -384,8 +384,9 @@ test('lists the changes made in the collection tab, and undoes an edit and a del
     .click();
   await history.getByRole('button', { name: 'Undo' }).click();
   await confirmDialog('Undo');
-  await expect(history.getByText('Change undone')).toBeVisible();
-  expect(await direct!.count({ db, collection: 'orders' }, toEjson({ _id: 1000 }))).toBe(0);
+  await expect
+    .poll(() => direct!.count({ db, collection: 'orders' }, toEjson({ _id: 1000 })))
+    .toBe(0);
   await page.getByRole('tab', { name: 'orders', exact: true }).click();
 });
 
