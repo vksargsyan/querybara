@@ -167,9 +167,9 @@ function progressText(job: JobInfo): string {
     if (p.statements !== undefined) parts.push(`${formatCount(p.statements)} statements`);
     if (p.failed) parts.push(`${formatCount(p.failed)} failed`);
   } else if (p.rowsWritten !== undefined) {
-    parts.push(`${formatCount(p.rowsWritten)} rows`);
+    parts.push(`${formatCount(p.rowsWritten)} ${unitOf(job, p.rowsWritten)}`);
     if (p.rowsSkipped) parts.push(`${formatCount(p.rowsSkipped)} skipped`);
-    if (p.rowsPerSecond) parts.push(`${formatCount(p.rowsPerSecond)} rows/s`);
+    if (p.rowsPerSecond) parts.push(`${formatCount(p.rowsPerSecond)} ${unitOf(job, 2)}/s`);
   }
   if (p.bytes !== undefined) {
     parts.push(
@@ -183,6 +183,16 @@ function progressText(job: JobInfo): string {
   return parts.join(' · ');
 }
 
+const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** What a job counts: a MongoDB file job's documents, everything else's rows. */
+function unitOf(job: JobInfo, count: number): string {
+  if (job.kind === 'mongo-export' || job.kind === 'mongo-import') {
+    return count === 1 ? 'document' : 'documents';
+  }
+  return 'rows';
+}
+
 function summaryText(job: JobInfo): string {
   const s = job.summary;
   if (!s) return job.error?.message ?? STATE_LABELS[job.state];
@@ -192,8 +202,12 @@ function summaryText(job: JobInfo): string {
     return `${formatCount(s.statements ?? 0)} statements${s.failed ? `, ${formatCount(s.failed)} failed` : ''} · ${time}`;
   }
   const verb =
-    job.kind === 'export' ? 'exported' : job.kind === 'transfer' ? 'transferred' : 'imported';
-  const rows = `${formatCount(s.rowsWritten)} rows ${verb}`;
+    job.kind === 'export' || job.kind === 'mongo-export'
+      ? 'exported'
+      : job.kind === 'transfer'
+        ? 'transferred'
+        : 'imported';
+  const rows = `${formatCount(s.rowsWritten)} ${unitOf(job, s.rowsWritten)} ${verb}`;
   const skipped = s.rowsSkipped > 0 ? `, ${formatCount(s.rowsSkipped)} skipped` : '';
   const bytes = s.bytesWritten !== undefined ? ` · ${formatBytes(s.bytesWritten)}` : '';
   const why = job.state === 'failed' && job.errors[0] ? ` · ${job.errors[0].message}` : '';
@@ -231,11 +245,14 @@ function JobDetails({ job }: { readonly job: JobInfo }) {
             </>
           ) : (
             <>
-              <dt className="text-muted">Rows read</dt>
+              <dt className="text-muted">{capital(unitOf(job, 2))} read</dt>
               <dd>{formatCount(summary.rowsRead)}</dd>
-              <dt className="text-muted">Rows {job.kind === 'export' ? 'written' : 'kept'}</dt>
+              <dt className="text-muted">
+                {capital(unitOf(job, 2))}{' '}
+                {job.kind === 'export' || job.kind === 'mongo-export' ? 'written' : 'kept'}
+              </dt>
               <dd>{formatCount(summary.rowsWritten)}</dd>
-              <dt className="text-muted">Rows skipped</dt>
+              <dt className="text-muted">{capital(unitOf(job, 2))} skipped</dt>
               <dd>{formatCount(summary.rowsSkipped)}</dd>
             </>
           )}

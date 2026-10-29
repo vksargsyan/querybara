@@ -18,6 +18,7 @@
     "@querybara/mongo-tools": "workspace:*",
     "@querybara/sql-tools": "workspace:*",
     "@querybara/sync": "workspace:*",
+    "bson": "^7.3.3",
     "hyparquet": "1.31.1",
     "hyparquet-writer": "0.16.10"
   },

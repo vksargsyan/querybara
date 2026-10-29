@@ -19,7 +19,7 @@
     "@querybara/sql-tools": "workspace:*",
     "@querybara/sync": "workspace:*",
     "@querybara/transfer": "workspace:*",
-    "bson": "^6.10.4",
+    "bson": "^7.3.3",
     "zod": "catalog:"
   },
   "devDependencies": {

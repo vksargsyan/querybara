@@ -244,6 +244,74 @@ describe('saved pipelines and exported text in main', () => {
     expect(await handlers.pipelines.list(orders, context())).toEqual([]);
   });
 
+  it("keeps the collection tab's saved queries apart from the saved pipelines", async () => {
+    const { store, handlers } = handlersWithProfile();
+    const orders = { profileId: 'm1', db: 'shop', collection: 'orders' };
+    const query = await handlers.queries.save(
+      { ...orders, name: 'Open', text: "db.orders.find({ status: 'open' })" },
+      context(),
+    );
+    const pipeline = await handlers.pipelines.save(
+      { ...orders, name: 'Open', text: '[]' },
+      context(),
+    );
+    expect(store.savedQueries.get(query.id)?.tags).toEqual(['mongodb:find', 'collection:orders']);
+    expect((await handlers.queries.list(orders, context())).map((q) => q.id)).toEqual([query.id]);
+    expect((await handlers.pipelines.list(orders, context())).map((q) => q.id)).toEqual([
+      pipeline.id,
+    ]);
+    // A saved pipeline is not a saved query: neither replaced nor deleted through queries.*.
+    await expect(
+      handlers.queries.save({ ...orders, id: pipeline.id, name: 'x', text: 'x' }, context()),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await handlers.queries.delete({ id: pipeline.id }, context());
+    expect(store.savedQueries.get(pipeline.id)).toBeDefined();
+    await handlers.queries.delete({ id: query.id }, context());
+    expect(await handlers.queries.list(orders, context())).toEqual([]);
+  });
+
+  it('records the collection history per collection, and marks and clears changes', async () => {
+    const { handlers } = handlersWithProfile();
+    const orders = { profileId: 'm1', db: 'shop', collection: 'orders' };
+    await handlers.changes.record(
+      {
+        ...orders,
+        operation: 'update',
+        documentId: '{"$numberInt":"1"}',
+        before: '{"_id":{"$numberInt":"1"},"n":"a"}',
+        after: '{"_id":{"$numberInt":"1"},"n":"b"}',
+      },
+      context(),
+    );
+    await handlers.changes.record(
+      {
+        ...orders,
+        collection: 'users',
+        operation: 'insert',
+        documentId: '{"$numberInt":"2"}',
+        before: null,
+        after: '{"_id":{"$numberInt":"2"}}',
+      },
+      context(),
+    );
+    const [change, ...rest] = await handlers.changes.list(orders, context());
+    expect(rest).toEqual([]);
+    expect(change).toMatchObject({
+      operation: 'update',
+      documentId: '{"$numberInt":"1"}',
+      after: '{"_id":{"$numberInt":"1"},"n":"b"}',
+      revertedAt: null,
+    });
+    expect(change).not.toHaveProperty('profileId');
+    await handlers.changes.markReverted({ id: change!.id }, context());
+    expect((await handlers.changes.list(orders, context()))[0]?.revertedAt).not.toBeNull();
+    await handlers.changes.clear(orders, context());
+    expect(await handlers.changes.list(orders, context())).toEqual([]);
+    expect(await handlers.changes.list({ ...orders, collection: 'users' }, context())).toHaveLength(
+      1,
+    );
+  });
+
   it('writes exported text only where the save dialog pointed', async () => {
     const { grants, handlers } = handlersWithProfile();
     const dir = mkdtempSync(join(tmpdir(), 'querybara-mongo-'));

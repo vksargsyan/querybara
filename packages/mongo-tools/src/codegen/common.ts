@@ -17,7 +17,8 @@ import { bsonTag, bsonTypeOf, type BsonDocument, type BsonValue } from '../bson'
 import type { QueryModel } from '../find-text';
 
 /** The languages code export writes (spec §9, query tools). */
-export type CodeLanguage = 'node' | 'python' | 'java' | 'csharp' | 'go' | 'php';
+export type CodeLanguage =
+  'node' | 'python' | 'java' | 'csharp' | 'go' | 'php' | 'ruby' | 'mongosh';
 
 /**
  * A query to export: a find() or an aggregate() on a collection, in the data forms the rest of

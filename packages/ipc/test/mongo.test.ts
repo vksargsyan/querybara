@@ -1,6 +1,7 @@
 import { QuerybaraError } from '@querybara/core';
 import {
   toEjson,
+  type ShellEvent,
   type CollectionInfo,
   type IndexInfo,
   type SchemaAnalysis,
@@ -17,6 +18,7 @@ import {
   mongoHostContractShape,
   mongoIndexInfoSchema,
   mongoSchemaAnalysisSchema,
+  mongoShellEventSchema,
   parseRequest,
   serve,
   type HandlersOf,
@@ -258,6 +260,83 @@ describe('mongo schemas', () => {
     await expect(host.mongo.users.list({ sessionId: 's', db: 'admin' })).rejects.toMatchObject({
       code: 'NOT_SUPPORTED',
     });
+    host.dispose();
+  });
+
+  it('streams a shell run, prompt included, and refuses malformed shell input', async () => {
+    const run: ShellEvent[] = [
+      { type: 'statement', index: 0, start: 0, end: 16, line: 1 },
+      { type: 'print', text: 'hello', stream: 'out' },
+      {
+        type: 'prompt',
+        promptId: 'p1',
+        kind: 'destructive',
+        question: 'Run it?',
+        operation: 'deleteMany shop.orders',
+      },
+      {
+        type: 'result',
+        index: 0,
+        start: 0,
+        end: 16,
+        line: 1,
+        source: 'db.orders.find()',
+        durationMs: 3,
+        value: {
+          kind: 'cursor',
+          resultId: 'r1',
+          cursorType: 'find',
+          ns: { db: 'shop', collection: 'orders' },
+          query: { kind: 'find', query: { filter: '{}' } },
+          documents: [toEjson({ _id: 1 })],
+          hasMore: true,
+          exactTypes: true,
+        },
+      },
+      { type: 'error', message: 'boom', name: 'MongoServerError', code: 2, position: 4 },
+      { type: 'end', status: 'error', durationMs: 5, ran: 1 },
+    ];
+    for (const event of run) expect(mongoShellEventSchema.parse(event)).toEqual(event);
+    expect(() => mongoShellEventSchema.parse({ type: 'end', status: 'done' })).toThrow();
+    expect(() =>
+      parseRequest(connectionHostContract, 'mongo.shell.answer', {
+        shellId: 's',
+        promptId: 'p',
+        answer: { kind: 'allow', scope: 'forever' },
+      }),
+    ).toThrow(expect.objectContaining({ code: 'VALIDATION_FAILED' }));
+
+    const ports = portPair();
+    const answers: unknown[] = [];
+    serve(ports.server, connectionHostContract, {
+      ...unusedHandlers(connectionHostContract.shape),
+      mongo: {
+        ...unusedHandlers(mongoHostContractShape),
+        shell: {
+          ...unusedHandlers(mongoHostContractShape.shell),
+          async *evaluate() {
+            yield* run;
+          },
+          answer: ({ answer }) => {
+            answers.push(answer);
+          },
+        },
+      },
+    });
+    const host = createClient(ports.client, connectionHostContract);
+    const seen: ShellEvent[] = [];
+    for await (const event of host.mongo.shell.evaluate({ shellId: 's', script: 'x' })) {
+      seen.push(event);
+      if (event.type === 'prompt') {
+        await host.mongo.shell.answer({
+          shellId: 's',
+          promptId: event.promptId,
+          answer: { kind: 'allow', scope: 'run' },
+        });
+      }
+    }
+    expect(seen).toEqual(run);
+    expect(answers).toEqual([{ kind: 'allow', scope: 'run' }]);
     host.dispose();
   });
 });

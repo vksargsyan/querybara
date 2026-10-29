@@ -32,6 +32,18 @@ export const DEFAULT_KEYBINDINGS: Readonly<Record<string, string>> = {
   'view.previousTab': 'ctrl+shift+tab',
   'view.refresh': 'f5',
   'tools.jobs': 'mod+shift+j',
+  // MongoDB, as Studio 3T binds them (ADR 0036).
+  'mongo.openIntelliShell': 'mod+l',
+  'mongo.openSql': 'mod+shift+l',
+  'mongo.openAggregation': 'f4',
+  'mongo.view.tree': 'mod+alt+1',
+  'mongo.view.table': 'mod+alt+2',
+  'mongo.view.json': 'mod+alt+3',
+  'mongo.insertDocument': 'mod+d',
+  'mongo.updateDialog': 'mod+u',
+  'mongo.deleteDialog': 'f8',
+  'mongo.queryCode': 'mod+g',
+  'view.toggleMongoToolbar': 'mod+alt+b',
 };
 
 interface KeybindingsState {
@@ -66,6 +78,14 @@ export function useBindingOf(commandId: string): string | undefined {
     const binding = effectiveBindings(s.overrides).get(commandId);
     return binding === undefined || binding === '' ? undefined : binding;
   });
+}
+
+/** A command's binding as a menu shows it ("⌘L", "Ctrl+L"), or undefined when it has none. */
+export function shortcutLabel(commandId: string): string | undefined {
+  const binding = bindingOf(commandId);
+  return binding === undefined
+    ? undefined
+    : bindingLabel(binding, useWindowState.getState().platform === 'darwin');
 }
 
 /** Commands sharing a binding with others: binding → command ids. */

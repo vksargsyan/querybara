@@ -26,6 +26,7 @@ import { executeSearchGuarded, searchHandlers } from './search';
 import type { HostRequest } from '../shared/host-protocol';
 import { mongoHandlers } from './mongo';
 import { runHostRequest, type HostRequestOptions } from './mongo-files';
+import { MongoShells, type ShellOpener } from './mongo-shell';
 import { serverToolsHandlers } from './server-tools';
 
 /** Opens a driver session, through the profile's SSH tunnel or proxy when it has one. */
@@ -39,6 +40,8 @@ export interface ConnectionHostOptions {
    * once; main then restarts the host, which reopens the tunnel.
    */
   readonly onTransportLost?: (error: QuerybaraError) => void;
+  /** Starts an IntelliShell (MongoDB only): mongosh in a worker thread (ADR 0036). */
+  readonly openShell?: ShellOpener;
 }
 
 /** A driver session and how to close it (and release its tunnel). */
@@ -59,6 +62,7 @@ export class ConnectionHost {
   readonly #sessions = new Map<string, OpenedSession & { readonly owner: symbol }>();
   readonly #open: SessionOpener;
   readonly #onTransportLost: ((error: QuerybaraError) => void) | undefined;
+  readonly #shells: MongoShells;
   #meta: OpenedSession | undefined;
   #info: ServerInfo | undefined;
   #lost = false;
@@ -72,6 +76,9 @@ export class ConnectionHost {
     this.#resolved = resolved;
     this.#open = options.open ?? ((profile) => this.#connectDirect(profile));
     this.#onTransportLost = options.onTransportLost;
+    this.#shells = new MongoShells(
+      resolved.profile.engine === 'mongodb' ? options.openShell : undefined,
+    );
   }
 
   /**
@@ -101,16 +108,18 @@ export class ConnectionHost {
       unsubscribe();
       server.dispose();
       void this.#closeOwnedBy(owner);
+      void this.#shells.closeOwnedBy(owner);
     };
     const unsubscribe = port.onClose(dispose);
     return { dispose };
   }
 
   /**
-   * Closes every session (open transactions roll back with them); the last one to close
-   * releases the tunnel.
+   * Closes every shell and session (open transactions roll back with them); the last one to
+   * close releases the tunnel.
    */
   async shutdown(): Promise<void> {
+    await this.#shells.closeAll();
     const sessions: OpenedSession[] = [...this.#sessions.values()];
     this.#sessions.clear();
     if (this.#meta) sessions.push(this.#meta);
@@ -299,10 +308,13 @@ export class ConnectionHost {
         session: (sessionId) => this.#session(sessionId),
         resetSession: (sessionId, database) => this.#resetSession(sessionId, database),
       }),
-      mongo: mongoHandlers({
-        session: (sessionId) => this.#session(sessionId),
-        profile: this.#resolved.profile,
-      }),
+      mongo: {
+        ...mongoHandlers({
+          session: (sessionId) => this.#session(sessionId),
+          profile: this.#resolved.profile,
+        }),
+        shell: this.#shells.handlers(owner),
+      },
       serverTools: serverToolsHandlers({
         session: (sessionId) => this.#session(sessionId),
         profile: this.#resolved.profile,

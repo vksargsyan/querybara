@@ -408,6 +408,32 @@ describe('MongoDB profile ↔ form', () => {
       },
       options: { authSource: '$external' },
     },
+    'AWS IAM with an access key': {
+      endpoint: { kind: 'srv', host: 'cluster0.abcde.mongodb.net' },
+      auth: { method: 'password', user: 'AKIAEXAMPLE', password: ref(), mechanism: 'MONGODB-AWS' },
+      tls: { mode: 'verify-full' },
+      options: { authSource: '$external' },
+    },
+    'AWS IAM from the credential chain': {
+      endpoint: { kind: 'srv', host: 'cluster0.abcde.mongodb.net' },
+      auth: { method: 'password', mechanism: 'MONGODB-AWS' },
+      tls: { mode: 'verify-full' },
+      options: { authSource: '$external' },
+    },
+    'OIDC in the browser': {
+      endpoint: { kind: 'host', host: 'db', port: 27017 },
+      auth: { method: 'password', user: 'ada@example.com', mechanism: 'MONGODB-OIDC' },
+      options: { authSource: '$external' },
+    },
+    'OIDC with an Azure managed identity': {
+      endpoint: { kind: 'host', host: 'db', port: 27017 },
+      auth: { method: 'password', user: 'client-id', mechanism: 'MONGODB-OIDC' },
+      options: {
+        authSource: '$external',
+        oidcEnvironment: 'azure',
+        oidcAudience: 'api://querybara',
+      },
+    },
     'an explicit directConnection=false and a negotiated mechanism': {
       endpoint: { kind: 'host', host: 'db', port: 27017 },
       auth: { method: 'password', user: 'app' },
@@ -496,6 +522,57 @@ describe('MongoDB profile ↔ form', () => {
     });
     expect(parsed.options.directConnection).toBeUndefined();
     expect(secrets).toEqual([{ ref: passwordRef, value: 'hunter2', previousPolicy: undefined }]);
+  });
+
+  it('signs in with AWS IAM or OIDC, asking only for what each needs', () => {
+    const aws = { authMethod: 'password' as const, mechanism: 'MONGODB-AWS' };
+    // No key: the AWS credential chain.
+    expect(issues(mongo({ ...aws, user: '', passwordMode: 'none' }))).toEqual({});
+    expect(issues(mongo({ ...aws, user: 'AKIA', passwordMode: 'none' }))).toHaveProperty(
+      'passwordMode',
+    );
+    const keys = formToProfile(
+      mongo({ ...aws, user: 'AKIA', password: 'secret', passwordMode: 'session', authSource: 'x' }),
+    );
+    expect(keys.profile.auth).toMatchObject({ user: 'AKIA', mechanism: 'MONGODB-AWS' });
+    expect(keys.secrets.map((secret) => secret.value)).toEqual(['secret']);
+    expect(safeProfileSchema.parse(keys.profile).options.authSource).toBe('$external');
+
+    const oidc = { authMethod: 'password' as const, mechanism: 'MONGODB-OIDC' };
+    expect(issues(mongo({ ...oidc, user: '' }))).toEqual({});
+    expect(issues(mongo({ ...oidc, oidcEnvironment: 'gcp' }))).toHaveProperty('oidcAudience');
+    expect(issues(mongo({ ...oidc, oidcEnvironment: 'k8s' }))).toEqual({});
+    // OIDC keeps no password, whatever the storage field says.
+    const browser = formToProfile(mongo({ ...oidc, password: 'typed', passwordMode: 'save' }));
+    expect(browser.passwordRef).toBeUndefined();
+    expect(browser.secrets).toEqual([]);
+    expect(browser.profile.auth).toEqual({ method: 'password', mechanism: 'MONGODB-OIDC' });
+    expect(browser.profile.options?.oidcEnvironment).toBeUndefined();
+    const gcp = formToProfile(
+      mongo({ ...oidc, oidcEnvironment: 'gcp', oidcAudience: 'https://db.example.com' }),
+    );
+    expect(gcp.profile.options).toMatchObject({
+      oidcEnvironment: 'gcp',
+      oidcAudience: 'https://db.example.com',
+    });
+    // Another mechanism drops OIDC's options.
+    const scram = formToProfile(
+      mongo({
+        authMethod: 'password',
+        user: 'app',
+        mechanism: 'SCRAM-SHA-256',
+        oidcEnvironment: 'gcp',
+        oidcAudience: 'x',
+      }),
+      connectionProfileSchema.parse({
+        ...gcp.profile,
+        id: 'p1',
+        createdAt: '2026-10-28T10:00:00.000Z',
+        updatedAt: '2026-10-28T10:00:00.000Z',
+      }),
+    );
+    expect(scram.profile.options?.oidcEnvironment).toBeUndefined();
+    expect(scram.profile.options?.oidcAudience).toBeUndefined();
   });
 
   it('puts LDAP users in $external and keeps other databases away from X.509', () => {
@@ -736,6 +813,30 @@ describe('Fill from URI', () => {
     // directConnection is for one host: with several it stays in the URI.
     const direct = await fill('mongodb://a,b/?directConnection=true');
     expect(direct.values.endpointKind).toBe('uri');
+  });
+
+  it('fills AWS IAM and OIDC sign-in', async () => {
+    const aws = await fill(
+      'mongodb+srv://AKIAEXAMPLE:wJalr%2Fx@cluster0.abcde.mongodb.net/?authMechanism=MONGODB-AWS',
+    );
+    expect(aws.values).toMatchObject({
+      endpointKind: 'srv',
+      authMethod: 'password',
+      user: 'AKIAEXAMPLE',
+      mechanism: 'MONGODB-AWS',
+      password: 'wJalr/x',
+    });
+    expect(issues(aws.values)).toEqual({});
+    const oidc = await fill(
+      'mongodb://h/?authMechanism=MONGODB-OIDC&authMechanismProperties=ENVIRONMENT:gcp,TOKEN_RESOURCE:https://h',
+    );
+    expect(oidc.values).toMatchObject({
+      endpointKind: 'host',
+      mechanism: 'MONGODB-OIDC',
+      oidcEnvironment: 'gcp',
+      oidcAudience: 'https://h',
+    });
+    expect(issues(oidc.values)).toEqual({});
   });
 
   it('fills LDAP and X.509 sign-in', async () => {

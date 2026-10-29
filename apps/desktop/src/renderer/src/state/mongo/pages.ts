@@ -47,3 +47,12 @@ export function queryTotal(matching: number, query: Bounds): number {
 export function lastPage(total: number, size: number): number {
   return Math.max(1, Math.ceil(total / size));
 }
+/** Milliseconds as Studio 3T's stopwatch shows them: 00:00:00.005. */
+export function elapsed(ms: number): string {
+  const hours = Math.floor(ms / 3_600_000);
+  const minutes = Math.floor((ms % 3_600_000) / 60_000);
+  const seconds = Math.floor((ms % 60_000) / 1000);
+  const millis = Math.floor(ms % 1000);
+  const two = (n: number): string => String(n).padStart(2, '0');
+  return `${two(hours)}:${two(minutes)}:${two(seconds)}.${String(millis).padStart(3, '0')}`;
+}

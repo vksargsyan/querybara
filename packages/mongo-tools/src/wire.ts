@@ -11,8 +11,11 @@ export interface Namespace {
   readonly collection: string;
 }
 
-/** A find() query; the documents are Extended JSON text. */
-export interface FindQuery {
+/**
+ * A find() query; the documents are Extended JSON text. A type rather than an interface, so a
+ * job holding one counts as JSON (a scheduled export keeps it).
+ */
+export type FindQuery = {
   readonly filter?: string;
   readonly projection?: string;
   readonly sort?: string;
@@ -22,7 +25,7 @@ export interface FindQuery {
   /** Extended JSON of an index key pattern or of an index name (a JSON string). */
   readonly hint?: string;
   readonly maxTimeMS?: number;
-}
+};
 
 /** One page of documents from a cursor, as canonical Extended JSON. */
 export interface DocumentPage {
@@ -38,6 +41,17 @@ export interface InsertManyResult {
   readonly insertedCount: number;
   /** Extended JSON of each inserted `_id`, in input order. */
   readonly insertedIds: readonly string[];
+}
+
+/** A bulk upsert by `_id` (an import's upsert mode). */
+export interface UpsertManyResult {
+  /** Documents that replaced a stored one with their `_id`. */
+  readonly matchedCount: number;
+  readonly modifiedCount: number;
+  /** Documents with an `_id` no stored document had. */
+  readonly upsertedCount: number;
+  /** Documents without an `_id`, inserted with a new one. */
+  readonly insertedCount: number;
 }
 
 /** An update or delete; a dry run reports only `matchedCount` and changes nothing. */
@@ -338,4 +352,117 @@ export interface TopEntry {
   readonly ns: string;
   /** Microseconds spent and operation counts per category (total, readLock, writeLock...). */
   readonly totals: Readonly<Record<string, { readonly time: number; readonly count: number }>>;
+}
+
+// ---------------------------------------------------------------------------------------------
+// IntelliShell: the embedded mongosh (ADR 0036)
+
+/**
+ * The query behind a cursor result, as Extended JSON, so a result tab can open it in the
+ * collection view or the aggregation editor, explain it or export it as code.
+ */
+export type ShellCursorQuery =
+  | { readonly kind: 'find'; readonly query: FindQuery }
+  | { readonly kind: 'aggregate'; readonly pipeline: string };
+
+/**
+ * What one statement gave back. A find() or aggregate() cursor becomes a result tab of its own,
+ * read with the documents' exact BSON types and paged on demand (`exactTypes` is false when the
+ * shell had to read it, e.g. a cursor with a map()); a document or an array of documents shows
+ * in the tree, table and JSON views too; anything else is text as mongosh prints it.
+ */
+export type ShellValue =
+  | {
+      readonly kind: 'cursor';
+      /** Names the cursor for `more`; it stays open until the result is closed or exhausted. */
+      readonly resultId: string;
+      readonly cursorType: 'find' | 'aggregate' | 'command' | 'changeStream';
+      readonly ns?: Namespace;
+      readonly query?: ShellCursorQuery;
+      readonly documents: readonly string[];
+      readonly hasMore: boolean;
+      readonly exactTypes: boolean;
+    }
+  | {
+      readonly kind: 'documents';
+      readonly documents: readonly string[];
+      /** One document (findOne()), not an array of them. */
+      readonly single: boolean;
+      readonly ns?: Namespace;
+    }
+  | {
+      readonly kind: 'text';
+      readonly text: string;
+      /** mongosh's name for the value's type ("InsertOneResult", "ShowDatabasesResult"...). */
+      readonly shellType: string | null;
+    }
+  | { readonly kind: 'none' };
+
+/** Where a statement sits in the script that ran: 0-based offsets and its 1-based line. */
+export interface ShellStatementRange {
+  readonly index: number;
+  readonly start: number;
+  readonly end: number;
+  readonly line: number;
+}
+
+/** A question the shell asks while a script runs: a write to confirm, or a password. */
+export interface ShellPrompt {
+  readonly promptId: string;
+  readonly kind: 'write' | 'destructive' | 'password' | 'confirm';
+  /** What is asked, e.g. "Run updateMany on shop.orders?". */
+  readonly question: string;
+  /** The operation and its namespace, e.g. "updateMany shop.orders". */
+  readonly operation?: string;
+}
+
+export type ShellPromptAnswer =
+  /** `run`: allow this and every later write of the same run without asking again. */
+  | { readonly kind: 'allow'; readonly scope: 'once' | 'run' }
+  | { readonly kind: 'deny' }
+  | { readonly kind: 'text'; readonly text: string };
+
+/** One event of a running script, in order. */
+export type ShellEvent =
+  | ({ readonly type: 'statement' } & ShellStatementRange)
+  | { readonly type: 'print'; readonly text: string; readonly stream: 'out' | 'error' }
+  | ({
+      readonly type: 'result';
+      readonly source: string;
+      readonly value: ShellValue;
+      readonly durationMs: number;
+    } & ShellStatementRange)
+  | {
+      readonly type: 'more';
+      readonly resultId: string;
+      readonly documents: readonly string[];
+      readonly hasMore: boolean;
+    }
+  | {
+      readonly type: 'error';
+      readonly message: string;
+      /** The error's class ("MongoServerError", "SyntaxError"...). */
+      readonly name?: string;
+      readonly code?: number | string;
+      readonly codeName?: string;
+      /** 0-based offset in the script that ran, when the error points at its text. */
+      readonly position?: number;
+      readonly statement?: ShellStatementRange;
+    }
+  | ({ readonly type: 'prompt' } & ShellPrompt)
+  | { readonly type: 'database'; readonly name: string }
+  | { readonly type: 'clear' }
+  | {
+      readonly type: 'end';
+      readonly status: 'success' | 'error' | 'cancelled';
+      readonly durationMs: number;
+      /** Statements that ran (to the end or to an error). */
+      readonly ran: number;
+    };
+
+/** An open shell: the database it is in and the mongosh and server versions. */
+export interface ShellInfo {
+  readonly database: string;
+  readonly mongoshVersion: string;
+  readonly serverVersion: string;
 }

@@ -153,6 +153,34 @@ export function describeJob(spec: JobSpec): JobDescription {
         },
       };
     }
+    case 'mongo-import':
+      return {
+        title: `Import ${basename(spec.file.path)} into ${spec.collection}`,
+        target: {
+          file: spec.file.path,
+          table: spec.collection,
+          format: spec.file.format,
+          database: spec.database,
+        },
+      };
+    case 'mongo-export': {
+      const what =
+        spec.collections.length === 1
+          ? spec.query !== undefined
+            ? `${spec.collections[0]!} query results`
+            : spec.collections[0]!
+          : `${spec.collections.length} collections`;
+      const shown = spec.collections.join(', ');
+      return {
+        title: `Export ${what} to ${spec.format === 'jsonl' ? 'JSON Lines' : spec.format.toUpperCase()}`,
+        target: {
+          file: spec.output.path,
+          table: shown.length > 200 ? `${shown.slice(0, 199)}…` : shown,
+          format: spec.format,
+          database: spec.database,
+        },
+      };
+    }
     case 'run-sql-file':
       return {
         title: `Run ${basename(spec.path)}`,
@@ -188,6 +216,23 @@ export function checkJobSafety(spec: JobSpec, profile: ConnectionProfile): void 
       });
     }
   }
+  if (spec.kind === 'mongo-import') {
+    if (profile.presentation.readOnly) {
+      throw new QuerybaraError({
+        code: 'READ_ONLY',
+        message: `"${profile.name}" is read-only, so nothing can be imported into it`,
+      });
+    }
+    const destructive = spec.mode === 'replace';
+    if ((confirmWrites || destructive) && spec.confirmed !== true) {
+      throw new QuerybaraError({
+        code: 'CONFIRMATION_REQUIRED',
+        message: destructive
+          ? 'The replace import deletes the documents of the collection first and needs confirmation'
+          : `Importing into ${production ? 'a production connection' : `"${profile.name}"`} needs confirmation`,
+      });
+    }
+  }
   if (spec.kind === 'run-sql-file' && confirmWrites && spec.confirmed !== true) {
     throw new QuerybaraError({
       code: 'CONFIRMATION_REQUIRED',
@@ -205,8 +250,12 @@ function checkPaths(spec: JobSpec, grants: FileGrants): void {
       grants.checkRead(spec.path);
       return;
     case 'export':
+    case 'mongo-export':
       if (spec.output.kind === 'file') grants.checkWrite(spec.output.path);
       else grants.checkDirectory(spec.output.path);
+      return;
+    case 'mongo-import':
+      grants.checkRead(spec.file.path);
       return;
     case 'backup':
     case 'restore':
@@ -239,11 +288,26 @@ export function jobHandlers(
         if (!profile) {
           throw new QuerybaraError({ code: 'NOT_FOUND', message: 'The connection was deleted' });
         }
-        // Backups and restores cover MongoDB and Redis too.
-        if (!isSqlEngine(profile.engine) && job.kind !== 'backup' && job.kind !== 'restore') {
+        // Backups and restores cover MongoDB and Redis too; MongoDB has file jobs of its own.
+        const mongoFiles = job.kind === 'mongo-import' || job.kind === 'mongo-export';
+        if (mongoFiles && profile.engine !== 'mongodb') {
           throw new QuerybaraError({
             code: 'NOT_SUPPORTED',
-            message: 'Import and export work with SQL connections for now',
+            message: 'MongoDB file import and export need a MongoDB connection',
+          });
+        }
+        if (
+          !isSqlEngine(profile.engine) &&
+          !mongoFiles &&
+          job.kind !== 'backup' &&
+          job.kind !== 'restore'
+        ) {
+          throw new QuerybaraError({
+            code: 'NOT_SUPPORTED',
+            message:
+              profile.engine === 'mongodb'
+                ? 'MongoDB collections import and export with their own wizards'
+                : 'Import and export work with SQL and MongoDB connections',
           });
         }
         checkPaths(job, grants);

@@ -9,15 +9,18 @@ import type { Store } from '../store';
 import type { StoredProfile } from '../repositories/profiles';
 import { hasMagic, type ScryptCost } from '../secrets/envelope';
 import { EXPORT_MAGIC, exportProfiles, importProfiles, type ExportedFolder } from './export';
+import { compassNeedsPassphrase, isCompassConnections, parseCompassConnections } from './compass';
 import { isNavicatConnections, parseNavicatConnections, type SkippedConnection } from './navicat';
+import { isRobo3tConnections, parseRobo3tConnections } from './robo3t';
 
 /**
  * A file of connections to import, whatever wrote it: a Querybara export (encrypted with a
- * passphrase) or a Navicat `.ncx` file. Both the CLI and the desktop read it here, preview it
- * against the store, and apply it with the same rules; they export through here too.
+ * passphrase), a Navicat `.ncx` file, a MongoDB Compass export (its passwords possibly encrypted
+ * with a passphrase) or Robo 3T's settings file. Both the CLI and the desktop read it here,
+ * preview it against the store, and apply it with the same rules; they export through here too.
  */
 
-export type ConnectionsFileFormat = 'querybara' | 'navicat';
+export type ConnectionsFileFormat = 'querybara' | 'navicat' | 'compass' | 'robo3t';
 
 export interface ConnectionsFileEntry {
   /** Names the entry for `applyConnectionsImport`; stable across reads of the same file. */
@@ -43,11 +46,22 @@ export interface ConnectionsFile {
 /** The largest connections file read (a few thousand connections are well under a megabyte). */
 export const CONNECTIONS_FILE_LIMIT = 16 * 1024 * 1024;
 
-/** Which kind of connections file `data` is, or undefined for neither. */
+/** Which kind of connections file `data` is, or undefined for none. */
 export function connectionsFileFormat(data: Uint8Array): ConnectionsFileFormat | undefined {
   if (hasMagic(EXPORT_MAGIC, data)) return 'querybara';
   const text = decodeText(data);
-  return text !== undefined && isNavicatConnections(text) ? 'navicat' : undefined;
+  if (text === undefined) return undefined;
+  if (isNavicatConnections(text)) return 'navicat';
+  if (isCompassConnections(text)) return 'compass';
+  if (isRobo3tConnections(text)) return 'robo3t';
+  return undefined;
+}
+
+/** Whether reading the file needs a passphrase: a Querybara export, or encrypted Compass secrets. */
+export function connectionsFileNeedsPassphrase(data: Uint8Array): boolean {
+  const format = connectionsFileFormat(data);
+  if (format === 'querybara') return true;
+  return format === 'compass' && compassNeedsPassphrase(decodeText(data)!);
 }
 
 /**
@@ -93,15 +107,37 @@ export function readConnectionsFile(
       skipped: parsed.skipped,
     };
   }
+  if (format === 'compass' || format === 'robo3t') {
+    const source = decodeText(data)!;
+    const parsed =
+      format === 'compass'
+        ? parseCompassConnections(source, {
+            ...(options.passphrase ? { passphrase: options.passphrase } : {}),
+            ...(options.now ? { now: options.now } : {}),
+          })
+        : parseRobo3tConnections(source, options.now ? { now: options.now } : {});
+    return {
+      format,
+      entries: parsed.connections.map((c) => ({
+        key: String(c.index),
+        profile: c.profile,
+        notes: c.notes,
+      })),
+      folders: [],
+      secrets: parsed.secrets,
+      skipped: parsed.skipped,
+    };
+  }
   throw new QuerybaraError({
     code: 'VALIDATION_FAILED',
-    message: 'The file is not a Querybara connections export or a Navicat .ncx file',
+    message:
+      'The file is not a Querybara connections export, a Navicat .ncx file, a Compass export or a Robo 3T settings file',
   });
 }
 
 /**
  * The stored profile an entry would replace. A Querybara export keeps profile ids, so it
- * matches by id; a Navicat file has none, so it matches a profile of the same engine and name
+ * matches by id; other files have none, so it matches a profile of the same engine and name
  * (case-insensitive), which makes importing the same file twice replace rather than duplicate.
  */
 export function existingProfileFor(

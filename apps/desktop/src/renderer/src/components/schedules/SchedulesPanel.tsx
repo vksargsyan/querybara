@@ -91,7 +91,10 @@ export function SchedulesPanel() {
 function Empty() {
   const ways = [
     { kind: 'backup' as const, text: 'Back up… on a connection or database, then Schedule…' },
-    { kind: 'export' as const, text: 'Export… on tables or a query result, then Schedule…' },
+    {
+      kind: 'export' as const,
+      text: 'Export… on tables, a query result or MongoDB collections, then Schedule…',
+    },
     { kind: 'sql' as const, text: 'Run SQL file… on a connection, then Schedule…' },
     { kind: 'comparison' as const, text: 'Compare, then Schedule… on a saved comparison' },
   ];

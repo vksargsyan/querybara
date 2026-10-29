@@ -3,11 +3,12 @@ import { z } from 'zod';
 
 import { backupJobSchema, backupPassphraseSchema } from './backup';
 import { idSchema } from './common';
-import { exportJobSchema, runSqlFileJobSchema } from './jobs';
+import { exportJobSchema, mongoExportJobSchema, runSqlFileJobSchema } from './jobs';
 
 /**
- * Scheduled jobs (spec: scheduler and automation): backups, SQL files, exports and saved
- * comparisons that main runs on a schedule while Querybara is open. A schedule's task is the job
+ * Scheduled jobs (spec: scheduler and automation): backups, SQL files, exports (of SQL tables or
+ * queries, or of MongoDB collections) and saved comparisons that main runs on a schedule while
+ * Querybara is open. A schedule's task is the job
  * as the wizard built it, minus its output path: each run writes a new file named from the
  * schedule's template, and older ones can be pruned. Nothing here carries a secret: a backup's
  * passphrase goes to the local store's secret store when the schedule is saved.
@@ -55,13 +56,17 @@ export const scheduleTaskSchema = z.discriminatedUnion('kind', [
   }),
   z.object({
     kind: z.literal('export'),
-    // A scheduled query runs as written: parameters are asked for, and no one is there to ask.
-    job: exportJobSchema.omit({ output: true }).extend({
-      source: z.discriminatedUnion('kind', [
-        exportJobSchema.shape.source.options[0],
-        exportJobSchema.shape.source.options[1].omit({ params: true }),
-      ]),
-    }),
+    job: z.discriminatedUnion('kind', [
+      // A scheduled query runs as written: parameters are asked for, and no one is there to ask.
+      exportJobSchema.omit({ output: true }).extend({
+        source: z.discriminatedUnion('kind', [
+          exportJobSchema.shape.source.options[0],
+          exportJobSchema.shape.source.options[1].omit({ params: true }),
+        ]),
+      }),
+      // MongoDB collections (or one collection's query) to JSON, JSON Lines, CSV or BSON.
+      mongoExportJobSchema.omit({ output: true }),
+    ]),
     /** One file, or a folder with one file per table. */
     outputKind: z.enum(['file', 'directory']),
     output: scheduleOutputSchema,

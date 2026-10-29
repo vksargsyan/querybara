@@ -32,7 +32,9 @@ import {
   mongoPrivilegeSchema,
   mongoRoleInfoSchema,
   mongoRoleRefSchema,
+  mongoCollectionChangeSchema,
   mongoPipelineScopeSchema,
+  mongoRecordChangeInputSchema,
   mongoRoleSpecSchema,
   mongoSavePipelineInputSchema,
   mongoSavedPipelineSchema,
@@ -41,6 +43,10 @@ import {
   mongoServerInfoSchema,
   mongoServerStatusSchema,
   mongoSessionRefSchema,
+  mongoShellEventSchema,
+  mongoShellIdSchema,
+  mongoShellInfoSchema,
+  mongoShellPromptAnswerSchema,
   mongoStagePreviewSchema,
   mongoTopEntrySchema,
   mongoUpdateManyInputSchema,
@@ -375,6 +381,61 @@ export const mongoHostContractShape = {
     /** Per-collection time and counts (mongod only). */
     top: { input: mongoSessionRefSchema, output: z.array(mongoTopEntrySchema) },
   },
+
+  /**
+   * IntelliShell (ADR 0036): mongosh in a worker thread of the connection host, on a connection
+   * of its own (through the profile's tunnel). A shell belongs to the port that opened it and
+   * closes with it. The write rules are the host's: read-only profiles refuse writes, and
+   * questions (a destructive operation, every write on profiles that confirm writes, a password
+   * prompt) come as `prompt` events, answered with `answer`.
+   */
+  shell: {
+    open: {
+      input: z.object({ database: db.optional() }),
+      output: z.object({ shellId: mongoShellIdSchema, info: mongoShellInfoSchema }),
+    },
+    /** Runs a script; its events stream until `end`. Stopping the stream interrupts it. */
+    evaluate: {
+      input: z.object({ shellId: mongoShellIdSchema, script: z.string().max(5_000_000) }),
+      item: mongoShellEventSchema,
+    },
+    answer: {
+      input: z.object({
+        shellId: mongoShellIdSchema,
+        promptId: idSchema,
+        answer: mongoShellPromptAnswerSchema,
+      }),
+      output: done,
+    },
+    /** Stops the running script, restarting the shell when it does not stop in time. */
+    interrupt: { input: z.object({ shellId: mongoShellIdSchema }), output: done },
+    /** A new shell in the same database: variables and open results are gone. */
+    restart: { input: z.object({ shellId: mongoShellIdSchema }), output: mongoShellInfoSchema },
+    /** The next page of a cursor result. */
+    more: {
+      input: z.object({
+        shellId: mongoShellIdSchema,
+        resultId: idSchema,
+        count: z.number().int().positive().max(10_000).optional(),
+      }),
+      output: z.object({ documents: z.array(ejson), hasMore: z.boolean() }),
+    },
+    closeResult: {
+      input: z.object({ shellId: mongoShellIdSchema, resultId: idSchema }),
+      output: done,
+    },
+    /** mongosh's completions for a statement's text up to the cursor (whole candidates). */
+    complete: {
+      input: z.object({ shellId: mongoShellIdSchema, text: z.string().max(100_000) }),
+      output: z.object({ completions: z.array(z.string()) }),
+    },
+    /** Switches the database `db` stands for, between runs. */
+    useDatabase: {
+      input: z.object({ shellId: mongoShellIdSchema, database: db }),
+      output: mongoShellInfoSchema,
+    },
+    close: { input: z.object({ shellId: mongoShellIdSchema }), output: done },
+  },
 } as const;
 
 /**
@@ -405,6 +466,27 @@ export const mongoMainContractShape = {
     save: { input: mongoSavePipelineInputSchema, output: mongoSavedPipelineSchema },
     /** Unknown ids are ignored. */
     delete: { input: z.object({ id: idSchema }), output: done },
+  },
+  /**
+   * Named find() queries per collection (Studio 3T's saved queries, ADR 0036), ordered by
+   * name; `text` is the collection tab's find() in mongosh syntax.
+   */
+  queries: {
+    list: { input: mongoPipelineScopeSchema, output: z.array(mongoSavedPipelineSchema) },
+    save: { input: mongoSavePipelineInputSchema, output: mongoSavedPipelineSchema },
+    /** Unknown ids are ignored. */
+    delete: { input: z.object({ id: idSchema }), output: done },
+  },
+  /**
+   * The collection history (ADR 0041): documents changed through the MongoDB views, newest
+   * first, to undo. The page records a change once its write succeeded.
+   */
+  changes: {
+    list: { input: mongoPipelineScopeSchema, output: z.array(mongoCollectionChangeSchema) },
+    record: { input: mongoRecordChangeInputSchema, output: done },
+    /** Unknown ids are ignored. */
+    markReverted: { input: z.object({ id: idSchema }), output: done },
+    clear: { input: mongoPipelineScopeSchema, output: done },
   },
   /**
    * Writes exported text (a JSON Schema, a validator) to a path this window picked with

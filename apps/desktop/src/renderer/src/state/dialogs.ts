@@ -1,5 +1,6 @@
 import type { CellValue } from '@querybara/core';
 import type { SecretStatus } from '@querybara/ipc';
+import type { ShellPrompt, ShellPromptAnswer } from '@querybara/mongo-tools';
 import type { ConfirmationReason } from '@querybara/sql-tools';
 import { create } from 'zustand';
 
@@ -7,8 +8,8 @@ import type { ParameterPrompt } from './run-plan';
 
 /**
  * Modal prompts that code outside React awaits: the safety confirmation, parameter values,
- * secrets for "ask every time", and plain confirmations. One is shown at a time; later ones
- * queue behind it.
+ * secrets for "ask every time", plain confirmations, and IntelliShell's questions. One is shown
+ * at a time; later ones queue behind it.
  */
 
 export interface RiskyStatement {
@@ -45,6 +46,14 @@ export type Prompt =
       readonly confirmLabel: string;
       readonly danger: boolean;
       readonly resolve: (ok: boolean) => void;
+    }
+  | {
+      /** A running IntelliShell script asks: a write to confirm, or a password. */
+      readonly kind: 'shell';
+      readonly prompt: Omit<ShellPrompt, 'promptId'>;
+      readonly connectionName: string;
+      readonly production: boolean;
+      readonly resolve: (answer: ShellPromptAnswer) => void;
     };
 
 type Pending = Prompt extends infer P ? (P extends Prompt ? Omit<P, 'resolve'> : never) : never;
@@ -112,4 +121,12 @@ export function confirm(options: {
     confirmLabel: options.confirmLabel ?? 'OK',
     danger: options.danger ?? false,
   });
+}
+
+/** Asks what a running IntelliShell script asks (ADR 0036): closing the dialog denies. */
+export function askShell(
+  prompt: Omit<ShellPrompt, 'promptId'>,
+  context: { readonly connectionName: string; readonly production: boolean },
+): Promise<ShellPromptAnswer> {
+  return ask<ShellPromptAnswer>({ kind: 'shell', prompt, ...context });
 }

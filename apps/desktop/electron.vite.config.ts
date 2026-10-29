@@ -71,15 +71,34 @@ const notices = thirdPartyNotices({
   ],
 });
 
-/** The MongoDB driver's optional peer dependencies (lib/deps.js), none of which the app ships. */
+/**
+ * The MongoDB driver's optional peer dependencies (lib/deps.js) that the app does not ship. The
+ * AWS SDK's credential providers are bundled: MONGODB-AWS needs them even for explicit keys.
+ */
 export const MONGODB_OPTIONAL_PEERS = [
   'kerberos',
   'snappy',
   '@mongodb-js/zstd',
   'gcp-metadata',
   'mongodb-client-encryption',
-  '@aws-sdk/credential-providers',
-  'aws4',
+];
+
+/**
+ * Modules of the embedded mongosh (ADR 0036) that IntelliShell never loads: its newer
+ * TypeScript-based autocompleter (a dynamic import, which would put the TypeScript compiler in
+ * the bundle); the shell uses mongosh's classic completer.
+ */
+export const MONGOSH_UNUSED = ['@mongodb-js/mongodb-ts-autocomplete'];
+
+/**
+ * Optional modules that bundled code requires only inside a function (Babel, under mongosh's
+ * async rewriter, for `.cts` config files it never reads). The CommonJS plugin would hoist the
+ * require to the top of the bundle, where a module the app does not ship fails as it loads; left
+ * alone, it stays where it is and is never reached.
+ */
+export const LAZY_OPTIONAL_REQUIRES = [
+  '@babel/preset-typescript',
+  '@babel/preset-typescript/package.json',
 ];
 
 const nodeOutput = {
@@ -95,10 +114,12 @@ export default defineConfig({
       __QUERYBARA_DEV_SCRIPT_HASHES__: JSON.stringify(devScriptHashes),
     },
     build: {
+      commonjsOptions: { ignore: LAZY_OPTIONAL_REQUIRES },
       rollupOptions: {
         input: {
           index: resolve(root, 'src/main/index.ts'),
           'connection-host': resolve(root, 'src/connection-host/index.ts'),
+          'mongo-shell': resolve(root, 'src/connection-host/mongo-shell-worker.ts'),
           'job-runner': resolve(root, 'src/job-runner/index.ts'),
         },
         output: nodeOutput,
@@ -116,6 +137,7 @@ export default defineConfig({
           'cpu-features',
           /\.node$/,
           ...MONGODB_OPTIONAL_PEERS,
+          ...MONGOSH_UNUSED,
         ],
       },
     },

@@ -17,8 +17,9 @@ import type { ConnectionSupervisor } from './supervisor';
  * passes the connection's write rules. The connection's host then streams the file between the
  * disk and the server, so the bytes never pass through main's IPC or the renderer.
  *
- * Saved aggregation pipelines are saved queries of the local store, scoped to the profile and
- * database and tagged with the collection, so they stay with the connection and go when it does.
+ * Saved aggregation pipelines, and the collection tab's saved find() queries, are saved queries
+ * of the local store, scoped to the profile and database and tagged with the collection, so they
+ * stay with the connection and go when it does. So does the collection history (ADR 0041).
  * Exported text (a JSON Schema) is written under the same file grants as a download.
  */
 
@@ -39,23 +40,63 @@ function toSavedPipeline(query: SavedQuery): MongoSavedPipeline {
   return { id: query.id, name: query.name, text: query.text, updatedAt: query.updatedAt };
 }
 
-export function mongoMainHandlers<P>(
-  services: {
-    readonly supervisor: ConnectionSupervisor<P>;
-    readonly store: Pick<Store, 'savedQueries'>;
-  },
-  grants: FileGrants,
-): MongoMainHandlers {
-  const { supervisor, store } = services;
-  const pipelinesOf = (scope: { profileId: string; db: string; collection: string }) =>
+/** The tag that marks a saved query as a collection tab's find(). */
+export const FIND_TAG = 'mongodb:find';
+
+/**
+ * Saved queries of one kind (`tag`) per collection: the profile and database scope them, a tag
+ * names the collection.
+ */
+function savedPerCollection(
+  store: Pick<Store, 'savedQueries'>,
+  tag: string,
+  what: string,
+): MongoMainHandlers['pipelines'] {
+  const of = (scope: { profileId: string; db: string; collection: string }) =>
     store.savedQueries
       .list({ profileId: scope.profileId })
       .filter(
         (query) =>
           query.database === scope.db &&
-          query.tags.includes(PIPELINE_TAG) &&
+          query.tags.includes(tag) &&
           query.tags.includes(pipelineCollectionTag(scope.collection)),
       );
+  return {
+    list: async (scope) => of(scope).map(toSavedPipeline),
+    save: async ({ id, name, text, ...scope }) => {
+      const existing = id === undefined ? undefined : store.savedQueries.get(id);
+      if (existing && !of(scope).some((query) => query.id === existing.id)) {
+        throw new QuerybaraError({
+          code: 'NOT_FOUND',
+          message: `That ${what} belongs to another collection`,
+        });
+      }
+      if (existing) return toSavedPipeline(store.savedQueries.update(existing.id, { name, text }));
+      return toSavedPipeline(
+        store.savedQueries.create({
+          name,
+          text,
+          profileId: scope.profileId,
+          database: scope.db,
+          tags: [tag, pipelineCollectionTag(scope.collection)],
+        }),
+      );
+    },
+    delete: async ({ id }) => {
+      const query = store.savedQueries.get(id);
+      if (query?.tags.includes(tag)) store.savedQueries.delete(id);
+    },
+  };
+}
+
+export function mongoMainHandlers<P>(
+  services: {
+    readonly supervisor: ConnectionSupervisor<P>;
+    readonly store: Pick<Store, 'savedQueries' | 'collectionChanges'>;
+  },
+  grants: FileGrants,
+): MongoMainHandlers {
+  const { supervisor, store } = services;
   const profileOf = (connectionId: string) => {
     const profile = supervisor.profileOf(connectionId);
     if (!profile) {
@@ -112,31 +153,21 @@ export function mongoMainHandlers<P>(
         return downloadResultSchema.parse(result);
       },
     },
-    pipelines: {
-      list: async (scope) => pipelinesOf(scope).map(toSavedPipeline),
-      save: async ({ id, name, text, ...scope }) => {
-        const existing = id === undefined ? undefined : store.savedQueries.get(id);
-        if (existing && !pipelinesOf(scope).some((query) => query.id === existing.id)) {
-          throw new QuerybaraError({
-            code: 'NOT_FOUND',
-            message: 'That saved pipeline belongs to another collection',
-          });
-        }
-        if (existing)
-          return toSavedPipeline(store.savedQueries.update(existing.id, { name, text }));
-        return toSavedPipeline(
-          store.savedQueries.create({
-            name,
-            text,
-            profileId: scope.profileId,
-            database: scope.db,
-            tags: [PIPELINE_TAG, pipelineCollectionTag(scope.collection)],
-          }),
-        );
+    pipelines: savedPerCollection(store, PIPELINE_TAG, 'saved pipeline'),
+    queries: savedPerCollection(store, FIND_TAG, 'saved query'),
+    changes: {
+      list: ({ profileId, db, collection }) =>
+        store.collectionChanges
+          .list({ profileId, database: db, collection })
+          .map(({ profileId: _p, database: _d, collection: _c, ...change }) => change),
+      record: ({ profileId, db, collection, ...change }) => {
+        store.collectionChanges.record({ profileId, database: db, collection, ...change });
       },
-      delete: async ({ id }) => {
-        const query = store.savedQueries.get(id);
-        if (query?.tags.includes(PIPELINE_TAG)) store.savedQueries.delete(id);
+      markReverted: ({ id }) => {
+        store.collectionChanges.markReverted(id);
+      },
+      clear: ({ profileId, db, collection }) => {
+        store.collectionChanges.clear({ profileId, database: db, collection });
       },
     },
     writeText: async ({ path, text }) => {

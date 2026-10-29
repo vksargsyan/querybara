@@ -16,7 +16,8 @@ import { checkMongoWrite, pipelineWrites, type WriteRequest } from '../shared/mo
  * write needs it.
  */
 
-type MongoHandlers = HandlersOf<typeof mongoHostContractShape>;
+/** Every `mongo.*` handler but the shell's, which the host's MongoShells serves. */
+type MongoHandlers = Omit<HandlersOf<typeof mongoHostContractShape>, 'shell'>;
 
 export interface MongoHandlerContext {
   /** The session a call names; throws NOT_FOUND when it was closed. */

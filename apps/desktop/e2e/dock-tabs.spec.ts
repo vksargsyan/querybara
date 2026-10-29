@@ -131,8 +131,11 @@ test('the tab menu closes others, to the right, and all, but never a pinned tab'
 
   await tabs().nth(1).click({ button: 'right' });
   const menu = page.getByRole('menu', { name: 'Tab actions' });
-  // Close carries its key ("Close Ctrl+W").
-  await expect(menu.getByRole('menuitem', { name: /^Close (Ctrl\+W|⌘W)$/ })).toBeVisible();
+  // Close carries its key (Ctrl+W), shown beside it and announced as its shortcut.
+  const close = menu.getByRole('menuitem', { name: 'Close', exact: true });
+  await expect(close).toBeVisible();
+  await expect(close).toHaveAttribute('aria-keyshortcuts', /^(Ctrl\+W|⌘W)$/);
+  await expect(close).toContainText(/Ctrl\+W|⌘W/);
   for (const item of [
     'Close Others',
     'Close to the Right',

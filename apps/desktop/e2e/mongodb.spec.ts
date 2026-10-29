@@ -13,7 +13,7 @@ import { connectMongo, scratchMongoDatabase, withoutTls } from './mongo-db';
  * object tree, the collection view (query bar and find() text, tree, table with drill-down and
  * JSON), the document editor with a conflicting change made elsewhere, insert, clone and delete,
  * a bulk update counted before it runs, explain before and after an index, and the command
- * console. With QUERYBARA_E2E_SHOTS set, screenshots of the collection view are saved there.
+ * IntelliShell. With QUERYBARA_E2E_SHOTS set, screenshots of the collection view are saved there.
  */
 
 const MONGO_URL = process.env['QUERYBARA_TEST_MONGODB_URL'];
@@ -161,6 +161,10 @@ test('opens a collection and pages its documents as Navicat does', async () => {
   // One click opens the documents.
   await treeRow('orders').click();
   await expect(panel()).toBeVisible();
+  // Studio 3T's layout: the breadcrumb, Table View first; this test reads the Tree View.
+  await expect(panel().getByTestId('mongo-collection-breadcrumb')).toContainText(`${db}orders`);
+  await expect(panel().getByTestId('mongo-view')).toHaveValue('table');
+  await panel().getByTestId('mongo-view').selectOption('tree');
   const loaded = panel().getByTestId('mongo-loaded');
   const pageBox = panel().getByLabel('Page', { exact: true });
   await expect(loaded).toHaveText('100 documents loaded');
@@ -198,7 +202,7 @@ test('filters, sorts and projects, with the find() text editable both ways', asy
 
   await setField('projection', '{ total: 1 }');
   await run();
-  await panel().getByRole('radio', { name: 'JSON' }).click();
+  await panel().getByTestId('mongo-view').selectOption('json');
   const json = panel().getByTestId('mongo-json-text');
   await expect(json).toContainText('{ _id: 150, total: 745 }');
   await expect(json).not.toContainText('status');
@@ -220,7 +224,7 @@ test('filters, sorts and projects, with the find() text editable both ways', asy
 });
 
 test('shows the table view and drills into an array and back', async () => {
-  await panel().getByRole('radio', { name: 'Table' }).click();
+  await panel().getByTestId('mongo-view').selectOption('table');
   const table = panel().getByTestId('mongo-table');
   await expect(table.locator('th[data-column="customer.address.city"]')).toBeVisible();
   await table.locator('tr[data-row="0"]').getByRole('button', { name: '[ 2 elements ]' }).click();
@@ -238,7 +242,7 @@ test('shows the table view and drills into an array and back', async () => {
 
 test('edits a document and resolves a conflict with a concurrent change', async () => {
   await panel().getByRole('button', { name: 'Reset' }).click();
-  await panel().getByRole('radio', { name: 'Tree' }).click();
+  await panel().getByTestId('mongo-view').selectOption('tree');
   await expect(panel().getByTestId('mongo-loaded')).toHaveText('100 documents loaded');
   await panel().getByRole('button', { name: 'Edit document 1', exact: true }).click();
   const editor = page.getByTestId('document-editor');
@@ -299,6 +303,139 @@ test('inserts, clones and deletes documents', async () => {
   expect(await direct!.count({ db, collection: 'orders' }, toEjson({ _id: 1000 }))).toBe(0);
 });
 
+test('edits values in place in the table and tree views, keeping their types', async () => {
+  await setField('filter', '{ _id: 3 }');
+  await run();
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('1 document loaded');
+  await panel().getByTestId('mongo-view').selectOption('table');
+  const table = panel().getByTestId('mongo-table');
+  const columns = await table
+    .locator('thead th')
+    .evaluateAll((cells) => cells.map((cell) => cell.getAttribute('data-column')));
+  const total = table.locator('tbody tr').first().locator('td').nth(columns.indexOf('total'));
+  await total.dblclick();
+  const editor = total.getByTestId('mongo-value-editor');
+  await expect(editor.getByRole('combobox', { name: 'Type of total' })).toHaveValue('int');
+  const input = editor.getByRole('textbox', { name: 'Value of total' });
+  await expect(input).toHaveValue('10');
+  await input.fill('ten');
+  await input.press('Enter');
+  await expect(editor.getByRole('alert')).toHaveText('"ten" is not a whole number');
+  await input.fill('12');
+  await input.press('Enter');
+  await expect(panel().getByTestId('mongo-notice')).toContainText('Saved total');
+  await expect(editor).toBeHidden();
+  expect((await stored(3))['total']).toEqual({ $numberInt: '12' });
+  await shot('mongo-value-edit');
+
+  // In the tree: a nested value, then a field removed from its menu.
+  await panel().getByTestId('mongo-view').selectOption('tree');
+  const tree = panel().getByTestId('mongo-tree');
+  await tree.getByRole('button', { name: 'Document 1', exact: true }).click();
+  await tree.getByRole('button', { name: 'Expand customer' }).click();
+  await tree.getByRole('button', { name: 'Expand address' }).click();
+  await tree.locator('[data-field="city"]').dblclick();
+  const city = tree.getByRole('textbox', { name: 'Value of customer.address.city' });
+  await expect(city).toHaveValue('Yerevan');
+  await city.fill('Lyon');
+  await city.press('Enter');
+  await expect(panel().getByTestId('mongo-notice')).toContainText('Saved customer.address.city');
+  await tree.locator('[data-field="status"]').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Remove Field…' }).click();
+  await confirmDialog('Remove');
+  await expect(panel().getByTestId('mongo-notice')).toContainText('Removed status');
+  const after = await stored(3);
+  expect(after['status']).toBeUndefined();
+  expect(after['customer']).toEqual({ name: 'Customer 2', address: { city: 'Lyon' } });
+});
+
+test('lists the changes made in the collection tab, and undoes an edit and a delete', async () => {
+  await treeMenu('orders', 'Collection History…');
+  const history = page.getByTestId('mongo-collection-history').filter({ visible: true });
+  const changes = history.getByRole('listbox', { name: 'Changes' });
+  // Newest first: the field removed in place, on order 3.
+  const newest = changes.getByRole('option').first();
+  await expect(newest).toContainText('Edited');
+  await expect(newest).toContainText('3');
+  await expect(history.getByRole('region', { name: 'Before' })).toContainText('status');
+  await expect(history.getByRole('region', { name: 'After' })).not.toContainText('status');
+  await shot('mongo-collection-history');
+  await history.getByRole('button', { name: 'Undo' }).click();
+  const confirm = page.getByRole('alertdialog').last();
+  await expect(confirm.getByTestId('confirm-detail')).toContainText('.replaceOne({ _id: 3 }');
+  await confirmDialog('Undo');
+  await expect(history.getByText('Change undone')).toBeVisible();
+  // The notice stays up across undos, so each one waits for the stored document instead.
+  await expect.poll(async () => (await stored(3))['status']).toBeDefined();
+  // The undo is a change too, and the undone one says so.
+  await expect(changes.getByRole('option').nth(1)).toContainText('undone');
+
+  // The deleted order 1000 comes back.
+  await changes.getByRole('option').filter({ hasText: 'Deleted' }).first().click();
+  await history.getByRole('button', { name: 'Undo' }).click();
+  await confirmDialog('Undo');
+  await expect.poll(() => stored(1000).catch(() => undefined)).toMatchObject({ status: 'new' });
+  // Its insert is undone too, now that it is as inserted again.
+  await changes
+    .getByRole('option')
+    .filter({ hasText: 'Inserted' })
+    .filter({ hasText: '1000' })
+    .last()
+    .click();
+  await history.getByRole('button', { name: 'Undo' }).click();
+  await confirmDialog('Undo');
+  await expect
+    .poll(() => direct!.count({ db, collection: 'orders' }, toEjson({ _id: 1000 })))
+    .toBe(0);
+  await page.getByRole('tab', { name: 'orders', exact: true }).click();
+});
+
+test('runs a query again from its history, and saves, opens and deletes a query', async () => {
+  await panel().getByRole('button', { name: 'Reset' }).click();
+  await setField('filter', "{ status: 'shipped' }");
+  await run();
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('75 documents loaded');
+  await setField('filter', '{ total: { $gt: 700 } }');
+  await run();
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('9 documents loaded');
+
+  await panel().getByRole('button', { name: 'History' }).click();
+  const history = page.getByRole('menu', { name: 'History' });
+  await expect(history.getByRole('menuitem').first()).toContainText(
+    'db.orders.find({ total: { $gt: 700 } })',
+  );
+  await history.getByRole('menuitem', { name: /status: 'shipped'/ }).click();
+  await expect(panel().getByTestId('mongo-filter')).toHaveValue("{ status: 'shipped' }");
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('75 documents loaded');
+
+  await panel().getByRole('button', { name: 'Saved', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Save Query…' }).click();
+  await page.getByTestId('name-dialog-input').fill('Shipped orders');
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
+  await expect(panel().getByTestId('mongo-notice')).toContainText('Saved as "Shipped orders"');
+
+  await panel().getByRole('button', { name: 'Reset' }).click();
+  await expect(panel().getByTestId('mongo-filter')).toHaveValue('');
+  await panel().getByRole('button', { name: 'Saved', exact: true }).click();
+  await page
+    .getByRole('menu', { name: 'Saved' })
+    .getByRole('menuitem', { name: /Shipped orders/ })
+    .click();
+  await expect(panel().getByTestId('mongo-filter')).toHaveValue("{ status: 'shipped' }");
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('75 documents loaded');
+
+  await panel().getByRole('button', { name: 'Saved', exact: true }).click();
+  // The submenu by keyboard: a pointer crossing the menu would close it on the way.
+  await page.getByRole('menuitem', { name: 'Delete Saved Query' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('menuitem', { name: 'Shipped orders', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await confirmDialog('Delete');
+  await panel().getByRole('button', { name: 'Saved', exact: true }).click();
+  await expect(page.getByRole('menu', { name: 'Saved' })).toContainText('No saved queries yet.');
+  await page.keyboard.press('Escape');
+});
+
 test('bulk-updates the filtered documents after showing the matched count', async () => {
   await setField('filter', "{ status: 'shipped' }");
   await run();
@@ -338,28 +475,178 @@ test('explains a collection scan, then the index scan once an index exists', asy
   await shot('mongo-explain');
 });
 
-test('runs a command in the console and records it in the history', async () => {
-  await page.getByRole('button', { name: 'New query' }).click();
-  const consolePanel = page.getByTestId('mongo-console').filter({ visible: true });
-  await expect(consolePanel).toBeVisible();
-  await consolePanel.getByTestId('mongo-console-database').selectOption(db);
-  const command = '{ find: "orders", filter: { total: { $gt: 700 } }, sort: { total: -1 } }';
-  await replaceText(consolePanel.getByTestId('mongo-console-editor'), command);
-  await consolePanel.getByRole('button', { name: 'Run', exact: true }).click();
-  await expect(consolePanel.getByTestId('mongo-console-count')).toContainText('9 documents');
-  await expect(consolePanel.getByRole('button', { name: 'Document 1', exact: true })).toContainText(
-    '_id: 150',
-  );
-  await consolePanel.getByRole('radio', { name: 'Table' }).click();
-  await expect(consolePanel.getByTestId('mongo-table').locator('tbody tr')).toHaveCount(9);
-  await shot('mongo-console');
+/** Brings the IntelliShell tab to the front. */
+async function showShell(): Promise<void> {
+  await page.locator('.dv-tab', { hasText: `IntelliShell: ${NAME}` }).click();
+}
 
-  // A destructive command asks first; declining runs nothing.
-  await replaceText(consolePanel.getByTestId('mongo-console-editor'), '{ drop: "customers" }');
-  await consolePanel.getByRole('button', { name: 'Run', exact: true }).click();
-  await confirmDialog('Cancel');
+function shellPanel(): Locator {
+  return page.getByTestId('intellishell').filter({ visible: true });
+}
+
+/** Replaces IntelliShell's script and runs it whole (F5's button). */
+async function runScript(script: string): Promise<void> {
+  await replaceText(shellPanel().getByTestId('intellishell-editor'), script);
+  await shellPanel().getByTestId('intellishell-run').click();
+}
+
+test('runs mongosh scripts in IntelliShell, a result tab per find()', async () => {
+  await page.getByRole('button', { name: 'New query' }).click();
+  await expect(shellPanel()).toBeVisible();
+  await expect(page.locator('.dv-tab', { hasText: `IntelliShell: ${NAME}` })).toHaveCount(1);
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText('mongosh');
+  await shellPanel().getByTestId('intellishell-database').selectOption(db);
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText(
+    `switched to db ${db}`,
+  );
+
+  await runScript(
+    'const big = { total: { $gt: 700 } }\nprint("orders over 700:", db.orders.countDocuments(big))\ndb.orders.find(big).sort({ total: -1 })',
+  );
+  const tab = shellPanel().getByTestId('intellishell-result-tab');
+  await expect(tab).toHaveText('Find Query (line 3)');
+  await expect(shellPanel().getByTestId('intellishell-result-count')).toHaveText(
+    'Documents 1 to 9',
+  );
+  await expect(shellPanel().getByTestId('mongo-table').locator('tbody tr')).toHaveCount(9);
+  await expect(shellPanel().getByTestId('mongo-table').locator('tbody tr').first()).toContainText(
+    '150',
+  );
+  await shot('mongo-intellishell');
+  await shellPanel().getByTestId('intellishell-raw-tab').click();
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText('orders over 700: 9');
+
+  // The command console's documents still run, as cursor commands.
+  await runScript('{ find: "orders", filter: { total: { $gt: 700 } }, sort: { total: -1 } }');
+  await expect(tab).toHaveText('Command (line 1)');
+  await expect(shellPanel().getByTestId('intellishell-result-count')).toHaveText(
+    'Documents 1 to 9',
+  );
+
+  // A destructive write asks first; declining runs nothing.
+  await runScript('db.customers.drop()');
+  const question = page.getByRole('alertdialog');
+  await expect(question).toContainText('dropCollection');
+  await question.getByRole('button', { name: 'Don’t run' }).click();
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText('was not run');
   expect(await direct!.count({ db, collection: 'customers' })).toBe(1);
 
-  await page.getByRole('button', { name: 'History' }).click();
-  await expect(page.getByTestId('history-list')).toContainText('{ find: "orders"');
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await expect(page.getByTestId('history-list')).toContainText('db.orders.find(big)');
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+});
+
+test('completes collections, methods and fields, and runs the statement at the cursor', async () => {
+  const editor = shellPanel().getByTestId('intellishell-editor');
+  await replaceText(editor, '');
+  await page.keyboard.insertText('db.ord');
+  await page.keyboard.press('Control+Space');
+  await expect(
+    page.locator('.suggest-widget .monaco-list-row', { hasText: 'orders' }).first(),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.keyboard.insertText('ers.find({ cust');
+  await page.keyboard.press('Control+Space');
+  await expect(
+    page.locator('.suggest-widget .monaco-list-row', { hasText: 'customer' }).first(),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await replaceText(editor, 'db.orders.findOne({ _id: 1 })\n\ndb.orders.findOne({ _id: 2 })');
+  // The cursor is on the last line: F6 runs that statement alone.
+  await page.keyboard.press('F6');
+  await shellPanel().getByTestId('intellishell-raw-tab').click();
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText('_id: 2');
+  await expect(shellPanel().getByTestId('intellishell-last-run')).toContainText('Ran 1 statement');
+});
+
+test('opens a result in the collection tab, and restarts a script that does not stop', async () => {
+  await runScript('db.orders.find({ status: "open" }).sort({ _id: -1 }).limit(5)');
+  await shellPanel().getByRole('button', { name: 'Open in collection tab' }).click();
+  await expect(panel().getByTestId('mongo-filter')).toHaveValue("{ status: 'open' }");
+  await expect(panel().getByTestId('mongo-limit')).toHaveValue('5');
+  await showShell();
+
+  await runScript('while (true) {}');
+  await expect(shellPanel().getByTestId('intellishell-stop')).toBeEnabled();
+  await shellPanel().getByTestId('intellishell-stop').click();
+  await expect(shellPanel().getByTestId('intellishell-output')).toContainText('restarted', {
+    timeout: 30_000,
+  });
+  await runScript('1 + 1');
+  await expect(shellPanel().getByTestId('intellishell-output').locator('pre').last()).toHaveText(
+    '2',
+  );
+});
+
+/** Opens a tree row's menu and picks an item. */
+async function treeMenu(text: string, item: string): Promise<void> {
+  const row = treeRow(text);
+  await row.hover();
+  await row.getByRole('button', { name: 'Actions' }).click();
+  await page.getByRole('menuitem', { name: item, exact: true }).click();
+}
+
+test('works as Studio 3T: the MongoDB toolbar, its keys, and findOne()', async () => {
+  const toolbar = page.getByTestId('mongo-toolbar');
+  await expect(toolbar).toBeVisible();
+  await page.getByRole('tab', { name: 'orders', exact: true }).click();
+  await expect(panel()).toBeVisible();
+  // Ctrl+Alt+3 is JSON View, Ctrl+Alt+2 Table View, in the collection tab in front.
+  await page.keyboard.press('Control+Alt+3');
+  await expect(panel().getByTestId('mongo-json-text')).toBeVisible();
+  await page.keyboard.press('Control+Alt+2');
+  await expect(panel().getByTestId('mongo-table')).toBeVisible();
+  await shot('mongo-collection-tab');
+
+  await panel().getByRole('button', { name: 'Reset' }).click();
+  await panel().getByRole('button', { name: 'Run options' }).click();
+  await page.getByRole('menuitem', { name: /^findOne/ }).click();
+  await expect(panel().getByTestId('mongo-loaded')).toHaveText('1 document loaded');
+
+  // The toolbar acts on the collection in front: IntelliShell starts on its find().
+  await toolbar.getByRole('button', { name: 'IntelliShell' }).click();
+  const shell = shellPanel();
+  await expect(shell.getByTestId('intellishell-editor')).toContainText('db.orders.find({})');
+  await expect(shell.getByTestId('intellishell-database')).toHaveValue(db);
+  // Ctrl+L opens another on the same database, and F5 in its editor runs the script.
+  await page.keyboard.press('Control+l');
+  await expect(page.locator('.dv-tab', { hasText: `IntelliShell: ${NAME}` })).toHaveCount(3);
+  await expect(shellPanel().getByTestId('intellishell-database')).toHaveValue(db);
+  await replaceText(shellPanel().getByTestId('intellishell-editor'), 'db.orders.find({})');
+  await page.keyboard.press('F5');
+  await expect(shellPanel().getByTestId('intellishell-result-tab')).toHaveText(
+    'Find Query (line 1)',
+  );
+  // With no collection in front, a tool asks for one in the shell's database.
+  await toolbar.getByRole('button', { name: 'Schema', exact: true }).click();
+  const pick = page.getByRole('dialog', { name: 'Choose' });
+  await expect(pick.getByRole('combobox')).toHaveAccessibleName(`Which collection of ${db}?`);
+  await pick.getByRole('option', { name: `orders ${db}`, exact: true }).click();
+  await expect(page.locator('.dv-tab', { hasText: 'orders schema' })).toHaveCount(1);
+});
+
+test('duplicates, renames and clears a collection from its menu', async () => {
+  await treeMenu('orders', 'Duplicate Collection…');
+  const name = page.getByTestId('name-dialog-input');
+  await expect(name).toHaveValue('orders_copy');
+  await page.getByRole('dialog').getByRole('button', { name: 'Duplicate' }).click();
+  const confirmation = await confirmDialog('Duplicate');
+  await expect(confirmation).toBeHidden();
+  await expect(treeRow('orders_copy')).toBeVisible();
+  expect(await direct!.count({ db, collection: 'orders_copy' })).toBe(
+    await direct!.count({ db, collection: 'orders' }),
+  );
+  const indexes = await direct!.listIndexes({ db, collection: 'orders_copy' });
+  expect(indexes.map((index) => index.name)).toContain('total_1');
+
+  await treeMenu('orders_copy', 'Rename Collection…');
+  await name.fill('orders_renamed');
+  await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click();
+  await confirmDialog('Rename');
+  await expect(treeRow('orders_renamed')).toBeVisible();
+
+  await treeMenu('orders_renamed', 'Clear Collection…');
+  await confirmDialog('Clear');
+  await expect.poll(() => direct!.count({ db, collection: 'orders_renamed' })).toBe(0);
 });

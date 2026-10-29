@@ -36,6 +36,7 @@ export {
   memoryReader,
   memorySink,
   openFileReader,
+  openInput,
   randomAccess,
   readableSource,
   spoolToFile,
@@ -232,4 +233,35 @@ export {
 export type { FlatColumn, FlatTable, FlattenOptions, MongoFieldType } from './db/mongo-map';
 export { isSafeDataType, safeColumnName } from './db/names';
 export { globMatch } from './db/redis-transfer';
+export { asMongo } from './db/sessions';
 export type { MongoTransferSession, RedisTransferSession } from './db/sessions';
+export {
+  MONGO_EXPORT_FORMATS,
+  MONGO_FILE_FORMATS,
+  MONGO_IMPORT_MODES,
+  bsonDocuments,
+  csvFieldText,
+  sqlLiteral,
+  documentFields,
+  exportCollection,
+  importCollection,
+  importOutcome,
+  inferCsvValue,
+  jsonValues,
+  mongoFileFormat,
+  readDocuments,
+  relaxedEjson,
+  valueAtField,
+} from './mongo-files';
+export type {
+  FileDocument,
+  MongoExportOptions,
+  MongoExportResult,
+  MongoExportFormat,
+  MongoFileFormat,
+  MongoImportCounts,
+  MongoImportMode,
+  MongoImportOptions,
+  MongoImportResult,
+  MongoReadOptions,
+} from './mongo-files';

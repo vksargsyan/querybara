@@ -149,7 +149,7 @@ export function SqlQueryPanel({ query }: { readonly query: SqlQuery }) {
           variant="ghost"
           disabled={translation === undefined}
           onClick={exportCode}
-          title="Export the query as Node.js, Python, Java, C#, Go or PHP code"
+          title="Export the query as Node.js, Python, Java, C#, Go, PHP, Ruby or mongosh code"
         >
           Export code…
         </Button>

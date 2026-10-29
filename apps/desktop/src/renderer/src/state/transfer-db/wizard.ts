@@ -69,7 +69,7 @@ export function endpointOf(profile: StoredProfile): TransferEndpoint {
 export function canTransfer(source: EngineId, target: EngineId): boolean {
   return (
     (isSqlEngine(source) && (isSqlEngine(target) || target === 'mongodb')) ||
-    (source === 'mongodb' && isSqlEngine(target)) ||
+    (source === 'mongodb' && (isSqlEngine(target) || target === 'mongodb')) ||
     (source === 'redis' && target === 'redis')
   );
 }

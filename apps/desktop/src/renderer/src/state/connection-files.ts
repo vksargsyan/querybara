@@ -9,7 +9,8 @@ import { create } from 'zustand';
 
 /**
  * Import and export of connections (spec §4): which dialog is open, and the wording both
- * dialogs share. Import reads a Querybara export or a Navicat `.ncx` file; export writes the
+ * dialogs share. Import reads a Querybara export, a Navicat `.ncx` file, a MongoDB Compass export
+ * or Robo 3T's `robo3t.json`; export writes the
  * passphrase-encrypted file the CLI reads too. Main does the reading and writing, so secrets
  * stay there (main/profile-files.ts).
  */
@@ -43,7 +44,7 @@ export function closeConnectionFilesDialog(): void {
 export const EXPORT_EXTENSION = 'qbx';
 
 export const IMPORT_FILTERS = [
-  { name: 'Connection files', extensions: [EXPORT_EXTENSION, 'ncx'] },
+  { name: 'Connection files', extensions: [EXPORT_EXTENSION, 'ncx', 'json'] },
   { name: 'All files', extensions: ['*'] },
 ];
 

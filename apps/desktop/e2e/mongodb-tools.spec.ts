@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -14,7 +14,7 @@ import { connectMongo, scratchMongoDatabase, withoutTls } from './mongo-db';
  * The MongoDB tool panels against the test replica set (spec §9, "Query tools" and "Schema and
  * admin"): the aggregation editor with per-stage previews and a disabled stage, the index manager
  * (TTL and partial indexes), schema analysis applied as a validator that the document editor then
- * hits, capped and time series collections, a change stream fed from the console, the GridFS
+ * hits, capped and time series collections, a change stream fed from IntelliShell, the GridFS
  * browser and the users editor. With QUERYBARA_E2E_SHOTS set, screenshots of each panel are saved
  * there as mongo2-*.png.
  */
@@ -32,6 +32,8 @@ let page: Page;
 let direct: MongoSession | undefined;
 let database: ReturnType<typeof scratchMongoDatabase> | undefined;
 let db = '';
+/** A second database, for pasting a collection into another one. */
+let other: ReturnType<typeof scratchMongoDatabase> | undefined;
 let files = '';
 const USER = `e2e_user_${randomBytes(3).toString('hex')}`;
 const ROLE = `e2e_role_${randomBytes(3).toString('hex')}`;
@@ -50,6 +52,8 @@ test.beforeAll(async () => {
   await direct.insertMany({ db, collection: 'orders' }, toEjson(orders));
   const people = Array.from({ length: 20 }, (_, i) => ({ name: `Person ${i}`, age: 20 + i }));
   await direct.insertMany({ db, collection: 'people' }, toEjson(people));
+  other = scratchMongoDatabase(direct);
+  await direct.insertMany({ db: other.name, collection: 'seed' }, toEjson([{ _id: 1 }]));
   await direct.uploadFile({ db, bucket: 'fs' }, new TextEncoder().encode('Hello from GridFS'), {
     filename: 'hello.txt',
     contentType: 'text/plain',
@@ -64,6 +68,7 @@ test.afterAll(async () => {
   await direct?.dropUser(db, USER).catch(() => undefined);
   await direct?.dropRole(db, ROLE).catch(() => undefined);
   await database?.drop().catch(() => undefined);
+  await other?.drop().catch(() => undefined);
   await direct?.close();
   if (files) rmSync(files, { recursive: true, force: true });
 });
@@ -147,7 +152,7 @@ test('connects and shows the scratch database', async () => {
 });
 
 test('builds a three-stage pipeline with per-stage previews and a disabled stage', async () => {
-  await treeMenu('orders', 'Aggregate…');
+  await treeMenu('orders', 'Open Aggregation Editor');
   const panel = visible('mongo-aggregation-panel');
   await expect(panel).toBeVisible();
   const cards = panel.getByTestId('stage-card');
@@ -197,7 +202,7 @@ test('builds a three-stage pipeline with per-stage previews and a disabled stage
 });
 
 test('creates and drops a TTL and a partial index', async () => {
-  await treeMenu('orders', 'Indexes');
+  await treeMenu('orders', 'Manage Indexes');
   const panel = visible('mongo-indexes-panel');
   await expect(panel.locator('tr[data-index="_id_"]')).toBeVisible();
 
@@ -241,7 +246,7 @@ test('creates and drops a TTL and a partial index', async () => {
 });
 
 test('analyses a schema, applies it as a validator, and the editor then refuses a bad insert', async () => {
-  await treeMenu('people', 'Analyse schema');
+  await treeMenu('people', 'Analyze Schema…');
   const panel = visible('mongo-schema-panel');
   await expect(panel.getByTestId('schema-summary')).toContainText('20 documents sampled');
   const age = panel.locator('tr[data-field="age"]');
@@ -272,7 +277,7 @@ test('analyses a schema, applies it as a validator, and the editor then refuses 
 });
 
 test('creates a capped and a time series collection', async () => {
-  await treeMenu(db, 'Create collection…');
+  await treeMenu(db, 'Add Collection…');
   const dialog = page.getByTestId('create-collection-dialog');
   await dialog.getByTestId('create-collection-name').fill('capped_log');
   await dialog.getByRole('radio', { name: 'Capped' }).click();
@@ -290,7 +295,7 @@ test('creates a capped and a time series collection', async () => {
     capped: true,
   });
 
-  await treeMenu(db, 'Create collection…');
+  await treeMenu(db, 'Add Collection…');
   await dialog.getByTestId('create-collection-name').fill('readings');
   await dialog.getByRole('radio', { name: 'Time series' }).click();
   await dialog.getByTestId('create-collection-time-field').fill('at');
@@ -307,14 +312,14 @@ test('creates a capped and a time series collection', async () => {
     timeseries: { timeField: 'at', metaField: 'sensor', granularity: 'minutes' },
   });
 
-  await treeMenu('capped_log', 'Options');
+  await treeMenu('capped_log', 'Edit Validator and Options…');
   const options = visible('mongo-options-panel');
   await expect(options.getByTestId('options-type')).toHaveText('capped collection');
   await shot('mongo2-options');
 });
 
-test('watches a change stream while the console inserts, updates and deletes', async () => {
-  await treeMenu('orders', 'Watch changes');
+test('watches a change stream while IntelliShell inserts, updates and deletes', async () => {
+  await treeMenu('orders', 'Watch Changes');
   const panel = visible('mongo-changes-panel');
   await panel.getByTestId('changes-start').click();
   await expect(panel.getByTestId('changes-status')).toContainText('Watching');
@@ -330,8 +335,9 @@ test('watches a change stream while the console inserts, updates and deletes', a
   await panel.getByTestId('changes-clear').click();
   await expect(rows).toHaveCount(0);
 
-  await treeMenu(db, 'Open console');
-  const consolePanel = visible('mongo-console');
+  await treeMenu(db, 'Open IntelliShell');
+  const shell = visible('intellishell');
+  await expect(shell.getByTestId('intellishell-output')).toContainText('mongosh');
   const status = async (): Promise<string | null> => {
     for await (const found of direct!.find(
       { db, collection: 'orders' },
@@ -342,17 +348,14 @@ test('watches a change stream while the console inserts, updates and deletes', a
     }
     return null;
   };
-  const commands: [string, string | null][] = [
-    ["{ insert: 'orders', documents: [{ _id: 1000, status: 'new' }] }", 'new'],
-    [
-      "{ update: 'orders', updates: [{ q: { _id: 1000 }, u: { $set: { status: 'changed' } } }] }",
-      'changed',
-    ],
-    ["{ delete: 'orders', deletes: [{ q: { _id: 1000 }, limit: 1 }] }", null],
+  const scripts: [string, string | null][] = [
+    ["db.orders.insertOne({ _id: 1000, status: 'new' })", 'new'],
+    ["db.orders.updateOne({ _id: 1000 }, { $set: { status: 'changed' } })", 'changed'],
+    ['db.orders.deleteOne({ _id: 1000 })', null],
   ];
-  for (const [command, after] of commands) {
-    await replaceText(consolePanel.getByTestId('mongo-console-editor'), command);
-    await consolePanel.getByRole('button', { name: 'Run', exact: true }).click();
+  for (const [script, after] of scripts) {
+    await replaceText(shell.getByTestId('intellishell-editor'), script);
+    await shell.getByTestId('intellishell-run').click();
     await expect.poll(status).toBe(after);
   }
   await shot('mongo2-console-writes');
@@ -414,7 +417,7 @@ test('uploads, downloads and deletes a GridFS file', async () => {
 
 test('creates a user with a role and drops it', async () => {
   await treeRow('Users').click();
-  await treeMenu('Users', 'Manage users');
+  await treeMenu('Users', 'Manage Users');
   const panel = visible('mongo-users-panel');
   await panel.getByTestId('user-create').click();
   const dialog = page.getByTestId('user-dialog');
@@ -469,7 +472,7 @@ test('creates a custom role with a privilege and an inherited role, and drops it
 });
 
 test('creates a view from the stage cards', async () => {
-  await treeMenu('orders', 'Create view on it…');
+  await treeMenu('orders', 'Add View Here…');
   const dialog = page.getByTestId('create-view-dialog');
   await dialog.getByTestId('create-view-name').fill('open_orders');
   await replaceText(dialog.getByTestId('stage-body').first(), "{ status: 'open' }");
@@ -484,4 +487,253 @@ test('creates a view from the stage cards', async () => {
   await expect(treeRow('open_orders')).toBeVisible();
   // Read on another connection: the new view can take a moment to show there.
   await expect.poll(() => direct!.count({ db, collection: 'open_orders' })).toBe(30);
+});
+
+test('exports a collection to JSON Lines and imports the file into a new collection', async () => {
+  const count = await direct!.count({ db, collection: 'orders' });
+  await treeMenu('orders', 'Export Collection…');
+  const exporting = page.getByRole('dialog', { name: 'Export' });
+  await exporting.getByRole('radio', { name: /^JSON Lines/ }).check();
+  const file = join(files, 'orders.jsonl');
+  await stubDialog('save', file);
+  await exporting.getByRole('button', { name: 'Choose file…' }).click();
+  await expect(exporting.getByTestId('mongo-export-path')).toHaveText(file);
+  await shot('mongo2-export');
+  await exporting.getByRole('button', { name: 'Export', exact: true }).click();
+  await expect(exporting).toBeHidden();
+  const exported = page.getByTestId('job-item').filter({ hasText: 'Export orders to JSON Lines' });
+  await expect(exported.getByTestId('job-summary')).toContainText(`${count} documents exported`);
+  const lines = readFileSync(file, 'utf8').trim().split('\n');
+  expect(lines).toHaveLength(count);
+  expect(JSON.parse(lines[0]!)).toMatchObject({ _id: 1, status: 'open', total: 0 });
+
+  await treeMenu(db, 'Import Collection…');
+  const importing = page.getByRole('dialog', { name: 'Import' });
+  await stubDialog('open', file);
+  await importing.getByRole('button', { name: 'Choose file…' }).click();
+  await expect(importing.getByTestId('mongo-import-path')).toHaveText(file);
+  const collection = importing.getByRole('textbox', { name: 'Collection' });
+  await expect(collection).toHaveValue('orders');
+  await collection.fill('orders_imported');
+  await shot('mongo2-import');
+  await importing.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(importing).toBeHidden();
+  const imported = page
+    .getByTestId('job-item')
+    .filter({ hasText: 'Import orders.jsonl into orders_imported' });
+  await expect(imported.getByTestId('job-summary')).toContainText(`${count} documents imported`);
+  expect(await direct!.count({ db, collection: 'orders_imported' })).toBe(count);
+  await expect(treeRow('orders_imported')).toBeVisible();
+
+  // Again with upsert: the same _ids are replaced, nothing is added.
+  await treeMenu('orders_imported', 'Import into Collection…');
+  await stubDialog('open', file);
+  await importing.getByRole('button', { name: 'Choose file…' }).click();
+  await importing.getByRole('radio', { name: /^Upsert by _id/ }).check();
+  await importing.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(
+    page
+      .getByTestId('job-item')
+      .filter({ hasText: 'Import orders.jsonl into orders_imported' })
+      .first(),
+  ).toContainText(`${count} documents imported`);
+  expect(await direct!.count({ db, collection: 'orders_imported' })).toBe(count);
+});
+
+test("exports the collection tab's query to CSV", async () => {
+  await treeRow('orders').click();
+  const panel = visible('mongo-collection-panel');
+  await panel.getByTestId('mongo-filter').fill("{ status: 'shipped' }");
+  await panel.getByTestId('mongo-filter').press('Enter');
+  await expect(panel.getByTestId('mongo-loaded')).toHaveText('30 documents loaded');
+  await panel.getByRole('button', { name: 'Export…' }).click();
+  const exporting = page.getByRole('dialog', { name: 'Export' });
+  await expect(exporting.getByRole('radio', { name: /^What the query finds/ })).toBeChecked();
+  await exporting.getByRole('radio', { name: /^CSV/ }).check();
+  const file = join(files, 'shipped.csv');
+  await stubDialog('save', file);
+  await exporting.getByRole('button', { name: 'Choose file…' }).click();
+  await exporting.getByRole('button', { name: 'Export', exact: true }).click();
+  const job = page
+    .getByTestId('job-item')
+    .filter({ hasText: 'Export orders query results to CSV' });
+  await expect(job.getByTestId('job-summary')).toContainText('30 documents exported');
+  const rows = readFileSync(file, 'utf8').trim().split('\r\n');
+  expect(rows[0]).toBe('_id,status,total,at');
+  expect(rows).toHaveLength(31);
+  expect(rows[1]).toBe('2,shipped,5,2026-01-02T00:00:00.000Z');
+});
+
+test('exports a collection as SQL, its table created first', async () => {
+  const count = await direct!.count({ db, collection: 'orders' });
+  await treeMenu('orders', 'Export Collection…');
+  const exporting = page.getByRole('dialog', { name: 'Export' });
+  await exporting.getByRole('radio', { name: /^SQL/ }).check();
+  await exporting.getByRole('textbox', { name: 'Table' }).fill('legacy_orders');
+  await expect(exporting.getByRole('checkbox', { name: /^Create the table first/ })).toBeChecked();
+  const file = join(files, 'orders.sql');
+  await stubDialog('save', file);
+  await exporting.getByRole('button', { name: 'Choose file…' }).click();
+  await exporting.getByRole('button', { name: 'Export', exact: true }).click();
+  const job = page.getByTestId('job-item').filter({ hasText: 'Export orders to SQL' });
+  await expect(job.getByTestId('job-summary')).toContainText(`${count} documents exported`);
+  const lines = readFileSync(file, 'utf8').trim().split('\n');
+  expect(lines[0]).toBe('CREATE TABLE "legacy_orders" (');
+  // The column types come from the documents: orders' dates are TIMESTAMPs.
+  expect(lines.some((line) => /^ {2}"at" TIMESTAMP,?$/.test(line))).toBe(true);
+  const inserts = lines.filter((line) => line.startsWith('INSERT INTO "legacy_orders"'));
+  expect(inserts).toHaveLength(count);
+  expect(inserts[0]).toMatch(/^INSERT INTO "legacy_orders" \("_id", "status", "total", "at"/);
+});
+
+test('copies documents into another collection, and a collection into another database', async () => {
+  await treeRow('orders').click();
+  const panel = visible('mongo-collection-panel');
+  await panel.getByTestId('mongo-filter').fill('{ _id: { $lte: 3 } }');
+  await panel.getByTestId('mongo-filter').press('Enter');
+  await expect(panel.getByTestId('mongo-loaded')).toHaveText('3 documents loaded');
+  await panel.getByTestId('mongo-view').selectOption('tree');
+  await panel.locator('[data-document="0"]').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Copy All Documents' }).click();
+
+  // people's validator (applied by an earlier test) refuses orders: the dialog says why.
+  await treeMenu('people', 'Paste Documents…');
+  const refused = page.getByRole('dialog', { name: 'Paste documents into people' });
+  await expect(refused.getByTestId('paste-documents-status')).toHaveText(
+    `3 documents to insert into ${db}.people`,
+  );
+  await refused.getByRole('button', { name: 'Paste 3 documents' }).click();
+  await expect(refused.getByRole('alert')).toContainText('Document failed validation');
+  await refused.getByRole('button', { name: 'Cancel' }).click();
+
+  const imported = await direct!.count({ db, collection: 'orders_imported' });
+  await treeMenu('orders_imported', 'Paste Documents…');
+  const paste = page.getByRole('dialog', { name: 'Paste documents into orders_imported' });
+  await expect(paste.getByTestId('paste-documents-text')).toContainText("status: 'open'");
+  await paste.getByRole('checkbox', { name: 'Give each document a new _id' }).check();
+  await shot('mongo2-paste-documents');
+  await paste.getByRole('button', { name: 'Paste 3 documents' }).click();
+  await expect(paste).toBeHidden();
+  expect(await direct!.count({ db, collection: 'orders_imported' })).toBe(imported + 3);
+
+  // Pasted back where they came from, they get new _ids rather than colliding.
+  await treeMenu('orders', 'Paste Documents…');
+  const back = page.getByRole('dialog', { name: 'Paste documents into orders' });
+  await expect(back.getByRole('checkbox', { name: 'Give each document a new _id' })).toBeChecked();
+  await back.getByRole('button', { name: 'Paste 3 documents' }).click();
+  await expect(back).toBeHidden();
+  expect(await direct!.count({ db, collection: 'orders' }, toEjson({ total: 5 }))).toBe(2);
+
+  const orders = await direct!.count({ db, collection: 'orders' });
+  await treeMenu('orders', 'Copy Collection');
+  await treeMenu(other!.name, 'Paste Collection “orders”');
+  await confirmWith('Paste');
+  await expect.poll(() => direct!.count({ db: other!.name, collection: 'orders' })).toBe(orders);
+  const indexes = await direct!.listIndexes({ db: other!.name, collection: 'orders' });
+  expect(indexes.map((index) => index.name)).toContain('_id_');
+});
+
+test('reschemas a collection into another one, and masks a field', async () => {
+  await treeMenu('orders', 'Reschema…');
+  const reshape = visible('mongo-reshape');
+  await expect(reshape.locator('tr[data-rule="status"]')).toBeVisible();
+  await reshape.getByRole('textbox', { name: 'New path of status' }).fill('state.code');
+  await reshape.getByRole('combobox', { name: 'Rule for total' }).selectOption('convert');
+  await reshape.getByRole('combobox', { name: 'Type of total' }).selectOption('string');
+  await reshape.getByRole('combobox', { name: 'Rule for at' }).selectOption('exclude');
+  await reshape.getByRole('button', { name: 'Preview' }).click();
+  const after = reshape.getByRole('region', { name: 'After' });
+  await expect(after.getByTestId('mongo-json-text')).toContainText(
+    "{ _id: 1, total: '0', state: { code: 'open' } }",
+  );
+  await reshape.getByRole('textbox', { name: 'Output collection' }).fill('orders_v2');
+  await shot('mongo2-reschema');
+  await reshape.getByRole('button', { name: 'Run', exact: true }).click();
+  await confirmWith('Run and write', '$out');
+  const orders = await direct!.count({ db, collection: 'orders' });
+  await expect(reshape.getByText(`orders_v2 now holds ${orders} documents.`)).toBeVisible();
+  let first: string | undefined;
+  for await (const found of direct!.find(
+    { db, collection: 'orders_v2' },
+    { filter: toEjson({ _id: 1 }) },
+  )) {
+    first ??= found.documents[0];
+  }
+  expect(JSON.parse(first!)).toEqual({
+    _id: { $numberInt: '1' },
+    total: '0',
+    state: { code: 'open' },
+  });
+
+  await treeMenu('people', 'Data Masking…');
+  const masking = visible('mongo-reshape');
+  await masking.getByRole('combobox', { name: 'Rule for name' }).selectOption('mask');
+  await masking.getByRole('textbox', { name: 'Characters shown at the start of name' }).fill('1');
+  await masking.getByRole('button', { name: 'Run', exact: true }).click();
+  await confirmWith('Run and write');
+  await expect(masking.getByText(/people_masked now holds \d+ documents\./)).toBeVisible();
+  expect(
+    await direct!.count({ db, collection: 'people_masked' }, toEjson({ name: 'P*******' })),
+  ).toBeGreaterThan(0);
+  expect(
+    await direct!.count({ db, collection: 'people_masked' }, toEjson({ name: 'Person 0' })),
+  ).toBe(0);
+});
+
+test('generates test documents from rules read from the collection', async () => {
+  const before = await direct!.count({ db, collection: 'people' });
+  await treeMenu('people', 'Generate Data…');
+  const generator = visible('mongo-generate');
+  // The rules come from the sample: a full name, and ages in the range seen.
+  await expect(generator.getByRole('combobox', { name: 'Value of name' })).toHaveValue('fullName');
+  await expect(generator.getByRole('combobox', { name: 'Value of age' })).toHaveValue('int');
+  await generator.getByRole('textbox', { name: 'Seed' }).fill('2026');
+  await generator.getByRole('button', { name: 'Preview' }).click();
+  await expect(generator.getByTestId('mongo-json-text')).toContainText('name:');
+  await generator.getByRole('textbox', { name: 'Number of documents' }).fill('1200');
+  await shot('mongo2-data-generator');
+  await generator.getByRole('button', { name: 'Generate', exact: true }).click();
+  // The schema validator applied earlier accepts them: they follow the sample's types.
+  await confirmWith('Generate', 'insertMany');
+  await expect(generator.getByText('1,200 documents inserted into people.')).toBeVisible();
+  expect(await direct!.count({ db, collection: 'people' })).toBe(before + 1200);
+  expect(
+    await direct!.count(
+      { db, collection: 'people' },
+      toEjson({ age: { $gte: 20, $lte: 39 }, name: { $regex: '^\\S+ \\S+$' } }),
+    ),
+  ).toBeGreaterThanOrEqual(1200);
+});
+
+test('schedules an export of a collection and runs it now', async () => {
+  const folder = join(files, 'scheduled');
+  mkdirSync(folder);
+  await treeMenu('orders', 'Export Collection…');
+  const exporting = page.getByRole('dialog', { name: 'Export' });
+  await exporting.getByRole('radio', { name: /^JSON Lines/ }).check();
+  await exporting.getByRole('button', { name: 'Schedule…' }).click();
+  const editor = page.getByTestId('schedule-editor');
+  await expect(editor).toContainText(`Export orders of ${NAME} · ${db} as JSONL`);
+  await stubDialog('open', folder);
+  await editor.getByRole('button', { name: 'Choose folder…' }).click();
+  await expect(editor.getByLabel('File name')).toHaveValue('{name}-{date}-{time}.jsonl');
+  await page.getByTestId('schedule-save').click();
+  const details = page
+    .getByTestId('schedules-panel')
+    .filter({ visible: true })
+    .getByTestId('schedule-details');
+  await details.getByTestId('schedule-run-now').click();
+  await expect(details.getByTestId('schedule-run').first()).toHaveAttribute(
+    'data-status',
+    'success',
+  );
+  const written = readdirSync(folder);
+  expect(written).toHaveLength(1);
+  expect(written[0]).toMatch(/^Export-orders-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}\.jsonl$/);
+  const lines = readFileSync(join(folder, written[0]!), 'utf8').trim().split('\n');
+  expect(lines).toHaveLength(await direct!.count({ db, collection: 'orders' }));
+  // Deleted, so the app does not ask about it when it quits.
+  await details.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click();
+  await expect(details).toHaveCount(0);
 });

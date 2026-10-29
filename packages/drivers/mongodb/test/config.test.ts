@@ -3,9 +3,17 @@ import {
   type ConnectionProfileInput,
   type ResolvedProfile,
 } from '@querybara/core';
-import { describe, expect, it } from 'vitest';
+import { MongoClient } from 'mongodb';
+import { afterAll, describe, expect, it } from 'vitest';
 
-import { buildMongoClientPlan, parseHostList, redactSecrets, splitMongoUri } from '../src';
+import {
+  buildMongoClientPlan,
+  forgetOidcSignIn,
+  parseHostList,
+  redactSecrets,
+  splitMongoUri,
+} from '../src';
+import { oidcSignInOptions } from '../src/oidc';
 
 function resolved(
   input: Partial<ConnectionProfileInput>,
@@ -80,6 +88,8 @@ describe('MongoDB connection strings', () => {
 });
 
 describe('buildMongoClientPlan', () => {
+  afterAll(() => forgetOidcSignIn('p'));
+
   it('maps a host endpoint, options and password auth', () => {
     const plan = buildMongoClientPlan(
       resolved(
@@ -227,11 +237,141 @@ describe('buildMongoClientPlan', () => {
     });
     expect(String(x509.options.cert)).toBe('CERT+KEY');
     expect(x509.options.auth).toBeUndefined();
+    // A subject name is passed on, in the form the driver accepts.
+    const subject = buildMongoClientPlan(
+      resolved({
+        auth: { method: 'clientCertificate', user: 'CN=app,OU=clients' },
+        tls: { mode: 'verify-full', certPath: '/client.pem', keyPath: '/client.pem' },
+      }),
+      { readFile },
+    );
+    expect(subject.options.auth).toEqual({ username: 'CN=app,OU=clients', password: undefined });
+    expect(() => new MongoClient(subject.url, subject.options)).not.toThrow();
     expect(() =>
       buildMongoClientPlan(
         resolved({ auth: { method: 'clientCertificate' }, tls: { mode: 'disable' } }),
       ),
     ).toThrow(expect.objectContaining({ code: 'VALIDATION_FAILED' }));
+  });
+
+  it('maps AWS IAM, with an access key or the AWS credential chain', async () => {
+    const keys = buildMongoClientPlan(
+      resolved(
+        {
+          endpoint: { kind: 'srv', host: 'cluster0.abcde.mongodb.net' },
+          auth: {
+            method: 'password',
+            user: 'AKIAEXAMPLE',
+            password: { id: 'pw' },
+            mechanism: 'MONGODB-AWS',
+          },
+          tls: { mode: 'verify-full' },
+        },
+        { pw: 'wJalrXUtnFEMI' },
+      ),
+    );
+    expect(keys.options).toMatchObject({ authMechanism: 'MONGODB-AWS', authSource: '$external' });
+    // The driver takes no user or password for AWS: the keys come from a provider.
+    expect(keys.options.auth).toBeUndefined();
+    const provider = keys.options.authMechanismProperties?.AWS_CREDENTIAL_PROVIDER;
+    await expect(provider?.()).resolves.toEqual({
+      accessKeyId: 'AKIAEXAMPLE',
+      secretAccessKey: 'wJalrXUtnFEMI',
+    });
+    expect(() => new MongoClient(keys.url, keys.options)).not.toThrow();
+
+    const chain = buildMongoClientPlan(
+      resolved({ auth: { method: 'password', mechanism: 'MONGODB-AWS' } }),
+    );
+    expect(chain.options.authMechanismProperties).toBeUndefined();
+    expect(() => new MongoClient(chain.url, chain.options)).not.toThrow();
+
+    // Named by a connection string, the URI's credentials become the keys.
+    const uri = buildMongoClientPlan(
+      resolved({
+        endpoint: { kind: 'uri', uri: 'mongodb://AKIA2:sec%2Fret@h1/?authMechanism=MONGODB-AWS' },
+        auth: { method: 'password' },
+      }),
+    );
+    await expect(uri.options.authMechanismProperties?.AWS_CREDENTIAL_PROVIDER?.()).resolves.toEqual(
+      { accessKeyId: 'AKIA2', secretAccessKey: 'sec/ret' },
+    );
+    expect(() => new MongoClient(uri.url, uri.options)).not.toThrow();
+
+    expect(() =>
+      buildMongoClientPlan(
+        resolved({
+          auth: {
+            method: 'password',
+            user: 'AKIA',
+            password: { id: 'pw' },
+            mechanism: 'MONGODB-AWS',
+          },
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: 'AUTH_FAILED' }));
+  });
+
+  it('maps OIDC: a workload identity, or a sign-in in the browser', async () => {
+    const azure = buildMongoClientPlan(
+      resolved({
+        auth: { method: 'password', user: 'client-id', mechanism: 'MONGODB-OIDC' },
+        options: { oidcEnvironment: 'azure', oidcAudience: 'api://querybara' },
+      }),
+    );
+    expect(azure.options).toMatchObject({
+      authMechanism: 'MONGODB-OIDC',
+      authSource: '$external',
+      auth: { username: 'client-id' },
+      authMechanismProperties: { ENVIRONMENT: 'azure', TOKEN_RESOURCE: 'api://querybara' },
+    });
+    expect(azure.browserSignIn).toBe(false);
+    expect(() => new MongoClient(azure.url, azure.options)).not.toThrow();
+
+    const k8s = buildMongoClientPlan(
+      resolved({
+        endpoint: {
+          kind: 'uri',
+          uri: 'mongodb://h1/?authMechanism=MONGODB-OIDC&authMechanismProperties=ENVIRONMENT:k8s',
+        },
+        auth: { method: 'none' },
+      }),
+    );
+    expect(k8s.options.authMechanismProperties).toEqual({ ENVIRONMENT: 'k8s' });
+    expect(k8s.browserSignIn).toBe(false);
+    expect(() => new MongoClient(k8s.url, k8s.options)).not.toThrow();
+    const named = buildMongoClientPlan(
+      resolved({
+        endpoint: { kind: 'uri', uri: 'mongodb://h1/?authMechanism=MONGODB-OIDC' },
+        auth: { method: 'none' },
+      }),
+    );
+    expect(named.browserSignIn).toBe(true);
+
+    expect(() =>
+      buildMongoClientPlan(
+        resolved({
+          auth: { method: 'password', mechanism: 'MONGODB-OIDC' },
+          options: { oidcEnvironment: 'gcp' },
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: 'VALIDATION_FAILED' }));
+
+    const browser = buildMongoClientPlan(
+      resolved({
+        endpoint: { kind: 'srv', host: 'cluster0.corp.example.com' },
+        auth: { method: 'password', user: 'ada@example.com', mechanism: 'MONGODB-OIDC' },
+      }),
+    );
+    expect(browser.browserSignIn).toBe(true);
+    expect(browser.options.auth).toEqual({ username: 'ada@example.com' });
+    const allowed = browser.options.authMechanismProperties?.ALLOWED_HOSTS ?? [];
+    expect(allowed).toEqual(
+      expect.arrayContaining(['*.mongodb.net', 'cluster0.corp.example.com', '*.corp.example.com']),
+    );
+    const signIn = await oidcSignInOptions('p', browser.options);
+    expect(typeof signIn.authMechanismProperties?.OIDC_HUMAN_CALLBACK).toBe('function');
+    expect(() => new MongoClient(browser.url, signIn)).not.toThrow();
   });
 
   it('maps the four TLS modes', () => {

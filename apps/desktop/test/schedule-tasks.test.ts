@@ -286,6 +286,53 @@ describe('scheduled runs', () => {
     });
   });
 
+  it('export MongoDB collections to a new file, only on a MongoDB connection', async () => {
+    const { store, profile } = storeWith({
+      name: 'Shop Mongo',
+      engine: 'mongodb',
+      endpoint: { kind: 'host', host: 'localhost', port: 27017 },
+      auth: { method: 'none' },
+    });
+    const dir = folder();
+    const task: ScheduleTask = {
+      kind: 'export',
+      job: {
+        kind: 'mongo-export',
+        profileId: profile.id,
+        database: 'shop',
+        collections: ['orders'],
+        query: { filter: '{"status":"A"}' },
+        format: 'jsonl',
+        ejson: 'relaxed',
+        gzip: true,
+      },
+      outputKind: 'file',
+      output: { folder: dir, fileName: '{name}-{date}.jsonl.gz', keep: null },
+    };
+    const s = schedule(store, profile.id, task);
+    const { jobs, started } = fakeJobs();
+    const outcome = await executeSchedule({ store, jobs, now: () => at }, s);
+    expect(started[0]!.spec).toEqual({
+      ...task.job,
+      output: { kind: 'file', path: join(dir, 'Nightly-2026-09-30.jsonl.gz') },
+    });
+    expect(outcome).toMatchObject({
+      status: 'success',
+      outputs: [join(dir, 'Nightly-2026-09-30.jsonl.gz')],
+    });
+
+    // The same task on a SQL connection does not run.
+    const sql = storeWith();
+    const misplaced = schedule(sql.store, sql.profile.id, {
+      ...task,
+      job: { ...task.job, profileId: sql.profile.id },
+    });
+    expect(await executeSchedule({ store: sql.store, jobs }, misplaced)).toMatchObject({
+      status: 'failed',
+      message: 'A MongoDB export runs on a MongoDB connection',
+    });
+  });
+
   it('compare structure, writing the report only when something differs', async () => {
     const { store, profile } = storeWith();
     const other = store.profiles.save(profileInput({ name: 'Prod' }));

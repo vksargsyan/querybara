@@ -45,6 +45,8 @@ export {
   parseShellPipeline,
 } from './shell/parser';
 export type { ShellParseOptions } from './shell/parser';
+export { splitScript, statementAt } from './shell/script';
+export type { ScriptStatement } from './shell/script';
 
 export {
   collectionReference,
@@ -66,6 +68,14 @@ export type {
 } from './schema';
 
 export { cellText, containerSummary, tableView, valueAtPath, withValueAt } from './table';
+export {
+  VALUE_EDIT_LABELS,
+  VALUE_EDIT_TYPES,
+  parseValueEdit,
+  valueEditText,
+  valueEditType,
+} from './value-edit';
+export type { ValueEditType } from './value-edit';
 export type {
   DocumentPath,
   TableCell,
@@ -101,6 +111,29 @@ export type { CodeExportLanguage } from './codegen/export';
 export type { CodeExportOptions, CodeLanguage, ExportTarget } from './codegen/common';
 
 export { commandSafety } from './commands';
+export { copiedIndexes, indexSpecOf } from './index-spec';
+export {
+  GENERATOR_KINDS,
+  SeededRandom,
+  compileGenerator,
+  defaultGeneratorRules,
+  generateDocuments,
+} from './generate';
+export type { GenerateOptions, GeneratorKind, GeneratorRule } from './generate';
+export {
+  RESHAPE_ACTIONS,
+  RESHAPE_OUTPUT_MODES,
+  RESHAPE_TYPES,
+  outputStage,
+  reshapeStages,
+} from './reshape';
+export type {
+  ReshapeAction,
+  ReshapeOptions,
+  ReshapeOutputMode,
+  ReshapeRule,
+  ReshapeType,
+} from './reshape';
 export type { CommandSafety } from './commands';
 
 export type * from './wire';

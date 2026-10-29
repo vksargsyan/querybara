@@ -1,15 +1,21 @@
+import { join } from 'node:path';
+import { Worker } from 'node:worker_threads';
+
 import { QuerybaraError, toErrorData, type ResolvedProfile } from '@querybara/core';
+import type { ShellWorkerHandle } from '@querybara/driver-mongodb';
 import { fromElectronPort } from '@querybara/ipc';
 import {
   TransportManager,
   checkConnectionThroughTransport,
   connectThroughTransport,
+  tunnelledProfile,
 } from '@querybara/tunnel';
 
 import { mainToHostSchema, type HostRequest, type HostToMain } from '../shared/host-protocol';
 import { loadAdapter } from './adapters';
 import { ConnectionHost } from './host';
 import { HostKeyBridge } from './host-keys';
+import { shellPolicy, shellProfile, type OpenedShell } from './mongo-shell';
 
 /**
  * Connection host entry (spec §3): an Electron utilityProcess started by main for one open
@@ -53,6 +59,66 @@ async function runRequest(requestId: string, request: HostRequest): Promise<void
 }
 const transports = new TransportManager({ hostKeyVerifier: hostKeys.verifier });
 
+/** Starts an IntelliShell's worker thread (the mongo-shell entry, built next to this file). */
+function spawnShellWorker(): ShellWorkerHandle {
+  const worker = new Worker(join(__dirname, 'mongo-shell.cjs'));
+  return {
+    port: {
+      postMessage: (message) => worker.postMessage(message),
+      on: (_event, listener) => worker.on('message', listener),
+      close: () => undefined,
+    },
+    terminate: async () => {
+      await worker.terminate();
+    },
+    onExit: (listener) => {
+      let ended = false;
+      const end = (error?: Error): void => {
+        if (ended) return;
+        ended = true;
+        listener(error);
+      };
+      worker.once('error', end);
+      worker.once('exit', (code) =>
+        end(code === 0 ? undefined : new Error(`the thread exited with code ${code}`)),
+      );
+    },
+  };
+}
+
+/**
+ * Starts an IntelliShell on the profile: through the process's transport (the tunnel's shared
+ * SSH session, or the proxy), with its own MongoDB connection in a worker thread.
+ */
+async function openShell(
+  resolved: ResolvedProfile,
+  database: string | undefined,
+): Promise<OpenedShell> {
+  const { ShellClient } = await import('@querybara/driver-mongodb');
+  const transport = await transports.open(resolved);
+  try {
+    const client = await ShellClient.start({
+      spawn: spawnShellWorker,
+      resolved: shellProfile(transport ? tunnelledProfile(resolved, transport) : resolved),
+      database,
+      policy: shellPolicy(resolved.profile),
+    });
+    return {
+      client,
+      close: async () => {
+        try {
+          await client.close();
+        } finally {
+          await transport?.close();
+        }
+      },
+    };
+  } catch (error) {
+    await transport?.close().catch(() => undefined);
+    throw error;
+  }
+}
+
 async function connect(resolved: ResolvedProfile): Promise<void> {
   try {
     const adapter = await loadAdapter(resolved.profile.engine);
@@ -60,6 +126,7 @@ async function connect(resolved: ResolvedProfile): Promise<void> {
       open: (profile) => connectThroughTransport(adapter, profile, transports),
       // The tunnel dropped after `ready`: main restarts this host, which reopens it.
       onTransportLost: (error) => send({ type: 'failed', error: toErrorData(error) }),
+      openShell: (database) => openShell(resolved, database),
     });
     const info = await started.start();
     host = started;

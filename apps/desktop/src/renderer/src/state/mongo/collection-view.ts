@@ -1,13 +1,18 @@
 import { QuerybaraError, requiresWriteConfirmation } from '@querybara/core';
-import type { MongoExplainResult } from '@querybara/ipc';
+import type { MongoExplainResult, MongoSavedPipeline } from '@querybara/ipc';
 import {
+  collectionReference,
   formatShellInline,
   fromEjson,
   isBsonDocument,
   toEjson,
   toFindQuery,
+  withValueAt,
   type BsonDocument,
+  type BsonValue,
+  type DocumentPath,
   type ExplainVerbosity,
+  type FindQuery,
   type Namespace,
   type QueryModel,
 } from '@querybara/mongo-tools';
@@ -16,12 +21,14 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 
 import { errorInfo, errorMessage } from '../../lib/errors';
 import { formatCount } from '../../lib/format';
-import { profileById } from '../data';
+import { mainApi } from '../../lib/main-client';
+import { profileById, queryClient } from '../data';
 import { confirm } from '../dialogs';
 import { patchPanel } from '../panels';
 import { SessionLane } from '../session-lane';
 import { BulkFlow, bulkState, type BulkKind, type BulkState } from './bulk-flow';
 import type { CodeExportRequest } from './code-export';
+import { insertedDocument, recordChange } from './collection-history';
 import { EditorFlow, cloneState, editState, insertState, type EditorState } from './editor-flow';
 import { namespaceReference } from './explorer';
 import {
@@ -42,8 +49,8 @@ import { DocumentResults, type ResultMode } from './results';
 /**
  * One collection view (spec §9, "Browsing and editing"): the query bar, the documents one page
  * at a time as Navicat pages them (state/mongo/pages.ts), counts (the collection's estimate, the exact number
- * of matches on demand), the tree, table and JSON views, the document editor, bulk update and
- * delete by the current filter, and explain. Everything runs on the view's own session. The
+ * of matches on demand), the table, tree and JSON views, the query as code, the document editor,
+ * bulk update and delete by the current filter, and explain: Studio 3T's collection tab (ADR 0036). Everything runs on the view's own session. The
  * write rules follow the profile as the SQL table view's do: a read-only profile edits nothing,
  * a production one confirms every write, and bulk writes always confirm their matched count.
  */
@@ -57,6 +64,7 @@ export interface CollectionTarget {
 }
 
 const PAGE_SIZE_KEY = 'querybara.mongo.pageSize';
+const VIEW_KEY = 'querybara.mongo.view';
 
 /** The page size last chosen, kept in this browser profile (a convenience, not a setting). */
 function readPageSize(): number {
@@ -78,7 +86,26 @@ function savePageSize(size: number): void {
   }
 }
 
-export type ViewTab = ResultMode | 'explain';
+/** The result view last chosen (Table View, as Studio 3T opens, until another is picked). */
+function readView(): ResultMode {
+  try {
+    const stored = localStorage.getItem(VIEW_KEY);
+    return stored === 'tree' || stored === 'json' ? stored : 'table';
+  } catch {
+    return 'table';
+  }
+}
+
+function saveView(mode: ResultMode): void {
+  try {
+    localStorage.setItem(VIEW_KEY, mode);
+  } catch {
+    // Not kept: the next view starts with Table View.
+  }
+}
+
+/** The collection tab's sections, as Studio 3T's: Result, Query Code and Explain. */
+export type ViewSection = 'result' | 'code' | 'explain';
 
 export interface ExplainState {
   readonly verbosity: ExplainVerbosity;
@@ -116,7 +143,7 @@ export interface CollectionViewState {
   /** Documents matching the active filter, counted on demand. */
   readonly exactCount: number | undefined;
   readonly counting: boolean;
-  readonly tab: ViewTab;
+  readonly section: ViewSection;
   readonly explain: ExplainState | undefined;
   readonly notice: Notice | undefined;
   readonly readOnlyProfile: boolean;
@@ -125,13 +152,23 @@ export interface CollectionViewState {
   readonly confirmWrites: boolean;
   readonly editor: OpenEditor | undefined;
   readonly bulk: BulkState | undefined;
+  /** The collection's saved queries (Studio 3T's, ADR 0036), ordered by name. */
+  readonly saved: readonly MongoSavedPipeline[];
+}
+
+/** A query run before on the collection, from the query history. */
+export interface PastQuery {
+  readonly id: string;
+  readonly text: string;
+  readonly at: string;
+  readonly failed: boolean;
 }
 
 export class CollectionView {
   readonly id: string;
   readonly target: CollectionTarget;
   readonly store: StoreApi<CollectionViewState>;
-  readonly results = new DocumentResults({ mode: 'tree' });
+  readonly results = new DocumentResults({ mode: readView() });
   /** The visual query builder, the query bar's second editor. */
   readonly builder: QueryBuilder;
   readonly #lane: SessionLane;
@@ -159,7 +196,7 @@ export class CollectionView {
       estimate: undefined,
       exactCount: undefined,
       counting: false,
-      tab: 'tree',
+      section: 'result',
       explain: undefined,
       notice: undefined,
       readOnlyProfile: false,
@@ -167,6 +204,7 @@ export class CollectionView {
       confirmWrites: false,
       editor: undefined,
       bulk: undefined,
+      saved: [],
     }));
     this.#lane = new SessionLane(target.profileId, target.db);
     this.builder = new QueryBuilder({
@@ -246,16 +284,10 @@ export class CollectionView {
     });
   }
 
-  /**
-   * The query in the bar as code export takes it; undefined, with a notice, while a field does
-   * not parse.
-   */
-  exportRequest(): CodeExportRequest | undefined {
+  /** The query in the bar as code export takes it; undefined while a field does not parse. */
+  codeRequest(): CodeExportRequest | undefined {
     const s = this.state;
-    if (s.findIssue || Object.keys(s.issues).length > 0) {
-      this.#set({ notice: { kind: 'error', text: 'Fix the query first.' } });
-      return undefined;
-    }
+    if (s.findIssue || Object.keys(s.issues).length > 0) return undefined;
     try {
       return {
         target: {
@@ -265,9 +297,40 @@ export class CollectionView {
         },
         database: this.target.db,
       };
-    } catch (error) {
-      this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
+    } catch {
       return undefined;
+    }
+  }
+
+  /** `codeRequest`, saying what to fix in a notice when there is none. */
+  exportRequest(): CodeExportRequest | undefined {
+    const request = this.codeRequest();
+    if (!request) this.#set({ notice: { kind: 'error', text: 'Fix the query first.' } });
+    return request;
+  }
+
+  /**
+   * What Export… takes from the tab (ADR 0037): the collection, and the query in the bar to
+   * export just what it finds. Without a valid query, the whole collection.
+   */
+  fileExport(): {
+    readonly profileId: string;
+    readonly db: string;
+    readonly collections: readonly string[];
+    readonly query?: { collection: string; query: FindQuery; text: string };
+  } {
+    const s = this.state;
+    const base = {
+      profileId: this.target.profileId,
+      db: this.target.db,
+      collections: [this.target.collection],
+    };
+    if (s.findIssue || Object.keys(s.issues).length > 0) return base;
+    try {
+      const query = toFindQuery(modelOf(s.fields, s.extras));
+      return { ...base, query: { collection: this.target.collection, query, text: s.findText } };
+    } catch {
+      return base;
     }
   }
 
@@ -298,8 +361,11 @@ export class CollectionView {
   // -------------------------------------------------------------------------------------------
   // Running and paging
 
-  /** Runs the query in the bar from the first page; problems are shown instead of running. */
-  async run(): Promise<void> {
+  /**
+   * Runs the query in the bar from the first page; problems are shown instead of running. With
+   * `one`, only its first document (Studio 3T's findOne(…)).
+   */
+  async run(options: { readonly one?: boolean } = {}): Promise<void> {
     const s = this.state;
     const pending = this.builder.pendingIssue();
     if (s.findIssue || Object.keys(s.issues).length > 0 || pending !== undefined) {
@@ -318,18 +384,152 @@ export class CollectionView {
       this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
       return;
     }
+    if (options.one) model = { ...model, limit: 1 };
     this.#count?.abort();
     this.#set({
       active: model,
       exactCount: undefined,
       notice: undefined,
       explain: undefined,
-      tab: s.tab === 'explain' ? this.results.state.mode : s.tab,
+      section: 'result',
     });
     const started = performance.now();
+    const text = s.findText;
     const shown = await this.#loadPage(1);
-    if (shown) this.#set({ durationMs: Math.round(performance.now() - started) });
+    const durationMs = Math.round(performance.now() - started);
+    if (shown) this.#set({ durationMs });
+    // A run a later one replaced is not recorded; a failed one is.
+    const failed = this.results.state.error;
+    if (shown || failed !== undefined) {
+      void this.#record(text, failed, durationMs, this.results.state.documents.length);
+    }
     void this.#refreshEstimate();
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Query history and saved queries (Studio 3T's, ADR 0036)
+
+  /** The prefix of this collection's find() text, which its history entries start with. */
+  #findPrefix(): string {
+    return `${collectionReference(this.target.collection)}.find(`;
+  }
+
+  /** Records a run in the app's query history; a run never fails because it could not. */
+  async #record(
+    text: string,
+    error: string | undefined,
+    durationMs: number,
+    rowCount: number,
+  ): Promise<void> {
+    if (text.trim() === '') return;
+    try {
+      await mainApi().history.add({
+        profileId: this.target.profileId,
+        database: this.target.db,
+        text,
+        status: error === undefined ? 'success' : 'error',
+        error: error ?? null,
+        durationMs,
+        rowCount,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['history'] });
+    } catch {
+      // Best effort, as IntelliShell's.
+    }
+  }
+
+  /** The collection's recent queries, newest first, without repeats. */
+  async queryHistory(limit = 30): Promise<PastQuery[]> {
+    const prefix = this.#findPrefix();
+    const page = await mainApi().history.search({
+      query: prefix.slice(0, -1),
+      profileId: this.target.profileId,
+      limit: 200,
+    });
+    const seen = new Set<string>();
+    const out: PastQuery[] = [];
+    for (const entry of page.entries) {
+      if (entry.database !== this.target.db || !entry.text.startsWith(prefix)) continue;
+      if (seen.has(entry.text)) continue;
+      seen.add(entry.text);
+      out.push({
+        id: entry.id,
+        text: entry.text,
+        at: entry.executedAt,
+        failed: entry.status === 'error',
+      });
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  /** Puts a past or saved find() back in the query bar and runs it. */
+  async reuse(text: string): Promise<void> {
+    this.setFindText(text);
+    if (this.state.findIssue) {
+      this.#set({ notice: { kind: 'error', text: 'That query no longer parses here.' } });
+      return;
+    }
+    await this.run();
+  }
+
+  #scope() {
+    return {
+      profileId: this.target.profileId,
+      db: this.target.db,
+      collection: this.target.collection,
+    };
+  }
+
+  async refreshSaved(): Promise<void> {
+    try {
+      this.#set({ saved: await mainApi().mongo.queries.list(this.#scope()) });
+    } catch (error) {
+      this.#set({ notice: { kind: 'error', text: `Saved queries: ${errorMessage(error)}` } });
+    }
+  }
+
+  /** Saves the query in the bar under `name`, over a saved query of that name if there is one. */
+  async saveQuery(name: string): Promise<boolean> {
+    const trimmed = name.trim();
+    if (trimmed === '') return false;
+    if (this.state.findIssue || Object.keys(this.state.issues).length > 0) {
+      this.#set({ notice: { kind: 'error', text: 'Fix the query first.' } });
+      return false;
+    }
+    const existing = this.state.saved.find((query) => query.name === trimmed);
+    try {
+      const saved = await mainApi().mongo.queries.save({
+        ...this.#scope(),
+        ...(existing ? { id: existing.id } : {}),
+        name: trimmed,
+        text: this.state.findText,
+      });
+      this.#set({ notice: { kind: 'success', text: `Saved as "${saved.name}"` } });
+      await this.refreshSaved();
+      return true;
+    } catch (error) {
+      this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
+      return false;
+    }
+  }
+
+  async deleteSaved(id: string): Promise<void> {
+    const entry = this.state.saved.find((query) => query.id === id);
+    if (!entry) return;
+    const ok = await confirm({
+      title: `Delete the saved query "${entry.name}"?`,
+      message: 'The query in the bar stays; only the saved copy goes.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await mainApi().mongo.queries.delete({ id });
+      await this.refreshSaved();
+    } catch (error) {
+      this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
+    }
   }
 
   /**
@@ -460,9 +660,15 @@ export class CollectionView {
     this.#set({ counting: false });
   }
 
-  setTab(tab: ViewTab): void {
-    if (tab !== 'explain') this.results.setMode(tab);
-    this.#set({ tab });
+  setSection(section: ViewSection): void {
+    this.#set({ section });
+  }
+
+  /** Table, Tree or JSON View (kept for the next collection tab); shows the result. */
+  setView(mode: ResultMode): void {
+    this.results.setMode(mode);
+    saveView(mode);
+    this.#set({ section: 'result' });
   }
 
   dismissNotice(): void {
@@ -487,7 +693,7 @@ export class CollectionView {
       return;
     }
     this.#set({
-      tab: 'explain',
+      section: 'explain',
       explain: { verbosity, loading: true, result: undefined, error: undefined },
     });
     try {
@@ -582,7 +788,7 @@ export class CollectionView {
             `${this.#nsRef()}.replaceOne({ _id: ${this.#idText(id)} }, ${formatShellInline(fromEjson(replacement))})`,
           );
           if (!confirmed) throw new QuerybaraError({ code: 'CANCELLED', message: 'Not saved' });
-          return this.#lane.run((host, sessionId) =>
+          const summary = await this.#lane.run((host, sessionId) =>
             host.mongo.replaceOne({
               sessionId,
               ns: this.ns,
@@ -591,6 +797,8 @@ export class CollectionView {
               confirmed: this.state.confirmWrites,
             }),
           );
+          recordChange(this.target, { operation: 'update', before: original, after: replacement });
+          return summary;
         },
         insert: async (document) => {
           const confirmed = await this.#confirmWrite(
@@ -598,7 +806,7 @@ export class CollectionView {
             `${this.#nsRef()}.insertOne(${formatShellInline(fromEjson(document))})`,
           );
           if (!confirmed) throw new QuerybaraError({ code: 'CANCELLED', message: 'Not saved' });
-          return this.#lane.run((host, sessionId) =>
+          const result = await this.#lane.run((host, sessionId) =>
             host.mongo.insertOne({
               sessionId,
               ns: this.ns,
@@ -606,6 +814,11 @@ export class CollectionView {
               confirmed: this.state.confirmWrites,
             }),
           );
+          recordChange(this.target, {
+            operation: 'insert',
+            after: insertedDocument(document, result.insertedId),
+          });
+          return result;
         },
       },
       (next) => this.#set({ editor: { ...next, index: editIndex } }),
@@ -703,10 +916,15 @@ export class CollectionView {
       danger: true,
     });
     if (!ok) return;
+    // Recorded only as a whole document (not one read with a projection), so it can go back.
+    const before = this.editable ? this.results.state.documents[index] : undefined;
     try {
       const summary = await this.#lane.run((host, sessionId) =>
         host.mongo.deleteOne({ sessionId, ns: this.ns, id, confirmed: true }),
       );
+      if (summary.deletedCount > 0 && before !== undefined) {
+        recordChange(this.target, { operation: 'delete', before });
+      }
       if (summary.deletedCount > 0) this.results.removeAt(index);
       this.#set({
         notice: {
@@ -718,6 +936,99 @@ export class CollectionView {
     } catch (error) {
       this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
     }
+  }
+
+  /**
+   * Edits one value in place (Studio 3T's Table and Tree views, ADR 0036): the loaded document
+   * with `value` at `path` (undefined removes the field) replaces the stored one while that is
+   * still unchanged. On a conflict the view shows the current version and nothing is written.
+   * True when the value was saved.
+   */
+  async setValue(
+    index: number,
+    path: DocumentPath,
+    value: BsonValue | undefined,
+    what: 'edit' | 'remove' = 'edit',
+  ): Promise<boolean> {
+    if (this.#refuse()) return false;
+    if (!this.editable) {
+      this.#set({
+        notice: {
+          kind: 'error',
+          text: 'These documents were read with a projection; clear it to edit whole documents.',
+        },
+      });
+      return false;
+    }
+    const original = this.results.state.documents[index];
+    if (original === undefined || path.length === 0 || path[0] === '_id') {
+      this.#set({ notice: { kind: 'error', text: 'The _id of a document cannot change.' } });
+      return false;
+    }
+    let replacement: string;
+    try {
+      replacement = toEjson(withValueAt(fromEjson(original, 'document'), path, value));
+    } catch (error) {
+      this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
+      return false;
+    }
+    if (replacement === original) return true;
+    const id = toEjson((fromEjson(original) as BsonDocument)['_id']!);
+    const field = path.map(String).join('.');
+    const command = `${this.#nsRef()}.replaceOne({ _id: ${this.#idText(id)} }, ${formatShellInline(fromEjson(replacement))})`;
+    // Removing a field always asks; a value change asks where every write does.
+    const confirmed =
+      what === 'remove'
+        ? await confirm({
+            title: `Remove ${field}?`,
+            message: this.state.production
+              ? 'This connection is marked production. The field is removed from the stored document. This runs:'
+              : 'The field is removed from the stored document. This runs:',
+            detail: command,
+            confirmLabel: 'Remove',
+            danger: true,
+          })
+        : await this.#confirmWrite(`Save ${field}?`, command);
+    if (!confirmed) return false;
+    try {
+      await this.#lane.run((host, sessionId) =>
+        host.mongo.replaceOne({
+          sessionId,
+          ns: this.ns,
+          original,
+          replacement,
+          confirmed: this.state.confirmWrites,
+        }),
+      );
+      this.results.replaceAt(index, replacement);
+      recordChange(this.target, { operation: 'update', before: original, after: replacement });
+      this.#set({
+        notice: {
+          kind: 'success',
+          text: what === 'remove' ? `Removed ${field}` : `Saved ${field}`,
+        },
+      });
+      return true;
+    } catch (error) {
+      const info = errorInfo(error);
+      if (info.code === 'CONFLICT' && info.detail !== undefined) {
+        this.results.replaceAt(index, info.detail);
+        this.#set({
+          notice: {
+            kind: 'error',
+            text: 'The document changed since it was read, so it was not saved; it now shows the current version.',
+          },
+        });
+      } else {
+        this.#set({ notice: { kind: 'error', text: errorMessage(error) } });
+      }
+      return false;
+    }
+  }
+
+  /** Removes a field (or an array element) of a loaded document, after a confirmation. */
+  removeField(index: number, path: DocumentPath): Promise<boolean> {
+    return this.setValue(index, path, undefined, 'remove');
   }
 
   // -------------------------------------------------------------------------------------------

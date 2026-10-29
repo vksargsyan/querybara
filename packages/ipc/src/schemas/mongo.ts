@@ -29,6 +29,12 @@ import type {
   SchemaAnalysisOptions,
   SchemaField,
   ServerStatusSummary,
+  ShellCursorQuery,
+  ShellEvent,
+  ShellInfo,
+  ShellPromptAnswer,
+  ShellStatementRange,
+  ShellValue,
   StagePreview,
   TimeSeriesOptions,
   TopEntry,
@@ -619,6 +625,35 @@ export const mongoPipelineScopeSchema = z.object({
  * a saved query of the local store. `text` is the editor's pipeline text in mongosh syntax,
  * disabled stages included as `//` comments.
  */
+/** The largest document version a change keeps (MongoDB's 16 MB, as Extended JSON). */
+const changeDocumentSchema = z.string().min(2).max(32_000_000);
+
+/**
+ * A document changed through the MongoDB views (ADR 0041), as the collection history keeps it:
+ * canonical Extended JSON of its `_id`, and of the document before (null for an insert) and
+ * after (null for a delete).
+ */
+export const mongoCollectionChangeSchema = z.object({
+  id: idSchema,
+  operation: z.enum(['insert', 'update', 'delete']),
+  documentId: z.string().min(1).max(4096),
+  before: changeDocumentSchema.nullable(),
+  after: changeDocumentSchema.nullable(),
+  changedAt: z.string(),
+  revertedAt: z.string().nullable(),
+});
+export type MongoCollectionChange = z.infer<typeof mongoCollectionChangeSchema>;
+
+/** A change to record, in a collection. */
+export const mongoRecordChangeInputSchema = mongoPipelineScopeSchema.extend(
+  mongoCollectionChangeSchema.pick({
+    operation: true,
+    documentId: true,
+    before: true,
+    after: true,
+  }).shape,
+);
+
 export const mongoSavedPipelineSchema = z.object({
   id: idSchema,
   name: z.string().trim().min(1).max(200),
@@ -642,3 +677,109 @@ export const mongoWriteTextInputSchema = z.object({
   path: z.string().min(1).max(4096),
   text: z.string().max(EXPORT_TEXT_LIMIT),
 });
+
+// ---------------------------------------------------------------------------------------------
+// IntelliShell: the embedded mongosh (ADR 0036)
+
+/** A shell's id, given by `shell.open`. */
+export const mongoShellIdSchema = idSchema;
+
+export const mongoShellInfoSchema: z.ZodType<ShellInfo, ShellInfo> = z.object({
+  database: nameSchema,
+  mongoshVersion: z.string(),
+  serverVersion: z.string(),
+});
+
+const shellCursorQuerySchema: z.ZodType<ShellCursorQuery, ShellCursorQuery> = z.discriminatedUnion(
+  'kind',
+  [
+    z.object({ kind: z.literal('find'), query: mongoFindQuerySchema }),
+    z.object({ kind: z.literal('aggregate'), pipeline: ejsonSchema }),
+  ],
+);
+
+export const mongoShellValueSchema: z.ZodType<ShellValue, ShellValue> = z.discriminatedUnion(
+  'kind',
+  [
+    z.object({
+      kind: z.literal('cursor'),
+      resultId: idSchema,
+      cursorType: z.enum(['find', 'aggregate', 'command', 'changeStream']),
+      ns: mongoNamespaceSchema.optional(),
+      query: shellCursorQuerySchema.optional(),
+      documents: z.array(ejsonSchema),
+      hasMore: z.boolean(),
+      exactTypes: z.boolean(),
+    }),
+    z.object({
+      kind: z.literal('documents'),
+      documents: z.array(ejsonSchema),
+      single: z.boolean(),
+      ns: mongoNamespaceSchema.optional(),
+    }),
+    z.object({ kind: z.literal('text'), text: z.string(), shellType: z.string().nullable() }),
+    z.object({ kind: z.literal('none') }),
+  ],
+);
+
+const statementRangeShape = {
+  index: countSchema,
+  start: countSchema,
+  end: countSchema,
+  line: z.number().int().positive(),
+};
+
+const statementRangeSchema: z.ZodType<ShellStatementRange, ShellStatementRange> =
+  z.object(statementRangeShape);
+
+export const mongoShellEventSchema: z.ZodType<ShellEvent, ShellEvent> = z.discriminatedUnion(
+  'type',
+  [
+    z.object({ type: z.literal('statement'), ...statementRangeShape }),
+    z.object({ type: z.literal('print'), text: z.string(), stream: z.enum(['out', 'error']) }),
+    z.object({
+      type: z.literal('result'),
+      ...statementRangeShape,
+      source: z.string(),
+      value: mongoShellValueSchema,
+      durationMs: z.number().nonnegative(),
+    }),
+    z.object({
+      type: z.literal('more'),
+      resultId: idSchema,
+      documents: z.array(ejsonSchema),
+      hasMore: z.boolean(),
+    }),
+    z.object({
+      type: z.literal('error'),
+      message: z.string(),
+      name: z.string().optional(),
+      code: z.union([z.number(), z.string()]).optional(),
+      codeName: z.string().optional(),
+      position: countSchema.optional(),
+      statement: statementRangeSchema.optional(),
+    }),
+    z.object({
+      type: z.literal('prompt'),
+      promptId: idSchema,
+      kind: z.enum(['write', 'destructive', 'password', 'confirm']),
+      question: z.string(),
+      operation: z.string().optional(),
+    }),
+    z.object({ type: z.literal('database'), name: nameSchema }),
+    z.object({ type: z.literal('clear') }),
+    z.object({
+      type: z.literal('end'),
+      status: z.enum(['success', 'error', 'cancelled']),
+      durationMs: z.number().nonnegative(),
+      ran: countSchema,
+    }),
+  ],
+);
+
+export const mongoShellPromptAnswerSchema: z.ZodType<ShellPromptAnswer, ShellPromptAnswer> =
+  z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('allow'), scope: z.enum(['once', 'run']) }),
+    z.object({ kind: z.literal('deny') }),
+    z.object({ kind: z.literal('text'), text: z.string().max(10_000) }),
+  ]);

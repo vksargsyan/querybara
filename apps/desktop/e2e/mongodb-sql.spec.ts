@@ -111,7 +111,7 @@ test('connects and shows the scratch database', async () => {
 });
 
 test('translates a SELECT as it is typed and runs it as a find()', async () => {
-  await treeMenu(db, 'New SQL query');
+  await treeMenu(db, 'Open SQL');
   const tab = visible('mongo-sql');
   await expect(tab).toBeVisible();
   await replaceText(
@@ -176,12 +176,11 @@ test('opens a find() in the collection view with its query', async () => {
   await expect(collection.getByTestId('mongo-limit')).toHaveValue('4');
 });
 
-test('exports the collection view query as Python and saves it', async () => {
+test('exports the collection view query as Python in its Query Code section, and saves it', async () => {
   const collection = visible('mongo-collection-panel');
-  await collection.getByRole('button', { name: 'Export code…' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Export code' });
+  await collection.getByRole('tab', { name: 'Query Code' }).click();
+  const dialog = collection.getByTestId('code-export');
   await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText(`${db}.orders · find()`);
   await dialog.getByRole('radio', { name: 'Python' }).click();
   await expect(dialog.getByTestId('code-export-install')).toHaveText('pip install pymongo');
   const code = dialog.getByTestId('code-export-editor');
@@ -195,14 +194,14 @@ test('exports the collection view query as Python and saves it', async () => {
   const saved = readFileSync(file, 'utf8');
   expect(saved).toContain('from pymongo import MongoClient');
   expect(saved).toContain('"team": "web"');
-  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await collection.getByRole('tab', { name: 'Result' }).click();
   await expect(dialog).toBeHidden();
 });
 
 test("opens a collection's SQL tab with a starter query, and exports a translation", async () => {
   const collection = visible('mongo-collection-panel');
-  await collection.getByRole('button', { name: 'Tools' }).click();
-  await page.getByRole('menuitem', { name: /^SQL/ }).click();
+  await collection.getByRole('button', { name: 'Open query in…' }).click();
+  await page.getByRole('menuitem', { name: /^SQL Query/ }).click();
   const tab = page.getByTestId('mongo-sql').filter({ visible: true });
   await expect(tab.getByTestId('mongo-sql-editor')).toContainText('FROM orders');
   await expect(tab.getByTestId('mongo-sql-mql')).toContainText('.limit(100)');
@@ -213,11 +212,14 @@ test("opens a collection's SQL tab with a starter query, and exports a translati
     'aria-checked',
     'true',
   );
-  await dialog.getByRole('radio', { name: 'Go' }).click();
+  await dialog.getByRole('radio', { name: 'Go', exact: true }).click();
   await expect(dialog.getByTestId('code-export-install')).toHaveText(
     'go get go.mongodb.org/mongo-driver/v2/mongo',
   );
   await expect(dialog.getByTestId('code-export-editor')).toContainText('package main');
+  await dialog.getByRole('radio', { name: 'mongosh', exact: true }).click();
+  await expect(dialog.getByTestId('code-export-install')).toHaveText('npm install -g mongosh');
+  await expect(dialog.getByTestId('code-export-editor')).toContainText('db.getSiblingDB(');
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 });

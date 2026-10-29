@@ -29,6 +29,7 @@ import {
 } from './tasks';
 import { inspectConnection, planTransferJob, runTransferJob, type Connector } from './transfer-db';
 import { answerBackupRequest, connectDatabase, isBackupRequest, runBackupTask } from './backup';
+import { runMongoExport, runMongoImport } from './mongo-files';
 import { analyzeRdbFile } from './rdb';
 
 /**
@@ -405,7 +406,11 @@ export class JobRunner {
             ? await runImport(job, run)
             : job.kind === 'export'
               ? await runExport(job, run)
-              : await runSqlFileJob(job, run);
+              : job.kind === 'mongo-export'
+                ? await runMongoExport(job, run)
+                : job.kind === 'mongo-import'
+                  ? await runMongoImport(job, run)
+                  : await runSqlFileJob(job, run);
     } catch (error) {
       const data: ErrorData =
         signal.aborted || cancelled(error)

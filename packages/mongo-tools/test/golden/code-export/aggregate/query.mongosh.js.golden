@@ -1,0 +1,25 @@
+// npm install -g mongosh
+// Set MONGODB_URI to your connection string, e.g. mongodb://localhost:27017, then run:
+// mongosh "$MONGODB_URI" --file query.mongosh.js
+db = db.getSiblingDB('shop');
+db.getCollection('order items').aggregate([
+  {
+    $match: {
+      status: 'A',
+      at: { $gte: ISODate('2024-01-01T00:00:00.000Z') },
+      price: { $gt: Decimal128('9.99') }
+    }
+  },
+  {
+    $group: {
+      _id: '$cust',
+      total: { $sum: '$amount' },
+      n: { $sum: 1 },
+      avg: { $avg: Double(1) }
+    }
+  },
+  { $match: {} },
+  { $sort: { total: -1 } },
+  { $limit: 5 }
+])
+  .forEach((document) => printjson(document));

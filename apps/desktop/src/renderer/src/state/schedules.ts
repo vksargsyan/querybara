@@ -2,6 +2,7 @@ import { newId, type MissedRunPolicy, type ScheduleRule } from '@querybara/core'
 import type {
   BackupJob,
   ExportJob,
+  MongoExportJob,
   RunSqlFileJob,
   SavedComparison,
   ScheduleInfo,
@@ -263,10 +264,21 @@ export function whatOf(task: ScheduleTask, target: string): string {
       return `Back up ${target} as ${BACKUP_FORMATS[task.job.format] ?? task.job.format}${task.encrypted ? ', encrypted' : ''}`;
     case 'sql':
       return `Run ${task.job.path.split(/[\\/]/).pop() ?? task.job.path} on ${target}`;
-    case 'export':
-      return task.job.source.kind === 'query'
-        ? `Export a query on ${target} as ${formatName(task.job.format)}`
-        : `Export ${task.job.source.tables.length === 1 ? task.job.source.tables[0] : `${task.job.source.tables.length} tables`} of ${target} as ${formatName(task.job.format)}`;
+    case 'export': {
+      const { job } = task;
+      if (job.kind === 'mongo-export') {
+        const what =
+          job.query !== undefined
+            ? `a query on ${job.collections[0]}`
+            : job.collections.length === 1
+              ? job.collections[0]
+              : `${job.collections.length} collections`;
+        return `Export ${what} of ${target} as ${formatName(job.format)}`;
+      }
+      return job.source.kind === 'query'
+        ? `Export a query on ${target} as ${formatName(job.format)}`
+        : `Export ${job.source.tables.length === 1 ? job.source.tables[0] : `${job.source.tables.length} tables`} of ${target} as ${formatName(job.format)}`;
+    }
     case 'comparison':
       return `Run the comparison ${target}`;
   }
@@ -330,6 +342,31 @@ export function exportDraft(
     comparisonId: null,
     task,
     what: whatOf(task, target.profileName),
+  };
+}
+
+/** A MongoDB export (ADR 0037) on a schedule: a new file, or folder, each run. */
+export function mongoExportDraft(
+  job: MongoExportJob,
+  target: { readonly profileName: string; readonly database: string },
+  name: string,
+  folder = '',
+): ScheduleDraft {
+  const { output, ...rest } = job;
+  const extension = output.kind === 'directory' ? '' : fileExtension(output.path);
+  const task: ScheduleTask = {
+    kind: 'export',
+    job: rest,
+    outputKind: output.kind,
+    output: { folder, fileName: `{name}-{date}-{time}${extension}`, keep: 14 },
+  };
+  return {
+    ...base,
+    name,
+    profileId: job.profileId,
+    comparisonId: null,
+    task,
+    what: whatOf(task, `${target.profileName} · ${target.database}`),
   };
 }
 

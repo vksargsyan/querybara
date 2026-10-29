@@ -6,6 +6,7 @@ import {
   CONNECTIONS_FILE_LIMIT,
   applyConnectionsImport,
   connectionsFileFormat,
+  connectionsFileNeedsPassphrase,
   existingProfileFor,
   exportConnections,
   readConnectionsFile,
@@ -19,8 +20,8 @@ import type { FileGrants } from './jobs-api';
 type ProfileHandlers = HandlersOf<typeof mainContract>['profiles'];
 
 /**
- * Importing and exporting connections in the desktop app (spec §4): a Querybara export, or a
- * Navicat `.ncx` file. The file is read in main, so the secrets it holds never reach the
+ * Importing and exporting connections in the desktop app (spec §4): a Querybara export, a
+ * Navicat `.ncx` file, a MongoDB Compass export or Robo 3T's settings. The file is read in main, so the secrets it holds never reach the
  * renderer: `inspectFile` sends the profiles and a count of their secrets, and `importFile`
  * reads the file again to save the entries the user chose. Files are only those the window
  * picked in a dialog.
@@ -39,7 +40,7 @@ export function profileFileHandlers(
       files.checkRead(path);
       const data = await readLimited(path);
       const format = connectionsFileFormat(data);
-      if (format === 'querybara' && !passphrase) {
+      if (format !== undefined && connectionsFileNeedsPassphrase(data) && !passphrase) {
         return { format, locked: true, entries: [], skipped: [] };
       }
       const file = readConnectionsFile(data, passphrase ? { passphrase } : {});

@@ -531,9 +531,24 @@ function buildMysql(engine: 'mysql' | 'mariadb', parts: UriParts, params: Params
 }
 
 /** Mechanisms whose credentials live in the `$external` database. */
-const EXTERNAL_MECHANISMS = new Set(['MONGODB-X509', 'PLAIN', 'GSSAPI', 'MONGODB-OIDC']);
+const EXTERNAL_MECHANISMS = new Set([
+  'MONGODB-X509',
+  'PLAIN',
+  'GSSAPI',
+  'MONGODB-OIDC',
+  'MONGODB-AWS',
+]);
 /** Mechanisms the profile's auth can express. */
-const MAPPED_MECHANISMS = new Set(['SCRAM-SHA-1', 'SCRAM-SHA-256', 'PLAIN', 'MONGODB-X509']);
+const MAPPED_MECHANISMS = new Set([
+  'SCRAM-SHA-1',
+  'SCRAM-SHA-256',
+  'PLAIN',
+  'MONGODB-X509',
+  'MONGODB-AWS',
+  'MONGODB-OIDC',
+]);
+/** The workloads whose identity MONGODB-OIDC can sign in with (its ENVIRONMENT property). */
+const OIDC_ENVIRONMENTS = connectionOptionsSchema.shape.oidcEnvironment.unwrap().options;
 /** Read preference modes a profile holds, in the driver's spelling. */
 const READ_PREFERENCES = connectionOptionsSchema.shape.readPreference.unwrap().options;
 /** A session token among authMechanismProperties' key:value pairs. */
@@ -581,7 +596,18 @@ function buildMongo(parts: UriParts, params: Params): BuiltProfile {
   });
 
   // Options the profile holds in its own fields; a URI kept whole carries them itself.
-  const lifted: Pick<OptionsDraft, 'authSource' | 'readPreference' | 'directConnection'> = {};
+  const lifted: Pick<
+    OptionsDraft,
+    'authSource' | 'readPreference' | 'directConnection' | 'oidcEnvironment' | 'oidcAudience'
+  > = {};
+  const oidc =
+    mechanism === 'MONGODB-OIDC'
+      ? oidcProperties(params.peek('authMechanismProperties'))
+      : undefined;
+  if (oidc) {
+    params.take('authMechanismProperties');
+    Object.assign(lifted, oidc);
+  }
   // The profile's default is $external for certificate and LDAP logins, admin otherwise;
   // stating it where the URI names no database (or for an external login) changes nothing.
   const profileAuthSource = external ? '$external' : 'admin';
@@ -611,7 +637,8 @@ function buildMongo(parts: UriParts, params: Params): BuiltProfile {
   const auth: AuthDraft | undefined =
     mechanism === 'MONGODB-X509'
       ? { method: 'clientCertificate', ...(user ? { user } : {}) }
-      : passwordAuth(user, password, mechanism);
+      : // OIDC signs in at the identity provider: a URI's password is not kept.
+        passwordAuth(user, mechanism === 'MONGODB-OIDC' ? undefined : password, mechanism);
 
   const hosts = parts.hosts;
   const [first] = hosts;
@@ -650,9 +677,38 @@ function buildMongo(parts: UriParts, params: Params): BuiltProfile {
     auth,
     tls,
     options: keepsUri ? options : { ...lifted, ...options },
-    // X.509 authenticates with the certificate, so a URI's password is not kept.
-    password: auth?.method === 'password' ? password : undefined,
+    // X.509 authenticates with the certificate, and OIDC at the identity provider, so a URI's
+    // password is not kept.
+    password: auth?.method === 'password' && mechanism !== 'MONGODB-OIDC' ? password : undefined,
   };
+}
+
+/**
+ * MONGODB-OIDC's properties as the profile holds them: the workload (ENVIRONMENT) and the
+ * token's audience (TOKEN_RESOURCE). Undefined when there are none or others the profile cannot
+ * hold, which the URI then keeps.
+ */
+function oidcProperties(
+  value: string | undefined,
+): Pick<OptionsDraft, 'oidcEnvironment' | 'oidcAudience'> | undefined {
+  if (value === undefined || value === '') return undefined;
+  const out: Pick<OptionsDraft, 'oidcEnvironment' | 'oidcAudience'> = {};
+  for (const pair of value.split(',')) {
+    const colon = pair.indexOf(':');
+    const key = pair.slice(0, colon).trim();
+    const property = pair.slice(colon + 1).trim();
+    if (colon === -1 || property === '') return undefined;
+    if (key === 'ENVIRONMENT') {
+      const environment = OIDC_ENVIRONMENTS.find((known) => known === property);
+      if (environment === undefined) return undefined;
+      out.oidcEnvironment = environment;
+    } else if (key === 'TOKEN_RESOURCE') {
+      out.oidcAudience = property;
+    } else {
+      return undefined;
+    }
+  }
+  return out;
 }
 
 function buildRedis(parts: UriParts, params: Params): BuiltProfile {

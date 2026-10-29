@@ -4,7 +4,7 @@ import 'monaco-editor/languages/definitions/java/register';
 import 'monaco-editor/languages/definitions/php/register';
 import 'monaco-editor/languages/definitions/python/register';
 import { CODE_EXPORT_LANGUAGES, type CodeLanguage } from '@querybara/mongo-tools';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { copyToClipboard } from '../../lib/clipboard';
 import { errorMessage } from '../../lib/errors';
@@ -25,7 +25,8 @@ import { ShellEditor } from './ShellEditor';
 /**
  * The code export dialog (spec §9, "Query tools"): the query as a complete program in the
  * language picked, highlighted, with the official driver and how to install it; Copy puts the
- * program on the clipboard and Save as writes it where the user picks.
+ * program on the clipboard and Save as writes it where the user picks. The collection tab shows
+ * the same view inline as its Query Code section (ADR 0036).
  */
 export function CodeExportDialog(props: {
   /** What to export; the dialog is closed while undefined. */
@@ -43,12 +44,19 @@ export function CodeExportDialog(props: {
       {...(request ? { description: exportSubject(request) } : {})}
       width="w-[min(860px,94vw)]"
     >
-      {request && <ExportBody request={request} onClose={props.onClose} />}
+      {request && <CodeExportView request={request} onClose={props.onClose} />}
     </Modal>
   );
 }
 
-function ExportBody(props: { readonly request: CodeExportRequest; readonly onClose: () => void }) {
+/** The language picker, the program and its actions; `actions` adds buttons before Copy. */
+export function CodeExportView(props: {
+  readonly request: CodeExportRequest;
+  readonly onClose?: () => void;
+  readonly actions?: ReactNode;
+  /** Fills its container (the collection tab) instead of the dialog's fixed height. */
+  readonly fill?: boolean;
+}) {
   const theme = useTheme();
   const [id, setId] = useState<CodeLanguage>(lastExportLanguage);
   const [status, setStatus] = useState<{ kind: 'success' | 'error'; text: string } | undefined>();
@@ -79,7 +87,10 @@ function ExportBody(props: { readonly request: CodeExportRequest; readonly onClo
   };
 
   return (
-    <div className="flex flex-col gap-3" data-testid="code-export">
+    <div
+      className={cx('flex flex-col gap-3', props.fill && 'h-full min-h-0 p-3')}
+      data-testid="code-export"
+    >
       <div className="flex flex-wrap items-center gap-3">
         <Segmented
           label="Language"
@@ -110,7 +121,12 @@ function ExportBody(props: { readonly request: CodeExportRequest; readonly onClo
       {'error' in result ? (
         <Banner kind="error">{result.error}</Banner>
       ) : (
-        <div className="h-[min(420px,55vh)] overflow-hidden rounded border border-border">
+        <div
+          className={cx(
+            'overflow-hidden rounded border border-border',
+            props.fill ? 'min-h-0 flex-1' : 'h-[min(420px,55vh)]',
+          )}
+        >
           <ShellEditor
             value={result.code}
             onChange={() => undefined}
@@ -139,9 +155,12 @@ function ExportBody(props: { readonly request: CodeExportRequest; readonly onClo
         >
           {status?.text}
         </span>
-        <Button variant="ghost" onClick={props.onClose}>
-          Close
-        </Button>
+        {props.actions}
+        {props.onClose && (
+          <Button variant="ghost" onClick={props.onClose}>
+            Close
+          </Button>
+        )}
         <Button
           variant="secondary"
           disabled={code === undefined}

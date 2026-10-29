@@ -222,6 +222,18 @@ export function Icon({
         <path d="M8.4 3.6v8.8l5.8-4.4z" fill="currentColor" />
       </>
     ),
+    'play-step': (
+      <>
+        <path d="M3.4 3.6v8.8l6.2-4.4z" fill="currentColor" />
+        <path d="M12.4 3.6v8.8" />
+      </>
+    ),
+    'play-selection': (
+      <>
+        <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.2" strokeDasharray="1.6 1.6" />
+        <path d="M6.4 5.4v5.2l4.2-2.6z" fill="currentColor" />
+      </>
+    ),
     stop: <rect x="4" y="4" width="8" height="8" rx="1.2" fill="currentColor" />,
     plus: <path d="M8 3.25v9.5M3.25 8h9.5" />,
     refresh: <path d="M13 8a5 5 0 1 1-1.46-3.54M13 2.9v2.85h-2.85" />,
@@ -332,6 +344,20 @@ export function Icon({
       <>
         <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.2" {...wash} />
         <path d="M4.6 6.2 6.7 8.1 4.6 10M8.4 10.2h3" />
+      </>
+    ),
+    shell: (
+      <>
+        <rect
+          x="1.75"
+          y="2.75"
+          width="12.5"
+          height="10.5"
+          rx="1.2"
+          fill="currentColor"
+          fillOpacity={0.85}
+        />
+        <path d="M4.4 6 6.6 8l-2.2 2M8.2 10.4h3.4" stroke="var(--color-bg, #000)" />
       </>
     ),
     'file-run': (

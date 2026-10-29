@@ -4,7 +4,9 @@ import {
   ENGINE_AUTH_METHODS,
   EXTERNAL_AUTH_SOURCE,
   MONGO_MECHANISMS,
+  OIDC_ENVIRONMENTS,
   READ_PREFERENCES,
+  needsTokenResource,
   showsAuthSource,
   showsDatabase,
   type FormAuthMethod,
@@ -58,7 +60,22 @@ const MECHANISM_LABELS: Readonly<Record<(typeof MONGO_MECHANISMS)[number], strin
   'SCRAM-SHA-256': 'SCRAM-SHA-256',
   'SCRAM-SHA-1': 'SCRAM-SHA-1',
   PLAIN: 'LDAP (PLAIN)',
+  'MONGODB-AWS': 'AWS IAM (MONGODB-AWS)',
+  'MONGODB-OIDC': 'OIDC (MONGODB-OIDC)',
   '': 'Negotiate with the server',
+};
+
+/** Who signs in through `$external`, for the authentication database's hint. */
+const EXTERNAL_USERS: Readonly<Record<string, string>> = {
+  PLAIN: 'LDAP users are always in $external',
+  'MONGODB-AWS': 'AWS IAM identities sign in through $external',
+  'MONGODB-OIDC': 'OIDC identities sign in through $external',
+};
+
+const OIDC_ENVIRONMENT_LABELS: Readonly<Record<(typeof OIDC_ENVIRONMENTS)[number], string>> = {
+  azure: 'Azure managed identity',
+  gcp: 'GCP service account',
+  k8s: 'Kubernetes service account',
 };
 
 const READ_PREFERENCE_LABELS: Readonly<Record<ReadPreference, string>> = {
@@ -113,15 +130,20 @@ export function MongoOptions(props: { readonly form: ConnectionForm }) {
   );
 }
 
-/** MongoDB's sign-ins: none, user and password (SCRAM or LDAP), an X.509 certificate. */
+/**
+ * MongoDB's sign-ins: none, a user and password (SCRAM or LDAP), AWS IAM (access keys or the
+ * AWS credential chain), OIDC (in the browser or as a workload), an X.509 certificate.
+ */
 export function MongoFields(props: SectionProps) {
   const { register, control, formState } = props.form;
   const errors = formState.errors;
-  const [kind, authMethod, mechanism] = useWatch({
+  const [kind, authMethod, mechanism, oidcEnvironment] = useWatch({
     control,
-    name: ['endpointKind', 'authMethod', 'mechanism'],
+    name: ['endpointKind', 'authMethod', 'mechanism', 'oidcEnvironment'],
   });
   const known = (MONGO_MECHANISMS as readonly string[]).includes(mechanism);
+  const aws = mechanism === 'MONGODB-AWS';
+  const oidc = mechanism === 'MONGODB-OIDC';
   return (
     <>
       <Field label="Authentication" htmlFor="cx-auth-method" error={errors.authMethod?.message}>
@@ -150,10 +172,26 @@ export function MongoFields(props: SectionProps) {
 
       {authMethod === 'password' && (
         <>
-          <Field label="User" htmlFor="cx-user" error={errors.user?.message}>
+          <Field
+            label={aws ? 'Access key ID' : 'User'}
+            htmlFor="cx-user"
+            hint={
+              aws
+                ? 'Empty uses the AWS credential chain: environment, shared files and SSO, the instance role'
+                : oidc
+                  ? oidcEnvironment === 'azure'
+                    ? "Optional: the managed identity's client ID"
+                    : oidcEnvironment === ''
+                      ? 'Optional: suggested to the identity provider'
+                      : undefined
+                  : undefined
+            }
+            error={errors.user?.message}
+          >
             <Input
               id="cx-user"
               autoComplete="off"
+              disabled={oidc && (oidcEnvironment === 'gcp' || oidcEnvironment === 'k8s')}
               {...register('user')}
               aria-invalid={!!errors.user}
             />
@@ -180,12 +218,50 @@ export function MongoFields(props: SectionProps) {
               key="auth-source-external"
               label="Authentication database"
               htmlFor="cx-auth-source"
-              hint="LDAP users are always in $external"
+              hint={EXTERNAL_USERS[mechanism]}
             >
               <Input id="cx-auth-source" value={EXTERNAL_AUTH_SOURCE} disabled readOnly />
             </Field>
           )}
-          <PasswordFields {...props} />
+          {oidc ? (
+            <>
+              <Field label="Identity" htmlFor="cx-oidc-environment">
+                <Select id="cx-oidc-environment" {...register('oidcEnvironment')}>
+                  <option value="">Sign in with the identity provider in the browser</option>
+                  {OIDC_ENVIRONMENTS.map((environment) => (
+                    <option key={environment} value={environment}>
+                      {OIDC_ENVIRONMENT_LABELS[environment]}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              {needsTokenResource(oidcEnvironment) ? (
+                <Field
+                  label="Token resource"
+                  htmlFor="cx-oidc-audience"
+                  hint="The audience the token is issued for"
+                  error={errors.oidcAudience?.message}
+                >
+                  <Input
+                    id="cx-oidc-audience"
+                    placeholder="api://<application id>"
+                    {...register('oidcAudience')}
+                    aria-invalid={!!errors.oidcAudience}
+                  />
+                </Field>
+              ) : (
+                <div />
+              )}
+              {oidcEnvironment === '' && (
+                <Note>
+                  Querybara opens the identity provider&apos;s sign-in page in your browser when it
+                  connects, and keeps the tokens until it quits.
+                </Note>
+              )}
+            </>
+          ) : (
+            <PasswordFields {...props} {...(aws ? { secretLabel: 'Secret access key' } : {})} />
+          )}
         </>
       )}
       {authMethod === 'clientCertificate' && (

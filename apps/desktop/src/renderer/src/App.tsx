@@ -18,6 +18,10 @@ import { TransferDbHost } from './components/transfer-db/TransferDbDialog';
 import { BackupDialogs } from './components/backup/BackupDialogs';
 import { Prompts } from './components/Prompts';
 import { ScheduleDialog } from './components/schedules/ScheduleDialog';
+import { registerMongoCommands } from './components/mongo/mongo-commands';
+import { MongoFileDialogs } from './components/mongo/FileTransferDialogs';
+import { MongoToolbar } from './components/mongo/MongoToolbar';
+import { PasteDocumentsDialog } from './components/mongo/PasteDocumentsDialog';
 import { openRedisTool } from './components/redis/RedisTree';
 import { Sidebar } from './components/Sidebar';
 import { SidebarPane } from './components/SidebarPane';
@@ -35,8 +39,9 @@ import { openAbout, watchAppCommands, watchUpdates } from './state/updates';
 import { useWorkspace } from './state/workspace';
 
 /**
- * The window: the title bar, connections and objects on the left, dockable query tabs in the
- * middle, history on the right. The active tab's connection drives the production guardrail: a red frame around the
+ * The window: the title bar (and, while a MongoDB connection is open, Studio 3T's MongoDB
+ * toolbar), connections and objects on the left, dockable query tabs in the middle, history on
+ * the right. The active tab's connection drives the production guardrail: a red frame around the
  * whole window and a banner naming the connection (spec §4).
  */
 export function App() {
@@ -121,6 +126,7 @@ export function App() {
     toggleTheme: () => void toggleTheme(),
   };
   useEffect(() => registerAppCommands(() => actions.current), []);
+  useEffect(() => registerMongoCommands(), []);
   useEffect(() => startKeybindings(), []);
   const settings = useSettings();
   useEffect(() => {
@@ -145,6 +151,7 @@ export function App() {
         jobsRunning={jobsRunning}
         onToggleJobs={() => showJobs(!jobsOpen)}
       />
+      <MongoToolbar />
       <div className="flex min-h-0 flex-1">
         <SidebarPane>
           <Sidebar onEdit={setDialog} />
@@ -176,6 +183,8 @@ export function App() {
       <TransferDialogs />
       <TransferDbHost />
       <BackupDialogs />
+      <MongoFileDialogs />
+      <PasteDocumentsDialog />
       <ConnectionFilesDialogs />
       <AboutDialog />
       <CommandPalette />

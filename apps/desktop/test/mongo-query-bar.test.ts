@@ -1,7 +1,6 @@
 import { toEjson } from '@querybara/mongo-tools';
 import { describe, expect, it } from 'vitest';
 
-import { commandSafety } from '../src/renderer/src/state/mongo/commands';
 import {
   describeObject,
   dropCommand,
@@ -19,7 +18,7 @@ import {
   parseFindInput,
 } from '../src/renderer/src/state/mongo/query-bar';
 
-/** The collection view's query bar, the console's command rules and the explorer's drops (spec §9, §5). */
+/** The collection view's query bar and the explorer's drops (spec §9, §5). */
 
 describe('query bar fields', () => {
   it('checks each field as typed, with the position of the problem', () => {
@@ -106,43 +105,6 @@ describe('query bar fields', () => {
     const broken = parseFindInput('db.orders.find({ a: 1 }\n  .sort({ b: })', 'orders');
     expect(broken).toMatchObject({ ok: false, issue: { line: 2 } });
     expect(fieldsOf({ filter: {} }).fields).toEqual(EMPTY_FIELDS);
-  });
-});
-
-describe('console command rules', () => {
-  it('knows which commands write and which destroy', () => {
-    expect(commandSafety('{ find: "orders", filter: { total: { $gt: 100 } } }')).toEqual({
-      name: 'find',
-      writes: false,
-      destructive: false,
-    });
-    expect(commandSafety('{ insert: "orders", documents: [{}] }')).toMatchObject({
-      writes: true,
-      destructive: false,
-    });
-    expect(commandSafety('{ drop: "orders" }')).toMatchObject({ destructive: true });
-    expect(commandSafety('{ delete: "o", deletes: [{ q: {}, limit: 0 }] }')).toMatchObject({
-      destructive: true,
-    });
-    expect(commandSafety('{ delete: "o", deletes: [{ q: { _id: 1 }, limit: 1 }] }')).toMatchObject({
-      writes: true,
-      destructive: false,
-    });
-    expect(
-      commandSafety('{ update: "o", updates: [{ q: {}, u: {}, multi: true }] }'),
-    ).toMatchObject({
-      destructive: true,
-    });
-    expect(
-      commandSafety('{ aggregate: "o", pipeline: [{ $out: "x" }], cursor: {} }'),
-    ).toMatchObject({
-      writes: true,
-      destructive: false,
-    });
-    expect(commandSafety('{ aggregate: "o", pipeline: [{ $match: {} }], cursor: {} }').writes).toBe(
-      false,
-    );
-    expect(commandSafety('not a command').writes).toBe(false);
   });
 });
 

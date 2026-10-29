@@ -224,9 +224,9 @@ Copy tone: confident, concrete, short. Every sentence names a real capability. N
 
 **MongoDB**
 
-- Connecting (SRV, SCRAM, LDAP, X.509)
+- Connecting (SRV, SCRAM, LDAP, X.509, AWS IAM, OIDC)
 - Explorer
-- Collection view and query bar
+- Collection tab and query bar
 - Visual query builder
 - Document editor
 - Bulk update and delete
@@ -237,9 +237,16 @@ Copy tone: confident, concrete, short. Every sentence names a real capability. N
 - Change streams
 - GridFS
 - Users and roles
-- Command console
+- IntelliShell (the embedded mongosh)
 - SQL tab
-- Export query as code
+- Export query as code (seven languages and mongosh)
+- Import and export (JSON, CSV, BSON)
+- Query history and saved queries
+- Copy and paste of documents and collections
+- Reschema and Data Masking
+- Data Generator
+- Collection History
+- The MongoDB toolbar and keyboard shortcuts
 
 **Redis and Valkey**
 

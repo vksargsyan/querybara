@@ -6,7 +6,8 @@
   "description": "MongoDB driver adapter (the official mongodb package) with document, index, collection, GridFS, change stream and user services.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./shell": "./src/shell/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -14,11 +15,18 @@
     "test:integration": "vitest run test/integration --testTimeout=60000 --hookTimeout=60000"
   },
   "dependencies": {
+    "@aws-sdk/credential-providers": "^3.1158.0",
+    "@mongodb-js/oidc-plugin": "^2.2.0",
+    "@mongosh/autocomplete": "^5.9.2",
+    "@mongosh/service-provider-core": "^5.6.0",
+    "@mongosh/service-provider-node-driver": "^5.6.2",
+    "@mongosh/shell-api": "^5.9.2",
+    "@mongosh/shell-evaluator": "^5.9.2",
     "@querybara/core": "workspace:*",
     "@querybara/driver-sql-base": "workspace:*",
     "@querybara/mongo-tools": "workspace:*",
     "@querybara/tunnel": "workspace:*",
-    "mongodb": "^6.21.0"
+    "mongodb": "^7.7.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",

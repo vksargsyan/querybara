@@ -76,7 +76,7 @@ export function AggregationPanel({ editor }: { readonly editor: AggregationEdito
           size="sm"
           variant="ghost"
           onClick={() => setExporting(editor.exportRequest())}
-          title="Export the enabled stages as Node.js, Python, Java, C#, Go or PHP code"
+          title="Export the enabled stages as Node.js, Python, Java, C#, Go, PHP, Ruby or mongosh code"
         >
           Export code…
         </Button>

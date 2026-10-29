@@ -1,5 +1,6 @@
 import { ENGINES, QuerybaraError, isSqlEngine, type Session } from '@querybara/core';
 
+import { mongoToMongoExecution } from './mongo-mongo';
 import { mongoToSqlExecution, sqlToMongoExecution } from './mongo-transfer';
 import { assertRunnable, runExecution, type Execution, type LogLevel } from './pipeline';
 import { redisExecution } from './redis-transfer';
@@ -29,7 +30,7 @@ export function transferSupport(
   const sql = (engine: string): boolean =>
     engine === 'postgres' || engine === 'mysql' || engine === 'mariadb';
   if (sql(source) && (sql(target) || target === 'mongodb')) return { supported: true };
-  if (source === 'mongodb' && sql(target)) return { supported: true };
+  if (source === 'mongodb' && (sql(target) || target === 'mongodb')) return { supported: true };
   if (source === 'redis' && target === 'redis') return { supported: true };
   const name = (engine: string): string =>
     engine in ENGINES ? ENGINES[engine as keyof typeof ENGINES].displayName : engine;
@@ -54,6 +55,8 @@ async function executionFor(
     execution = await sqlToSqlExecution(spec, options, source, target);
   } else if (isSqlEngine(source.engine)) {
     execution = await sqlToMongoExecution(spec, options, source, target);
+  } else if (source.engine === 'mongodb' && target.engine === 'mongodb') {
+    execution = await mongoToMongoExecution(spec, options, source, target);
   } else if (source.engine === 'mongodb') {
     execution = await mongoToSqlExecution(spec, options, source, target);
   } else {

@@ -11,8 +11,11 @@ import { MONGODB_OPTIONAL_PEERS } from '../electron.vite.config';
  * missing one with a module that throws as the driver's chunk loads in a development build, so
  * `pnpm dev` could not open any MongoDB connection ("Could not resolve "kerberos" imported by
  * "mongodb""). The list must follow the driver: every optional module lib/deps.js requires,
- * except socks, which the app ships for SOCKS proxies and tunnels.
+ * except the ones the app ships: socks for SOCKS proxies and tunnels, and the AWS SDK's
+ * credential providers for MONGODB-AWS.
  */
+
+const SHIPPED = new Set(['socks', '@aws-sdk/credential-providers']);
 
 describe('the main build', () => {
   it('keeps every optional module of the MongoDB driver external', () => {
@@ -22,7 +25,7 @@ describe('the main build', () => {
     const deps = readFileSync(join(dirname(driver.resolve('mongodb')), 'deps.js'), 'utf8');
     const optional = [...deps.matchAll(/require\('([^'.][^']*)'\)/g)]
       .map((m) => m[1]!)
-      .filter((name) => name !== 'socks');
+      .filter((name) => !SHIPPED.has(name));
     expect(optional.length).toBeGreaterThan(0);
     expect([...MONGODB_OPTIONAL_PEERS].sort()).toEqual([...new Set(optional)].sort());
   });

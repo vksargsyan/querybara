@@ -20,12 +20,16 @@ import {
   EXPORT_FORMATS,
   FILE_FORMATS,
   INFERRED_TYPES,
+  MONGO_FILE_FORMATS,
+  MONGO_IMPORT_MODES,
   PARQUET_COMPRESSIONS,
   ZipReader,
   openFileReader,
 } from '@querybara/transfer';
 import {
   INFERRED_COLUMN_TYPES,
+  MONGO_FILE_FORMATS as IPC_MONGO_FILE_FORMATS,
+  MONGO_IMPORT_MODES as IPC_MONGO_IMPORT_MODES,
   PARQUET_COMPRESSIONS as IPC_PARQUET_COMPRESSIONS,
   TRANSFER_EXPORT_FORMATS,
   TRANSFER_FILE_FORMATS,
@@ -841,5 +845,10 @@ describe('protocol mirrors', () => {
 
   it('lists the same Parquet codecs as @querybara/transfer', () => {
     expect([...IPC_PARQUET_COMPRESSIONS]).toEqual([...PARQUET_COMPRESSIONS]);
+  });
+
+  it('lists the same MongoDB file formats and import modes as @querybara/transfer', () => {
+    expect([...IPC_MONGO_FILE_FORMATS]).toEqual([...MONGO_FILE_FORMATS]);
+    expect([...IPC_MONGO_IMPORT_MODES]).toEqual([...MONGO_IMPORT_MODES]);
   });
 });

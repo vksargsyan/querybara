@@ -6,25 +6,29 @@ import { AggregationEditor, type AggregationTarget } from './aggregation';
 import { ChangeStreamViewer } from './change-stream';
 import { CollectionOptions, type CollectionOptionsTarget } from './collection-options';
 import { CollectionView, type CollectionTarget } from './collection-view';
-import { MongoConsole, type ConsoleTarget } from './console';
 import { GridFsBrowser, type GridFsTarget } from './gridfs';
 import { IndexManager, type IndexManagerTarget } from './indexes';
+import { IntelliShell, type IntelliShellTarget } from './intellishell';
 import type { QueryFields } from './query-bar';
+import { CollectionHistory, type CollectionHistoryTarget } from './collection-history';
+import { DataGenerator, type DataGeneratorTarget } from './generate';
+import { Reshape, type ReshapeTarget } from './reshape';
 import { SchemaPanelState, type SchemaTarget } from './schema';
 import { SqlQuery, type SqlQueryTarget } from './sql-query';
 import { UsersRoles, type UsersRolesTarget } from './users';
 
 /**
- * The MongoDB module's dock panels: collection views, command consoles, SQL tabs and the tool
+ * The MongoDB module's dock panels: collection views, IntelliShells, SQL tabs and the tool
  * panels (aggregation editor, index manager, schema analysis, collection options, change streams,
- * GridFS, users and roles). The dock renders them all through one `mongo` panel component; this
- * registry holds each panel's state object and disposes it (closing its session) when the
- * panel closes.
+ * GridFS, users and roles, Reschema and Data Masking, the Data Generator, the collection history).
+ * The dock renders them
+ * all through one `mongo` panel component; this registry holds each panel's state object and
+ * disposes it (closing its session) when the panel closes.
  */
 
 export type MongoPanel =
   | CollectionView
-  | MongoConsole
+  | IntelliShell
   | SqlQuery
   | AggregationEditor
   | IndexManager
@@ -32,7 +36,10 @@ export type MongoPanel =
   | CollectionOptions
   | ChangeStreamViewer
   | GridFsBrowser
-  | UsersRoles;
+  | UsersRoles
+  | Reshape
+  | DataGenerator
+  | CollectionHistory;
 
 const panels = new Map<string, MongoPanel>();
 
@@ -75,8 +82,8 @@ export function createCollectionPanel(
   return { id, opened: true };
 }
 
-/** Creates a console's state and registers its panel. */
-export function createConsolePanel(target: ConsoleTarget, title: string): string {
+/** Creates an IntelliShell's state and registers its panel (ADR 0036). */
+export function createShellPanel(target: IntelliShellTarget, title: string): string {
   const id = newId();
   registerPanel({
     id,
@@ -85,9 +92,9 @@ export function createConsolePanel(target: ConsoleTarget, title: string): string
     title,
     database: target.database,
   });
-  const console = new MongoConsole(id, target);
-  panels.set(id, console);
-  void console.init();
+  const shell = new IntelliShell(id, target);
+  panels.set(id, shell);
+  void shell.init();
   return id;
 }
 
@@ -112,7 +119,10 @@ export type ToolPanelRequest =
       readonly target: { readonly profileId: string; readonly scope: WatchScope };
     }
   | { readonly tool: 'gridfs'; readonly target: GridFsTarget }
-  | { readonly tool: 'users'; readonly target: UsersRolesTarget };
+  | { readonly tool: 'users'; readonly target: UsersRolesTarget }
+  | { readonly tool: 'reshape'; readonly target: ReshapeTarget }
+  | { readonly tool: 'generate'; readonly target: DataGeneratorTarget }
+  | { readonly tool: 'collection-history'; readonly target: CollectionHistoryTarget };
 
 function scopeKey(scope: WatchScope): string[] {
   return scope.kind === 'cluster'
@@ -140,7 +150,9 @@ export function toolKey(request: ToolPanelRequest): string {
         ? [request.target.db, request.target.bucket]
         : tool === 'users'
           ? [request.target.db]
-          : [request.target.db, request.target.collection];
+          : tool === 'reshape'
+            ? [request.target.db, request.target.collection, request.target.kind]
+            : [request.target.db, request.target.collection];
   return ['mongo', tool, target.profileId, ...parts].join('\u0000');
 }
 
@@ -163,6 +175,12 @@ export function toolTitle(request: ToolPanelRequest): string {
       return `${request.target.bucket} files`;
     case 'users':
       return `${request.target.db} users and roles`;
+    case 'reshape':
+      return `${request.target.collection} ${request.target.kind === 'mask' ? 'masking' : 'reschema'}`;
+    case 'generate':
+      return `${request.target.collection} data generator`;
+    case 'collection-history':
+      return `${request.target.collection} history`;
   }
 }
 
@@ -182,6 +200,12 @@ function createTool(id: string, request: ToolPanelRequest): MongoPanel {
       return new GridFsBrowser(id, request.target);
     case 'users':
       return new UsersRoles(id, request.target);
+    case 'reshape':
+      return new Reshape(id, request.target);
+    case 'generate':
+      return new DataGenerator(id, request.target);
+    case 'collection-history':
+      return new CollectionHistory(id, request.target);
   }
 }
 

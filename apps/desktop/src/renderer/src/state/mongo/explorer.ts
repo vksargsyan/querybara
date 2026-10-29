@@ -69,6 +69,11 @@ export function namespaceReference(db: string, collection: string): string {
   return `${databaseReference(db)}${collectionReference(collection).slice('db'.length)}`;
 }
 
+/** The script an IntelliShell opened on a collection starts with (Studio 3T's default query). */
+export function defaultShellScript(collection: string): string {
+  return `${collectionReference(collection)}.find({})`;
+}
+
 /** The mongosh command that drops the object (what the confirmation shows), if it can be dropped. */
 export function dropCommand(object: MongoObject): string | undefined {
   switch (object.kind) {

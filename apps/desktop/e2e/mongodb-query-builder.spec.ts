@@ -122,7 +122,7 @@ test('opens a collection and shows the builder with the sampled fields', async (
   await treeRow('orders').dblclick();
   await expect(panel().getByTestId('mongo-loaded')).toHaveText('40 documents loaded');
 
-  await panel().getByRole('radio', { name: 'Builder' }).click();
+  await panel().getByRole('button', { name: 'Visual Query Builder', exact: true }).click();
   await expect(builder().getByTestId('builder-sample-summary')).toHaveText(
     'Fields of 40 sampled documents',
   );
@@ -131,9 +131,9 @@ test('opens a collection and shows the builder with the sampled fields', async (
   await expect(field('at')).toContainText('Date');
   await expect(field('customer.address.city')).toContainText('String');
   await expect(field('tags')).toContainText('String[]');
-  // The find() text stays under the builder; the fields are hidden meanwhile.
+  // The builder docks beside the query bar, which stays in step with it (as Studio 3T's).
   await expect(findText()).toContainText('db.orders.find({})');
-  await expect(panel().getByTestId('mongo-filter')).toBeHidden();
+  await expect(panel().getByTestId('mongo-filter')).toBeVisible();
 });
 
 test('builds a filter from the keyboard and with clicks, the find() text following', async () => {
@@ -240,7 +240,7 @@ test('adds projection, sort and limit, and keeps the projection rule', async () 
   await shot('mongo-builder');
   await builder().getByTestId('builder-limit').press('Enter');
   await expect(panel().getByTestId('mongo-loaded')).toHaveText('3 documents loaded');
-  await panel().getByRole('radio', { name: 'JSON' }).click();
+  await panel().getByTestId('mongo-view').selectOption('json');
   const json = panel().getByTestId('mongo-json-text');
   await expect(json).toContainText('{ total: 180 }');
   await expect(json).not.toContainText('status');
@@ -277,7 +277,7 @@ test('follows the find() text when it is edited, and says when it cannot show it
   await expect(control('tags', 'value')).toHaveValue('red');
   await expect(builder().getByRole('button', { name: 'Add status to…' })).toBeEnabled();
 
-  await panel().getByRole('radio', { name: 'Fields' }).click();
+  await panel().getByRole('button', { name: 'Close the Visual Query Builder' }).click();
   await expect(builder()).toBeHidden();
   await expect(panel().getByTestId('mongo-filter')).toHaveValue("{ tags: 'red' }");
 });

@@ -40,3 +40,9 @@ supersede it with a new one.
 | [0033](0033-querybara-name-and-icon.md)          | The name Querybara, and a capybara icon on a cream tile              | Accepted                   |
 | [0034](0034-apache-2-licence.md)                 | Open source under Apache-2.0; name and logo stay trademarks          | Accepted                   |
 | [0035](0035-mongodb-compare.md)                  | MongoDB structure and data compare through the SQL compare's paths   | Accepted                   |
+| [0036](0036-mongodb-as-studio-3t.md)             | MongoDB as Studio 3T's: IntelliShell on an embedded mongosh          | Accepted                   |
+| [0037](0037-mongodb-file-import-export.md)       | MongoDB file import and export: Extended JSON, CSV and BSON jobs     | Accepted                   |
+| [0038](0038-mongodb-reschema-and-masking.md)     | Reschema and Data Masking: field rules compiled to a pipeline        | Accepted                   |
+| [0039](0039-mongodb-aws-and-oidc-sign-in.md)     | MongoDB sign-in with AWS IAM and OIDC (browser or workload)          | Accepted                   |
+| [0040](0040-mongodb-data-generator.md)           | A Data Generator from field rules, inserted in batches               | Accepted                   |
+| [0041](0041-mongodb-collection-history.md)       | Collection History: changes made in the app, kept locally to undo    | Accepted                   |

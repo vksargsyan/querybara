@@ -6,7 +6,14 @@ import {
   type ResultChunk,
 } from '@querybara/core';
 import type { StoredProfile } from '@querybara/ipc';
-import { fromEjson, toEjson, type DocumentPage, type FindQuery } from '@querybara/mongo-tools';
+import {
+  Int32,
+  fromEjson,
+  toEjson,
+  type DocumentPage,
+  type FindQuery,
+  type ShellEvent,
+} from '@querybara/mongo-tools';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { HostClient } from '../src/renderer/src/lib/main-client';
@@ -15,13 +22,14 @@ import { keys, queryClient } from '../src/renderer/src/state/data';
 import { useDialogs, type Prompt } from '../src/renderer/src/state/dialogs';
 import { CollectionView } from '../src/renderer/src/state/mongo/collection-view';
 import { DEFAULT_DOCUMENT_PAGE } from '../src/renderer/src/state/mongo/pages';
-import { MongoConsole } from '../src/renderer/src/state/mongo/console';
+import { IntelliShell } from '../src/renderer/src/state/mongo/intellishell';
 import { profileInput } from './helpers';
 
 /**
- * The collection view and the console driven against a fake connection host (spec §9): the query
- * bar and find() text kept in step, pages fetched as the view scrolls, the editor's conflict flow,
- * bulk writes counted before they run, deletes, explain, and the console's write rules.
+ * The collection view and IntelliShell driven against a fake connection host (spec §9, ADR 0036):
+ * the query bar and find() text kept in step, pages fetched as the view scrolls, the editor's
+ * conflict flow, bulk writes counted before they run, deletes, explain, and IntelliShell's result
+ * tabs, raw output and questions.
  */
 
 interface Call {
@@ -45,6 +53,9 @@ function stored(presentation: ConnectionProfileInput['presentation'] = {}): Stor
     version: 1,
   };
 }
+
+/** The events each IntelliShell run of the fake host streams, in order. */
+let shellRuns: ShellEvent[][] = [];
 
 /** A connection host whose collection holds `count` orders; it records every call. */
 function fakeHost(count: number) {
@@ -89,6 +100,31 @@ function fakeHost(count: number) {
       })();
     },
     mongo: {
+      shell: {
+        open: async (input: object) => {
+          record('shell.open', input);
+          return {
+            shellId: 'sh1',
+            info: { database: 'shop', mongoshVersion: '5.9.5', serverVersion: '8.0.4' },
+          };
+        },
+        evaluate: (input: { script: string }) => {
+          record('shell.evaluate', input);
+          const events = shellRuns.shift() ?? [];
+          return (async function* (): AsyncGenerator<ShellEvent> {
+            yield* events;
+          })();
+        },
+        answer: async (input: object) => record('shell.answer', input),
+        more: async (input: object) => {
+          record('shell.more', input);
+          return { documents: [toEjson({ _id: 3 })], hasMore: false };
+        },
+        closeResult: async (input: object) => record('shell.closeResult', input),
+        complete: async () => ({ completions: ['db.orders'] }),
+        interrupt: async (input: object) => record('shell.interrupt', input),
+        close: async (input: object) => record('shell.close', input),
+      },
       serverInfo: async () => ({
         version: '8.0.4',
         topology: 'replicaSet',
@@ -327,6 +363,58 @@ describe('collection view', () => {
     });
   });
 
+  it('edits a value in place, keeping its type, and removes a field after asking', async () => {
+    const fake = fakeHost(3);
+    connectTo(fake.host);
+    const v = view();
+    await v.init();
+    expect(await v.setValue(1, ['total'], new Int32(15))).toBe(true);
+    expect(fake.calls.find((c) => c.method === 'replaceOne')?.input).toMatchObject({
+      original: toEjson({ _id: 2, total: 10 }),
+      replacement: toEjson({ _id: 2, total: new Int32(15) }),
+    });
+    expect(v.results.state.documents[1]).toBe(toEjson({ _id: 2, total: new Int32(15) }));
+    expect(v.state.notice).toMatchObject({ kind: 'success', text: 'Saved total' });
+    // A new field goes at the end; the _id never changes in place.
+    expect(await v.setValue(1, ['note'], 'rush')).toBe(true);
+    expect(v.results.state.documents[1]).toBe(
+      toEjson({ _id: 2, total: new Int32(15), note: 'rush' }),
+    );
+    expect(await v.setValue(1, ['_id'], 9)).toBe(false);
+
+    asked.length = 0;
+    expect(await v.removeField(1, ['note'])).toBe(true);
+    expect(asked).toEqual([
+      {
+        title: 'Remove note?',
+        detail: "db.getSiblingDB('shop').orders.replaceOne({ _id: 2 }, { _id: 2, total: 15 })",
+      },
+    ]);
+    expect(v.results.state.documents[1]).toBe(toEjson({ _id: 2, total: new Int32(15) }));
+  });
+
+  it('shows the current version when a value edit meets a concurrent change', async () => {
+    const fake = fakeHost(2);
+    connectTo(fake.host);
+    const v = view();
+    await v.init();
+    fake.change(1, { total: 42, by: 'someone else' });
+    expect(await v.setValue(0, ['total'], 7)).toBe(false);
+    expect(v.results.state.documents[0]).toBe(toEjson({ _id: 1, total: 42, by: 'someone else' }));
+    expect(v.state.notice?.text).toMatch(/changed since it was read/);
+  });
+
+  it('does not edit values read with a projection', async () => {
+    const fake = fakeHost(2);
+    connectTo(fake.host);
+    const v = view();
+    v.setField('projection', '{ total: 1 }');
+    await v.init();
+    expect(await v.setValue(0, ['total'], 7)).toBe(false);
+    expect(fake.calls.some((c) => c.method === 'replaceOne')).toBe(false);
+    expect(v.state.notice?.text).toMatch(/projection/);
+  });
+
   it('counts a bulk update with a dry run, then writes after the confirmation', async () => {
     const fake = fakeHost(4);
     connectTo(fake.host);
@@ -368,7 +456,7 @@ describe('collection view', () => {
     });
     expect(v.results.state.documents).toHaveLength(1);
     await v.explain('queryPlanner');
-    expect(v.state.tab).toBe('explain');
+    expect(v.state.section).toBe('explain');
     expect(v.state.explain).toMatchObject({
       verbosity: 'queryPlanner',
       result: { summary: { collectionScan: true } },
@@ -410,39 +498,160 @@ describe('collection view', () => {
   });
 });
 
-describe('command console', () => {
-  it('runs command documents on the chosen database and shows their documents', async () => {
-    const fake = fakeHost(0);
-    connectTo(fake.host);
-    const shell = new MongoConsole('console', { profileId: PROFILE_ID, database: 'shop' });
-    await shell.init();
-    expect(shell.state.databases).toEqual(['shop', 'admin']);
-    await shell.run('{ ping: 1 }');
-    expect(shell.results.state.documents).toEqual([toEjson({ ok: 1 })]);
-    expect(shell.state).toMatchObject({ pane: 'results', command: 'ping', running: false });
-    expect(fake.calls.find((c) => c.method === 'useDatabase')?.input).toMatchObject({
-      database: 'shop',
-    });
-    await shell.run('{ ping: boom }');
-    expect(shell.state.errorMarker).toEqual({ offset: 7, message: 'Unexpected }' });
-    expect(shell.state.pane).toBe('messages');
+/** A cursor result event, as the host sends one for a find() on line `line` (at `start`). */
+function cursorResult(line: number, resultId: string, hasMore: boolean, start = 0): ShellEvent {
+  return {
+    type: 'result',
+    index: 0,
+    start,
+    end: start + 16,
+    line,
+    source: 'db.orders.find()',
+    durationMs: 2,
+    value: {
+      kind: 'cursor',
+      resultId,
+      cursorType: 'find',
+      ns: { db: 'shop', collection: 'orders' },
+      query: { kind: 'find', query: { filter: '{}' } },
+      documents: [toEjson({ _id: 1 }), toEjson({ _id: 2 })],
+      hasMore,
+      exactTypes: true,
+    },
+  };
+}
+
+const END: ShellEvent = { type: 'end', status: 'success', durationMs: 5, ran: 1 };
+
+describe('IntelliShell', () => {
+  beforeEach(() => {
+    shellRuns = [];
   });
 
-  it('refuses writes on a read-only profile and asks before destructive commands', async () => {
+  it('opens a shell, prints, and gives each find() a result tab that pages on demand', async () => {
     const fake = fakeHost(0);
-    connectTo(fake.host, { readOnly: true });
-    const shell = new MongoConsole('console', { profileId: PROFILE_ID, database: 'shop' });
-    await shell.init();
-    await shell.run('{ insert: "orders", documents: [{}] }');
-    expect(shell.state.messages.at(-1)?.text).toContain('read-only');
-    expect(fake.calls.some((c) => c.method === 'execute')).toBe(false);
-
     connectTo(fake.host);
-    const writable = new MongoConsole('console2', { profileId: PROFILE_ID, database: 'shop' });
-    await writable.init();
-    answer = false;
-    await writable.run('{ drop: "orders" }');
-    expect(asked.at(-1)).toMatchObject({ title: 'Run drop?', detail: '{ drop: "orders" }' });
-    expect(fake.calls.some((c) => c.method === 'execute')).toBe(false);
+    const shell = new IntelliShell('shell', { profileId: PROFILE_ID, database: 'shop' });
+    await shell.init();
+    expect(shell.state).toMatchObject({
+      status: 'ready',
+      database: 'shop',
+      mongoshVersion: '5.9.5',
+    });
+    shell.setText('print("hi")\ndb.orders.find()');
+    shellRuns.push([
+      { type: 'statement', index: 0, start: 0, end: 11, line: 1 },
+      { type: 'print', text: 'hi', stream: 'out' },
+      { type: 'statement', index: 1, start: 12, end: 28, line: 2 },
+      cursorResult(2, 'r1', true, 12),
+      END,
+    ]);
+    await shell.run('all');
+    expect(fake.calls.find((c) => c.method === 'shell.evaluate')?.input).toMatchObject({
+      shellId: 'sh1',
+      script: 'print("hi")\ndb.orders.find()',
+    });
+    expect(shell.state.output.map((line) => [line.kind, line.text])).toEqual(
+      expect.arrayContaining([
+        ['input', '> print("hi")'],
+        ['print', 'hi'],
+        ['input', '> db.orders.find()'],
+      ]),
+    );
+    const [tab] = shell.state.tabs;
+    expect(tab).toMatchObject({ title: 'Find Query (line 2)', resultId: 'r1', pinned: false });
+    expect(shell.state.active).toBe(tab!.id);
+    expect(tab!.results.state.documents).toHaveLength(2);
+    await shell.fetchMore(tab!.id);
+    expect(tab!.results.state.documents).toHaveLength(3);
+    expect(shell.state.tabs[0]!.resultId).toBeUndefined();
+    expect(shell.state.lastRun).toEqual({ status: 'success', durationMs: 5, ran: 1 });
+  });
+
+  it('replaces unpinned tabs on the next run, keeps pinned ones, and closes their cursors', async () => {
+    const fake = fakeHost(0);
+    connectTo(fake.host);
+    const shell = new IntelliShell('shell', { profileId: PROFILE_ID, database: 'shop' });
+    await shell.init();
+    shell.setText('db.orders.find()');
+    shellRuns.push([cursorResult(1, 'r1', true), END], [cursorResult(1, 'r2', true), END]);
+    await shell.run('all');
+    shell.togglePin(shell.state.tabs[0]!.id);
+    await shell.run('all');
+    expect(shell.state.tabs.map((t) => t.resultId)).toEqual(['r1', 'r2']);
+    shellRuns.push([END]);
+    shell.togglePin(shell.state.tabs[0]!.id);
+    await shell.run('all');
+    expect(shell.state.tabs).toEqual([]);
+    expect(
+      fake.calls.filter((c) => c.method === 'shell.closeResult').map((c) => c.input['resultId']),
+    ).toEqual(['r1', 'r2']);
+  });
+
+  it('prints cursors as text with Query Assist off, and marks an error where it points', async () => {
+    const fake = fakeHost(0);
+    connectTo(fake.host);
+    const shell = new IntelliShell('shell', { profileId: PROFILE_ID, database: 'shop' });
+    await shell.init();
+    shell.setQueryAssist(false);
+    shell.setText('db.a.find()\n\ndb.orders.find()');
+    shellRuns.push([cursorResult(1, 'r1', true), END]);
+    await shell.run('statement', { cursor: 15 });
+    expect(fake.calls.at(-1)?.input).toMatchObject({ script: 'db.orders.find()' });
+    expect(shell.state.tabs).toEqual([]);
+    expect(shell.state.output.map((line) => line.text)).toEqual(
+      expect.arrayContaining(['{ _id: 1 }\n{ _id: 2 }', 'Type "it" for more']),
+    );
+    shellRuns.push([
+      { type: 'error', name: 'SyntaxError', message: 'Unexpected token', position: 4 },
+      { type: 'end', status: 'error', durationMs: 0, ran: 0 },
+    ]);
+    await shell.run('statement', { cursor: 15 });
+    expect(shell.state.errorMarker).toEqual({
+      offset: 'db.a.find()\n\n'.length + 4,
+      message: 'SyntaxError: Unexpected token',
+    });
+  });
+
+  it('asks the questions a script asks, and passes the answer on', async () => {
+    const fake = fakeHost(0);
+    connectTo(fake.host, { environment: 'production' });
+    const shell = new IntelliShell('shell', { profileId: PROFILE_ID, database: 'shop' });
+    await shell.init();
+    const questions: unknown[] = [];
+    const stop = useDialogs.subscribe((state) => {
+      const prompt = state.queue[0];
+      if (prompt?.kind !== 'shell') return;
+      questions.push({ ...prompt.prompt, production: prompt.production });
+      prompt.resolve({ kind: 'allow', scope: 'run' });
+    });
+    shell.setText('db.orders.insertOne({})');
+    shellRuns.push([
+      {
+        type: 'prompt',
+        promptId: 'p1',
+        kind: 'write',
+        question: 'Run insertOne on shop.orders?',
+        operation: 'insertOne shop.orders',
+      },
+      END,
+    ]);
+    await shell.run('all');
+    stop();
+    expect(questions).toEqual([
+      {
+        kind: 'write',
+        question: 'Run insertOne on shop.orders?',
+        operation: 'insertOne shop.orders',
+        production: true,
+      },
+    ]);
+    expect(fake.calls.find((c) => c.method === 'shell.answer')?.input).toEqual({
+      shellId: 'sh1',
+      promptId: 'p1',
+      answer: { kind: 'allow', scope: 'run' },
+    });
+    await shell.dispose();
+    expect(fake.calls.at(-1)).toMatchObject({ method: 'shell.close', input: { shellId: 'sh1' } });
   });
 });

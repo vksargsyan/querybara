@@ -411,6 +411,7 @@ describe('code export programs', () => {
     expect(lines('php')).toEqual([
       "$collection = $client->selectCollection('db$1', 'o\\'d \"c\"');",
     ]);
+    expect(lines('mongosh')).toEqual(["db.getCollection('o\\'d \"c\"').find({})"]);
   });
 
   it('takes a SQL translation as it is', () => {

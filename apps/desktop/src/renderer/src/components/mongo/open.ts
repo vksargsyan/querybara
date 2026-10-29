@@ -2,7 +2,7 @@ import { AggregationEditor } from '../../state/mongo/aggregation';
 import { CollectionView, type CollectionTarget } from '../../state/mongo/collection-view';
 import {
   createCollectionPanel,
-  createConsolePanel,
+  createShellPanel,
   createSqlPanel,
   createToolPanel,
   getMongoPanel,
@@ -11,11 +11,13 @@ import {
 import type { QueryFields } from '../../state/mongo/query-bar';
 import { starterSql } from '../../state/mongo/sql-query';
 import { UsersRoles } from '../../state/mongo/users';
+import { cachedProfile } from '../../state/data';
 import { currentDock } from '../dock';
 
 /**
  * Opens the MongoDB module's panels in the dock: a collection's view (or focuses the open one),
- * a command console (the "query tab" of a MongoDB connection), a SQL tab and the tool panels.
+ * an IntelliShell (the "query tab" of a MongoDB connection, ADR 0036), a SQL tab and the tool
+ * panels.
  */
 
 function addToDock(id: string, title: string): void {
@@ -45,21 +47,27 @@ export function openMongoCollection(target: CollectionTarget, fields?: QueryFiel
   return id;
 }
 
-/** Opens a command console on a connection, optionally on a database and with text. */
-export function openMongoConsole(options: {
+/**
+ * Opens an IntelliShell on a connection, optionally in a database and with a script. Its tab is
+ * "IntelliShell: <connection>" as in Studio 3T; a script opened from a collection starts with
+ * that collection's find().
+ */
+export function openIntelliShell(options: {
   readonly profileId: string;
-  readonly title: string;
   readonly database?: string;
   readonly text?: string;
+  readonly title?: string;
+  /** Runs the text as soon as the shell is up. */
+  readonly run?: boolean;
 }): string {
-  const title = options.database
-    ? `${options.database} console`
-    : options.title.replace(/ query$/, ' console');
-  const id = createConsolePanel(
+  const profile = cachedProfile(options.profileId);
+  const title = options.title ?? `IntelliShell: ${profile?.name ?? options.database ?? 'MongoDB'}`;
+  const id = createShellPanel(
     {
       profileId: options.profileId,
       database: options.database,
       ...(options.text !== undefined ? { text: options.text } : {}),
+      ...(options.run ? { run: true } : {}),
     },
     title,
   );
