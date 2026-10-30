@@ -10,7 +10,8 @@ import type { QueryFn } from './introspect';
  *
  * Folder segments are stable ids ("tables", "materialized-views"...); their display name is in
  * `name`. Functions and procedures are named with their argument types, since overloads share
- * a name. Only the connected database can be expanded: another one needs a new session.
+ * a name. Only the connected database can be expanded: another one needs a new session, and is
+ * listed `unavailable` with the reason.
  * Sizes and row counts come from catalog statistics (reltuples, relpages), so listing a folder
  * never takes locks or scans tables.
  */
@@ -113,6 +114,11 @@ async function relationOid(query: QueryFn, schema: string, name: string): Promis
   return num(rows[0]!, 'oid');
 }
 
+/** Why a session on `currentDatabase` cannot browse `database`. */
+function otherDatabase(currentDatabase: string, database: string): string {
+  return `This session is connected to "${currentDatabase}"; open a connection to "${database}" to browse it`;
+}
+
 /** Children of `path` in the PostgreSQL tree; `[]` lists databases. */
 export async function browsePostgres(
   query: QueryFn,
@@ -126,28 +132,32 @@ export async function browsePostgres(
          pg_catalog.shobj_description(d.oid, 'pg_database') AS comment
        FROM pg_catalog.pg_database d WHERE NOT d.datistemplate AND d.datallowconn ORDER BY d.datname`,
     );
-    return rows.map((row) =>
-      node(
+    return rows.map((row) => {
+      const name = str(row, 'name');
+      const database = node(
         'database',
-        str(row, 'name'),
-        [str(row, 'name')],
+        name,
+        [name],
         true,
         detail({
           owner: opt(row, 'owner'),
           encoding: opt(row, 'encoding'),
           collation: opt(row, 'collation'),
           comment: opt(row, 'comment'),
-          current: str(row, 'name') === currentDatabase ? 1 : 0,
+          current: name === currentDatabase ? 1 : 0,
         }),
-      ),
-    );
+      );
+      return name === currentDatabase
+        ? database
+        : { ...database, unavailable: otherDatabase(currentDatabase, name) };
+    });
   }
 
   const [database, schema, folder, object, subfolder] = path;
   if (database !== currentDatabase) {
     throw new QuerybaraError({
       code: 'NOT_SUPPORTED',
-      message: `This session is connected to "${currentDatabase}"; open a connection to "${database}" to browse it`,
+      message: otherDatabase(currentDatabase, database ?? ''),
     });
   }
 

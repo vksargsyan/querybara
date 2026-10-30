@@ -29,6 +29,7 @@ import { openRedisTool } from './components/redis/RedisTree';
 import { Sidebar } from './components/Sidebar';
 import { SidebarPane } from './components/SidebarPane';
 import { TitleBar } from './components/TitleBar';
+import { Toasts } from './components/Toasts';
 import { useTheme } from './components/theme';
 import { UpdateNotice } from './components/UpdateNotice';
 import { useConnections } from './state/connections';
@@ -195,7 +196,11 @@ export function App() {
       <AboutDialog />
       <CommandPalette />
       <CommandStatus />
-      <UpdateNotice />
+      {/* The corner's notices stack: toasts above the update notice. */}
+      <div className="fixed right-4 bottom-4 z-40 flex flex-col items-end gap-2">
+        <Toasts />
+        <UpdateNotice />
+      </div>
       {dialog && <ConnectionDialog mode={dialog} onClose={() => setDialog(undefined)} />}
     </div>
   );

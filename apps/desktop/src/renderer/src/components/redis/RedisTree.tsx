@@ -129,13 +129,8 @@ function Children(props: {
       </p>
     );
   }
-  if (state.error) {
-    return (
-      <p className="py-1 text-xs text-danger" style={indent}>
-        {state.error}
-      </p>
-    );
-  }
+  // The node folded back, and the error showed as a toast (state/explorer.ts).
+  if (state.error) return null;
   if (state.nodes?.length === 0) {
     return (
       <p className="py-1 text-xs text-muted" style={indent}>
@@ -229,6 +224,7 @@ function TreeNode(props: {
           depth={depth}
           expandable={false}
           expanded={false}
+          unavailable={node.unavailable}
           onToggle={open}
           onActivate={open}
           title="Open the value editor"
@@ -263,7 +259,7 @@ function TreeNode(props: {
   return (
     <div
       role="treeitem"
-      aria-expanded={node.hasChildren ? expanded : undefined}
+      aria-expanded={node.hasChildren && !node.unavailable ? expanded : undefined}
       aria-selected={false}
       aria-label={node.name}
     >
@@ -271,6 +267,7 @@ function TreeNode(props: {
         depth={depth}
         expandable={node.hasChildren}
         expanded={expanded}
+        unavailable={node.unavailable}
         onToggle={() => toggleNode(profile.id, node)}
         onActivate={() => browse(pattern)}
         title="Double-click to open the key browser"

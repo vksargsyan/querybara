@@ -5,11 +5,14 @@ import { create } from 'zustand';
 import { errorMessage } from '../lib/errors';
 import type { HostClient } from '../lib/main-client';
 import { connect } from './connections';
+import { cachedProfile } from './data';
+import { toastError } from './toasts';
 
 /**
  * The object explorer (spec §5): a lazily loaded tree per connection. Children load on first
  * expand and on refresh, through one metadata session per connection that all tree requests
- * share.
+ * share. A node that fails to load keeps its error here for the Objects view; the side bar folds
+ * it back and shows the error as a toast instead.
  */
 
 export interface ChildrenState {
@@ -48,6 +51,15 @@ async function explorerSession(
   return session;
 }
 
+function setExpanded(profileId: string, key: string, expanded: boolean): void {
+  useExplorer.setState((current) => ({
+    expanded: {
+      ...current.expanded,
+      [profileId]: { ...current.expanded[profileId], [key]: expanded },
+    },
+  }));
+}
+
 function setChildren(profileId: string, key: string, state: ChildrenState): void {
   useExplorer.setState((current) => ({
     children: {
@@ -71,19 +83,21 @@ export async function loadChildren(profileId: string, path: readonly string[]): 
     setChildren(profileId, key, { nodes, loading: false });
   } catch (error) {
     sessions.delete(profileId);
-    setChildren(profileId, key, { loading: false, error: errorMessage(error) });
+    const message = errorMessage(error);
+    setChildren(profileId, key, { loading: false, error: message });
+    if (useExplorer.getState().expanded[profileId]?.[key]) {
+      setExpanded(profileId, key, false);
+      toastError(message, { title: cachedProfile(profileId)?.name });
+    }
   }
 }
 
+/** Expands or folds a node; one the session cannot browse (`unavailable`) stays folded. */
 export function toggleNode(profileId: string, node: BrowseNode): void {
+  if (node.unavailable !== undefined) return;
   const key = pathKey(node.path);
   const open = useExplorer.getState().expanded[profileId]?.[key] === true;
-  useExplorer.setState((current) => ({
-    expanded: {
-      ...current.expanded,
-      [profileId]: { ...current.expanded[profileId], [key]: !open },
-    },
-  }));
+  setExpanded(profileId, key, !open);
   const loaded = useExplorer.getState().children[profileId]?.[key];
   if (!open && (!loaded || loaded.error)) void loadChildren(profileId, node.path);
 }
@@ -115,12 +129,7 @@ export function useProfileExpanded(profileId: string): boolean {
 }
 
 export function setProfileExpanded(profileId: string, expanded: boolean): void {
-  useExplorer.setState((current) => ({
-    expanded: {
-      ...current.expanded,
-      [profileId]: { ...current.expanded[profileId], [pathKey([])]: expanded },
-    },
-  }));
+  setExpanded(profileId, pathKey([]), expanded);
 }
 
 /** Forgets the tree of a connection (disconnect, delete). */

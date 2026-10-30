@@ -146,8 +146,13 @@ test('warns about a changed host key and trusts the new one only after the old o
   await expect(warning.getByRole('button', { name: /trust/i })).toHaveCount(0);
   await expect(warning.getByRole('button', { name: 'Remove the remembered key' })).toBeDisabled();
   await warning.getByRole('button', { name: 'Cancel' }).click();
-  await expect(profile.getByText(/has CHANGED/)).toBeVisible();
+  // The refusal shows in a toast, not under the connection.
+  const refused = page.getByTestId('toast').filter({ hasText: /has CHANGED/ });
+  await expect(refused).toContainText(NAME);
+  await expect(profile.getByText(/has CHANGED/)).toHaveCount(0);
   expect(readFileSync(knownHosts, 'utf8')).toContain(remembered);
+  await refused.getByRole('button', { name: 'Dismiss the error' }).click();
+  await expect(profile.getByText('Not connected', { exact: true })).toBeAttached();
 
   await profile.locator('[data-tree-row]').first().dblclick();
   await expect(warning).toBeVisible();

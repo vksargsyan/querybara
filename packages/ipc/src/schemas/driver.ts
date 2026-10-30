@@ -52,6 +52,7 @@ export const browseNodeSchema: z.ZodType<BrowseNode, BrowseNode> = z.object({
   path: z.array(z.string()),
   hasChildren: z.boolean(),
   detail: z.record(z.string(), z.union([z.string(), z.number(), z.null()])).optional(),
+  unavailable: z.string().optional(),
 });
 
 export const explainOptionsSchema: z.ZodType<ExplainOptions, ExplainOptions> = z.object({
