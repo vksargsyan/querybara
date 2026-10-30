@@ -198,6 +198,7 @@ function ObjectsList(props: {
 
   /** Opens an object's rows or documents, or goes into a container (a schema's tables). */
   const open = (node: BrowseNode): void => {
+    if (node.unavailable !== undefined) return;
     if (objectsPathFor(node, engine) !== undefined) {
       showObjects(profile.id, node, engine);
       return;
@@ -532,12 +533,15 @@ function ObjectsList(props: {
                         event.preventDefault();
                         openMenu(node, event.clientX, event.clientY);
                       }}
+                      title={node.unavailable}
+                      aria-disabled={node.unavailable !== undefined || undefined}
                       className={cx(
                         'grid h-[24px] cursor-default items-center text-[13px] [content-visibility:auto]',
                         isSelected
                           ? 'bg-list-active text-fg'
                           : 'text-muted hover:bg-list-hover hover:text-fg',
                         id === cursor && 'outline outline-1 -outline-offset-1 outline-focus',
+                        node.unavailable !== undefined && 'opacity-50',
                       )}
                       style={{ gridTemplateColumns: template }}
                     >

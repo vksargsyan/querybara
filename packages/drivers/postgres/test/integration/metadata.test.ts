@@ -448,6 +448,18 @@ describe.skipIf(!PG_URL)('PostgreSQL metadata', () => {
     it('refuses to expand another database', async () => {
       await expect(session.browse(['template1'])).rejects.toMatchObject({ code: 'NOT_SUPPORTED' });
     });
+
+    it('marks the databases it cannot browse, so the tree need not try', async () => {
+      const databases = await session.browse([]);
+      expect(databases.find((d) => d.name === db())?.unavailable).toBeUndefined();
+      const others = databases.filter((d) => d.name !== db());
+      expect(others.length).toBeGreaterThan(0);
+      for (const other of others) {
+        expect(other.unavailable).toBe(
+          `This session is connected to "${db()}"; open a connection to "${other.name}" to browse it`,
+        );
+      }
+    });
   });
 
   describe('explain', () => {

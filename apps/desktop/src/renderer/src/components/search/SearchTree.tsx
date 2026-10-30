@@ -271,13 +271,8 @@ function SearchChildren(props: {
       </p>
     );
   }
-  if (state.error) {
-    return (
-      <p className="py-1 text-xs text-danger" style={indent}>
-        {state.error}
-      </p>
-    );
-  }
+  // The node folded back, and the error showed as a toast (state/explorer.ts).
+  if (state.error) return null;
   if (state.nodes?.length === 0) {
     return (
       <p className="py-1 text-xs text-muted" style={indent}>
@@ -355,13 +350,14 @@ function SearchNode(props: {
   return (
     <div
       role="treeitem"
-      aria-expanded={node.hasChildren ? expanded : undefined}
+      aria-expanded={node.hasChildren && !node.unavailable ? expanded : undefined}
       aria-selected={false}
     >
       <Row
         depth={props.depth}
         expandable={node.hasChildren}
         expanded={expanded}
+        unavailable={node.unavailable}
         onToggle={() => toggleNode(profile.id, node)}
         onActivate={object ? () => browse(object) : undefined}
         title={object ? 'Double-click to browse its documents' : undefined}

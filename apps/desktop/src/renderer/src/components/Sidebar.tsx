@@ -1,5 +1,6 @@
 import {
   ENGINES,
+  QuerybaraError,
   hasWeakTls,
   isSqlEngine,
   type BrowseNode,
@@ -10,7 +11,7 @@ import {
 import type { Folder, StoredProfile } from '@querybara/ipc';
 import { useQueryClient } from '@tanstack/react-query';
 import { DropdownMenu } from 'radix-ui';
-import { useEffect, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { errorMessage } from '../lib/errors';
 import { mainApi } from '../lib/main-client';
@@ -55,6 +56,7 @@ import { openRunSqlFile } from '../state/transfer-dialogs';
 import { openTransferFrom } from '../state/transfer-db/api';
 import { openErDiagram } from '../state/er-diagram/panels';
 import { openQueryBuilder } from '../state/query-builder/panels';
+import { toastError } from '../state/toasts';
 import { EngineIcon } from './EngineIcon';
 import { Highlighted } from './Highlighted';
 import { MenuItem, MenuSub } from './MenuItem';
@@ -85,12 +87,14 @@ import { Button, EnvironmentBadge, Icon, cx } from './ui';
  * spinner in place of its actions button while it connects; only a connected one has a chevron. The header's menu
  * creates connections and folders, imports and exports connections, and closes every open
  * connection; the search and the filter at the bottom narrow the list (state/sidebar-filter.ts).
+ *
+ * Errors show as toasts (state/toasts.ts), not in the tree, and a node the session cannot browse
+ * (`unavailable`, in any engine's tree) is dimmed and does not open.
  */
 
 export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) => void }) {
   const profiles = useProfiles();
   const folders = useFolders();
-  const [error, setError] = useState<string>();
   const view = useSidebarView();
   const statuses = useConnections((state) => state.byProfile);
   const connected = (id: string): boolean => statuses[id]?.status === 'ready';
@@ -101,7 +105,7 @@ export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) =
     try {
       await createFolder();
     } catch (e) {
-      setError(errorMessage(e));
+      toastError(errorMessage(e));
     }
   };
 
@@ -175,11 +179,6 @@ export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) =
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       </div>
-      {error && (
-        <ErrorLine role="alert" className="px-3 py-2" onDismiss={() => setError(undefined)}>
-          {error}
-        </ErrorLine>
-      )}
       <div
         role="tree"
         aria-label="Connections and objects"
@@ -219,7 +218,7 @@ export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) =
             profile={profile}
             search={view.search}
             onEdit={props.onEdit}
-            onError={setError}
+            onError={toastError}
           />
         ))}
         {tree.folders.map(({ folder, profiles: inFolder }) => (
@@ -230,7 +229,7 @@ export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) =
             search={view.search}
             forceOpen={searching}
             onEdit={props.onEdit}
-            onError={setError}
+            onError={toastError}
           />
         ))}
       </div>
@@ -528,15 +527,22 @@ function ProfileItem(props: {
   };
   const connected = connection?.status === 'ready';
   const connecting = connection?.status === 'connecting';
+  // Not yet loaded, or failed (the tree folded back): load as it opens.
+  const rootUnloaded = !rootNodes || rootNodes.error !== undefined;
 
   const open = async (): Promise<void> => {
     try {
       await connect(profile.id);
       setExpanded(true);
       void loadChildren(profile.id, []);
-    } catch {
-      // A failure shows under the connection (its `failed` state), where it can be dismissed;
-      // a cancelled password prompt shows nothing.
+    } catch (error) {
+      // A cancelled password prompt shows nothing.
+      if (error instanceof QuerybaraError && error.code === 'CANCELLED') return;
+      // The connection keeps its `failed` mark until the toast is closed (or it connects).
+      toastError(errorMessage(error), {
+        title: profile.name,
+        onClose: () => dismissFailure(profile.id),
+      });
     }
   };
   const close = async (): Promise<void> => {
@@ -596,12 +602,12 @@ function ProfileItem(props: {
         onToggle={() => {
           if (!connected) return;
           setExpanded(!expanded);
-          if (!expanded && !rootNodes) void loadChildren(profile.id, []);
+          if (!expanded && rootUnloaded) void loadChildren(profile.id, []);
         }}
         onActivate={() => {
           if (connected) {
             setExpanded(!expanded);
-            if (!expanded && !rootNodes) void loadChildren(profile.id, []);
+            if (!expanded && rootUnloaded) void loadChildren(profile.id, []);
           } else if (!connecting) void open();
         }}
         label={
@@ -623,7 +629,10 @@ function ProfileItem(props: {
             {(connection?.status === 'lost' || connection?.status === 'failed') && (
               <span
                 aria-hidden="true"
-                title={connection.status === 'lost' ? 'Connection lost' : 'Failed to connect'}
+                title={
+                  (connection.status === 'lost' ? 'Connection lost' : 'Failed to connect') +
+                  (connection.error ? `: ${connection.error}` : '')
+                }
                 className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger"
               />
             )}
@@ -674,7 +683,7 @@ function ProfileItem(props: {
                         }
                         // The dialog lives in the connection's tree: open it first.
                         setExpanded(true);
-                        if (!rootNodes) void loadChildren(profile.id, []);
+                        if (rootUnloaded) void loadChildren(profile.id, []);
                         openNewMongoDatabase(profile.id);
                       }}
                     >
@@ -784,15 +793,6 @@ function ProfileItem(props: {
           </>
         }
       />
-      {connection?.status === 'failed' && connection.error && (
-        <ErrorLine
-          className="py-1 pr-3"
-          style={{ paddingLeft: 28 + depth * 14 }}
-          onDismiss={() => dismissFailure(profile.id)}
-        >
-          {connection.error}
-        </ErrorLine>
-      )}
       {expanded && connected && isSqlEngine(profile.engine) && (
         <div role="group">
           <NodeChildren profile={profile} dialect={profile.engine} path={[]} depth={depth + 1} />
@@ -817,34 +817,6 @@ function ProfileItem(props: {
   );
 }
 
-/** An error in the side bar, in red, with a button that dismisses it. */
-function ErrorLine(props: {
-  readonly children: ReactNode;
-  readonly onDismiss: () => void;
-  readonly className?: string;
-  readonly style?: CSSProperties;
-  readonly role?: 'alert';
-}) {
-  return (
-    <div
-      role={props.role}
-      className={cx('flex items-start gap-1 text-xs text-danger', props.className)}
-      style={props.style}
-    >
-      <p className="min-w-0 flex-1 break-words">{props.children}</p>
-      <button
-        type="button"
-        aria-label="Dismiss the error"
-        title="Dismiss"
-        onClick={props.onDismiss}
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted hover:bg-hover hover:text-fg"
-      >
-        <Icon name="close" className="h-3 w-3" />
-      </button>
-    </div>
-  );
-}
-
 function NodeChildren(props: {
   readonly profile: StoredProfile;
   readonly dialect: SqlDialect;
@@ -859,13 +831,8 @@ function NodeChildren(props: {
       </p>
     );
   }
-  if (state.error) {
-    return (
-      <p className="py-1 text-xs text-danger" style={{ paddingLeft: 12 + props.depth * 14 }}>
-        {state.error}
-      </p>
-    );
-  }
+  // The node folded back, and the error showed as a toast (state/explorer.ts).
+  if (state.error) return null;
   if (state.nodes?.length === 0) {
     return (
       <p className="py-1 text-xs text-muted" style={{ paddingLeft: 12 + props.depth * 14 }}>
@@ -905,13 +872,14 @@ function ObjectNode(props: {
   return (
     <div
       role="treeitem"
-      aria-expanded={node.hasChildren ? expanded : undefined}
+      aria-expanded={node.hasChildren && !node.unavailable ? expanded : undefined}
       aria-selected={shown}
     >
       <Row
         depth={props.depth}
         expandable={node.hasChildren}
         expanded={expanded}
+        unavailable={node.unavailable}
         onToggle={() => toggleNode(profile.id, node)}
         // A click opens a table's data (the chevron expands it), and shows a container's
         // objects in the Objects view as it expands.
@@ -988,9 +956,18 @@ export function Row(props: {
   readonly onSelect?: (() => void) | undefined;
   /** The node the Objects view shows. */
   readonly selected?: boolean;
+  /**
+   * Why the node cannot be browsed (`BrowseNode.unavailable`): the row is dimmed with the reason
+   * as its tooltip, and clicks and keys do not open it. Its menu still opens.
+   */
+  readonly unavailable?: string | undefined;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const clickToggles = props.clickToggles ?? true;
+  const blocked = props.unavailable !== undefined;
+  const expandable = props.expandable && !blocked;
+  const clickToggles = (props.clickToggles ?? true) && !blocked;
+  const onSelect = blocked ? undefined : props.onSelect;
+  const onActivate = blocked ? undefined : props.onActivate;
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     const row = event.currentTarget;
     const rows = [
@@ -1005,17 +982,17 @@ export function Row(props: {
         rows[index - 1]?.focus();
         break;
       case 'ArrowRight':
-        if (props.expandable && !props.expanded) props.onToggle();
+        if (expandable && !props.expanded) props.onToggle();
         else rows[index + 1]?.focus();
         break;
       case 'ArrowLeft':
-        if (props.expandable && props.expanded) props.onToggle();
+        if (expandable && props.expanded) props.onToggle();
         break;
       case 'Enter':
-        if (props.onActivate) props.onActivate();
+        if (onActivate) onActivate();
         else {
           if (clickToggles) props.onToggle();
-          props.onSelect?.();
+          onSelect?.();
         }
         break;
       default:
@@ -1027,17 +1004,19 @@ export function Row(props: {
     <div
       data-tree-row
       tabIndex={0}
-      title={props.title}
+      title={props.unavailable ?? props.title}
+      aria-disabled={blocked || undefined}
       className={cx(
         'group flex h-[22px] cursor-default items-center gap-1 pr-1 text-[13px] hover:bg-list-hover hover:text-fg focus:bg-list-focus focus:text-fg focus:outline focus:outline-1 focus:-outline-offset-1 focus:outline-focus',
         props.selected ? 'bg-list-active text-fg' : 'text-muted',
+        blocked && 'opacity-50',
       )}
       style={{ paddingLeft: 6 + props.depth * 14 }}
       onClick={() => {
         if (clickToggles) props.onToggle();
-        props.onSelect?.();
+        onSelect?.();
       }}
-      onDoubleClick={props.onActivate}
+      onDoubleClick={onActivate}
       onKeyDown={onKeyDown}
       onContextMenu={
         props.menu
@@ -1053,7 +1032,7 @@ export function Row(props: {
         className="flex w-4 shrink-0 justify-center text-muted"
         // The chevron only folds: the row's own click may do more (select, show objects).
         onClick={
-          props.expandable && (!clickToggles || props.onSelect)
+          expandable && (!clickToggles || onSelect)
             ? (event) => {
                 event.stopPropagation();
                 props.onToggle();
@@ -1061,12 +1040,10 @@ export function Row(props: {
             : undefined
         }
         onDoubleClick={
-          props.expandable && (!clickToggles || props.onSelect)
-            ? (event) => event.stopPropagation()
-            : undefined
+          expandable && (!clickToggles || onSelect) ? (event) => event.stopPropagation() : undefined
         }
       >
-        {props.expandable && (
+        {expandable && (
           <Icon name={props.expanded ? 'chevron-down' : 'chevron-right'} className="h-3 w-3" />
         )}
       </span>

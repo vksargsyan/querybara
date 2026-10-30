@@ -9,7 +9,7 @@ import { Button, Icon, cx } from './ui';
 const ANSWER_MS = 8000;
 
 /**
- * The update notice in the corner of the window (spec §20): "update ready, restart" once an
+ * The update notice in the corner of the window (spec §20, under the toasts): "update ready, restart" once an
  * update has downloaded, with its release notes, and the progress and answer of a check the
  * user asked for. It never takes focus; background checks stay silent.
  */
@@ -40,7 +40,7 @@ export function UpdateNotice() {
       aria-live="polite"
       data-testid="update-notice"
       className={cx(
-        'fixed right-4 bottom-4 z-30 flex max-w-sm flex-col gap-2 rounded-lg border bg-raised px-4 py-3 shadow-widget',
+        'flex max-w-sm flex-col gap-2 rounded-lg border bg-raised px-4 py-3 shadow-widget',
         notice.kind === 'answer' && notice.tone === 'error' ? 'border-danger' : 'border-border',
       )}
     >

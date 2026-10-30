@@ -86,6 +86,30 @@ test('a click on a database or a schema lists its objects, and still expands it'
   await expect(treeRow('public').locator('..')).toHaveAttribute('aria-selected', 'true');
 });
 
+test('a database the session cannot browse is dimmed and does not open', async () => {
+  const other = treeRow('postgres');
+  await expect(other).toHaveAttribute('aria-disabled', 'true');
+  await expect(other).toHaveCSS('opacity', '0.5');
+  await expect(other).toHaveAttribute(
+    'title',
+    `This session is connected to "${database!.name}"; open a connection to "postgres" to browse it`,
+  );
+  if (process.env['QUERYBARA_E2E_SHOTS']) {
+    await other.hover();
+    await page.screenshot({
+      path: `${process.env['QUERYBARA_E2E_SHOTS']}/unavailable-database.png`,
+    });
+  }
+  await other.click();
+  await other.dblclick();
+  await other.press('Enter');
+  await expect(other.locator('..')).not.toHaveAttribute('aria-expanded');
+  await expect(other.locator('[data-tree-chevron] svg')).toHaveCount(0);
+  await expect(page.getByTestId('toast')).toHaveCount(0);
+  // The Objects view still shows the schema's tables.
+  await expect(names()).toHaveText(['customers', 'notes', 'orders']);
+});
+
 test('sorts by a column, searches, and selects with Shift', async () => {
   await grid().getByRole('columnheader', { name: 'Rows' }).click();
   await expect(names()).toHaveText(['notes', 'customers', 'orders']);

@@ -39,10 +39,13 @@ function trailFor(profileId: string, path: readonly string[]): string[] {
   });
 }
 
-/** Shows a node's objects in the Objects tab, opening the tab (or bringing it forward). */
+/**
+ * Shows a node's objects in the Objects tab, opening the tab (or bringing it forward). A node the
+ * session cannot browse (`unavailable`) shows nothing.
+ */
 export function showObjects(profileId: string, node: BrowseNode, engine: EngineId): void {
   const path = objectsPathFor(node, engine);
-  if (path === undefined) return;
+  if (path === undefined || node.unavailable !== undefined) return;
   useObjectsView.setState({
     location: { profileId, path, trail: trailFor(profileId, path), source: node.path },
   });

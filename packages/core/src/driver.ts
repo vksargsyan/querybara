@@ -77,6 +77,11 @@ export interface BrowseNode {
   readonly hasChildren: boolean;
   /** Extra columns for the object list pane: row estimate, sizes, engine, comment... */
   readonly detail?: Readonly<Record<string, string | number | null>>;
+  /**
+   * Why this session cannot browse the node (a PostgreSQL database other than the connected
+   * one): the tree shows it dimmed and does not open it, rather than fail when it is clicked.
+   */
+  readonly unavailable?: string;
 }
 
 export interface ExplainOptions {
