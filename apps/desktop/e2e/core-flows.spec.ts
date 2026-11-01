@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { launchApp, openNewConnection, type LaunchedApp } from './app';
+import { launchApp, newQueryTab, openNewConnection, type LaunchedApp } from './app';
 
 /**
  * The core flows against a real PostgreSQL server: create and test a connection, run a query
@@ -75,7 +75,7 @@ test('streams a result past the row limit and fetches more', async () => {
   const profile = page.getByRole('treeitem', { name: NAME });
   await profile.locator('[data-tree-row]').first().dblclick();
   await expect(profile.getByText('Connected', { exact: true })).toBeAttached();
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   await expect(page.getByTestId('query-panel')).toBeVisible();
 
   await typeInEditor('select generate_series(1, 5000) as n');

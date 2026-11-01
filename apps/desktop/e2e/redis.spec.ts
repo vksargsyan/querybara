@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { RedisSession } from '@querybara/driver-redis';
 
-import { chooseEngine, launchApp, openNewConnection, type LaunchedApp } from './app';
+import { chooseEngine, launchApp, newQueryTab, openNewConnection, type LaunchedApp } from './app';
 import { connectRedis, deletePrefix, e2ePrefix, redisCommand, redisText } from './redis';
 
 /**
@@ -204,7 +204,7 @@ test('bulk deletes by pattern after a dry-run count', async () => {
 });
 
 test('runs commands in the CLI with autocomplete', async () => {
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   const cli = visible('redis-cli');
   const input = cli.getByTestId('cli-input');
   await input.click();

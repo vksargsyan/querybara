@@ -29,11 +29,12 @@ What works today:
 - **Command palette**: ⌘P (Ctrl+P) goes to a table, view or collection by a few of its
   letters; ⌘⇧P (Ctrl+Shift+P) runs any command; key bindings as VS Code's, with chords, and a
   Keyboard Shortcuts editor (⌘K ⌘S) to change them. A toolbar under the title bar shows the
-  tools of the connection in front and follows it from tab to tab: for MySQL, MariaDB and
-  PostgreSQL, query, query builder, SQL file, table, new table and database, ER diagram,
-  import, export, transfer, backup, restore, structure and data compare, and the server tools;
-  for MongoDB, Redis and Elasticsearch, their own tools. Each acts on the database, schema,
-  table, collection or index in front and asks for the rest; Ctrl+Alt+B hides it.
+  essential tools of the connection in front, in labelled groups of coloured icons, and follows
+  it from tab to tab: for MySQL, MariaDB and PostgreSQL, query, query builder, table, ER
+  diagram, import, export, structure and data compare, saved comparisons, the server monitor
+  and tasks; for MongoDB, Redis and Elasticsearch, their own. Each acts on the database,
+  schema, table, collection or index in front and asks for the rest; the other tools are in
+  the connection's menu and the palette. Ctrl+Alt+B hides it.
 - **Explorer**: a side bar you resize by dragging its edge and hide with ⌘B (Ctrl+B), with search
   and a filter by engine, environment and state; a click on a database, schema or folder lists
   its objects in the Objects tab with rows, sizes, engine, dates and comments (documents, sizes

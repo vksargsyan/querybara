@@ -132,13 +132,6 @@ export async function clearFinishedJobs(): Promise<void> {
   await mainApi().jobs.clear();
 }
 
-/** Jobs still running, for the header badge. */
-export function runningCount(state: JobsState): number {
-  let count = 0;
-  for (const id of state.order) if (state.jobs[id]?.state === 'running') count++;
-  return count;
-}
-
 /** How far along a job is, 0–1, when its size is known. */
 export function jobFraction(job: JobInfo): number | undefined {
   if (job.state !== 'running') return job.state === 'completed' ? 1 : undefined;

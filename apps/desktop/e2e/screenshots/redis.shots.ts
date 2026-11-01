@@ -5,7 +5,13 @@ import {
 } from '@querybara/driver-redis';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { chooseEngine, connectionTab, openNewConnection, type LaunchedApp } from '../app';
+import {
+  chooseEngine,
+  connectionTab,
+  newQueryTab,
+  openNewConnection,
+  type LaunchedApp,
+} from '../app';
 import {
   addConnection,
   capture,
@@ -154,7 +160,7 @@ test('redis-stream', async () => {
 
 test('redis-cli', async () => {
   await closeTabs(page);
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   const cli = visible(page, 'redis-cli');
   const input = cli.getByTestId('cli-input');
   for (const command of [

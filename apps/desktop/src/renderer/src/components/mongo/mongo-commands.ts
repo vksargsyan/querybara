@@ -14,7 +14,7 @@ import { defaultShellScript } from '../../state/mongo/explorer';
 import { openMongoExport, openMongoImport } from '../../state/mongo/file-transfer';
 import type { ResultMode } from '../../state/mongo/results';
 import { openServerTools } from '../../state/server-tools/panels';
-import { openStructureCompare } from '../../state/sync/panels';
+import { openDataCompare, openStructureCompare } from '../../state/sync/panels';
 import { openTransferFrom } from '../../state/transfer-db/api';
 import { openIntelliShell, openMongoCollection, openMongoSql, openMongoTool } from './open';
 
@@ -194,6 +194,18 @@ export function registerMongoCommands(): () => void {
       run: () =>
         onDatabase((context, db) =>
           openStructureCompare({ source: { profileId: context.profile.id, database: db } }),
+        ),
+    },
+    {
+      id: 'mongo.compareData',
+      category: 'MongoDB',
+      title: 'Compare Data To…',
+      icon: 'compare-rows',
+      keywords: ['documents', 'sync', 'diff'],
+      enabled: anyMongo,
+      run: () =>
+        onDatabase((context, db) =>
+          openDataCompare({ source: { profileId: context.profile.id, database: db } }),
         ),
     },
     {

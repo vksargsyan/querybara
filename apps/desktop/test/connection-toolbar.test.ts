@@ -102,11 +102,38 @@ describe('the tools of each engine', () => {
       ),
     );
     expect(registered.has('sql.erDiagram')).toBe(true);
+    expect(registered.has('mongo.compareData')).toBe(true);
+    expect(registered.has('sync.savedComparisons')).toBe(true);
     for (const [kind, groups] of Object.entries(TOOLBARS)) {
-      for (const tool of groups.flat()) {
+      for (const tool of groups.flatMap((group) => group.tools)) {
         expect(registered.has(tool.command), `${kind}: ${tool.command}`).toBe(true);
       }
     }
+  });
+
+  it('keeps a few tools, in labelled groups, each once, with labels that fit one width', () => {
+    for (const [kind, groups] of Object.entries(TOOLBARS)) {
+      const tools = groups.flatMap((group) => group.tools);
+      expect(tools.length, kind).toBeLessThanOrEqual(13);
+      expect(new Set(tools.map((tool) => tool.command)).size, kind).toBe(tools.length);
+      expect(new Set(groups.map((group) => group.label)).size, kind).toBe(groups.length);
+      for (const group of groups) {
+        expect(group.label, kind).not.toBe('');
+        expect(group.tools.length, `${kind}: ${group.label}`).toBeGreaterThan(0);
+      }
+      // The buttons are one width (72px at 11px): about ten characters.
+      for (const tool of tools) expect(tool.label.length, tool.label).toBeLessThanOrEqual(12);
+    }
+  });
+
+  it('leaves New connection to the side bar, History to the title bar, and Jobs to the palette', () => {
+    const commands = Object.values(TOOLBARS).flatMap((groups) =>
+      groups.flatMap((group) => group.tools.map((tool) => tool.command)),
+    );
+    expect(commands).not.toContain('connection.new');
+    expect(commands).not.toContain('query.history');
+    expect(commands).not.toContain('tools.jobs');
+    expect(commands).not.toContain('sync.compareStructure');
   });
 });
 

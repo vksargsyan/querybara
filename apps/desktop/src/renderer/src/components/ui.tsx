@@ -591,6 +591,14 @@ export function Icon({
         <path d="M6 2.5v11" />
       </>
     ),
+    // The side bar's glyph mirrored: the panel on the right (History).
+    'sidebar-right': (
+      <>
+        <path d="M10 2.5h4v11h-4z" {...wash} stroke="none" />
+        <rect x="2" y="2.5" width="12" height="11" rx="1.2" />
+        <path d="M10 2.5v11" />
+      </>
+    ),
     columns: (
       <>
         <path d="M6 2.5h4v11H6z" {...wash} stroke="none" />

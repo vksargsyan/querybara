@@ -1,7 +1,7 @@
 import type { Session } from '@querybara/core';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { launchApp, openNewConnection, type LaunchedApp } from './app';
+import { launchApp, newQueryTab, openNewConnection, type LaunchedApp } from './app';
 import { connect, query, scratchDatabase } from './db';
 
 /**
@@ -260,7 +260,7 @@ test('stages an edit, an insert and a delete, and applies them in one transactio
   expect(await query(direct!, `SELECT name FROM items WHERE id = 1`)).toEqual([['renamed item']]);
   expect(await query(direct!, `SELECT count(*)::int FROM items WHERE id = 2`)).toEqual([[0]]);
   expect(await query(direct!, `SELECT qty FROM items WHERE name = 'new item'`)).toEqual([[7]]);
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   const editor = page.getByTestId('sql-editor').last();
   await editor.click();
   await page.keyboard.type(`select * from items where name in ('renamed item', 'new item')`);

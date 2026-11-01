@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import { startSshServer, type TestSshServer } from '../../test/ssh-server';
-import { connectionTab, openNewConnection, type LaunchedApp } from '../app';
+import { connectionTab, newQueryTab, openNewConnection, type LaunchedApp } from '../app';
 import {
   addConnection,
   capture,
@@ -91,7 +91,7 @@ async function openShopTables(): Promise<void> {
 
 /** Opens a new query tab on Larchwood. */
 async function newQuery(): Promise<void> {
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   await expect(visible('query-panel')).toBeVisible();
 }
 

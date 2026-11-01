@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import type { LaunchedApp } from '../app';
+import { newQueryTab, type LaunchedApp } from '../app';
 import {
   addConnection,
   capture,
@@ -27,7 +27,7 @@ test.afterAll(async () => {
 test('smoke', async () => {
   await addConnection(page, DEMO.postgres);
   await connectProfile(page, DEMO.postgres.name);
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   await typeInEditor(page, 'select 1 as one');
   await page.keyboard.press('ControlOrMeta+Enter');
   await expect(page.getByTestId('row-count')).toHaveText('1 row');

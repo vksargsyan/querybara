@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { launchApp, openNewConnection, type LaunchedApp } from './app';
+import { launchApp, newQueryTab, openNewConnection, type LaunchedApp } from './app';
 import { connect, query, scratchDatabase } from './db';
 
 /**
@@ -79,7 +79,7 @@ test('a SQL tab moves to another database and connection from its toolbar', asyn
   const profile = page.getByRole('treeitem', { name: FIRST });
   await profile.locator('[data-tree-row]').first().dblclick();
   await expect(profile.getByText('Connected', { exact: true })).toBeAttached();
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
 
   const panel = page.getByTestId('query-panel').filter({ visible: true });
   const connection = panel.getByLabel('Connection', { exact: true });

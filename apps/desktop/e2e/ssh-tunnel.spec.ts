@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
 import { startSshServer, type TestSshServer } from '../test/ssh-server';
-import { connectionTab, launchApp, openNewConnection, type LaunchedApp } from './app';
+import { connectionTab, launchApp, newQueryTab, openNewConnection, type LaunchedApp } from './app';
 
 /**
  * An SSH tunnel end to end (spec §4): an in-process SSH server in the test process forwards to
@@ -92,7 +92,7 @@ test('asks about the host key, runs a query through the tunnel and reconnects wi
     `[127.0.0.1]:${ssh.port} ssh-ed25519 ${ssh.hostKeyFingerprint}`,
   );
 
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   await expect(page.getByTestId('query-panel')).toBeVisible();
   await runQuery('select generate_series(1, 3) as n');
   await expect(page.getByTestId('row-count')).toHaveText('3 rows');

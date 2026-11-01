@@ -18,6 +18,7 @@ import { TransferDbHost } from './components/transfer-db/TransferDbDialog';
 import { BackupDialogs } from './components/backup/BackupDialogs';
 import { Prompts } from './components/Prompts';
 import { ScheduleDialog } from './components/schedules/ScheduleDialog';
+import { SavedComparisonsHost } from './components/sync/SavedComparisons';
 import { registerMongoCommands } from './components/mongo/mongo-commands';
 import { MongoFileDialogs } from './components/mongo/FileTransferDialogs';
 import { ConnectionToolbar } from './components/toolbar/ConnectionToolbar';
@@ -35,9 +36,8 @@ import { UpdateNotice } from './components/UpdateNotice';
 import { useConnections } from './state/connections';
 import { keys, useProfiles, useSettings } from './state/data';
 import { startKeybindings, useKeybindings } from './state/keybindings';
-import { runningCount, showJobs, useJobs, watchJobs } from './state/jobs';
+import { useJobs, watchJobs } from './state/jobs';
 import { usePanels } from './state/panels';
-import { openSchedulesPanel } from './state/schedules';
 import { showSidebar, useSidebar } from './state/sidebar';
 import { openAbout, watchAppCommands, watchUpdates } from './state/updates';
 import { useWorkspace } from './state/workspace';
@@ -55,7 +55,6 @@ export function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const jobsOpen = useJobs((state) => state.open);
   const sidebarVisible = useSidebar((state) => state.visible);
-  const jobsRunning = useJobs(runningCount);
   const profiles = useProfiles();
   const activeTab = useWorkspace((state) =>
     state.activeTabId ? state.tabs[state.activeTabId] : undefined,
@@ -149,14 +148,8 @@ export function App() {
         sidebarVisible={sidebarVisible}
         onToggleSidebar={() => showSidebar(!sidebarVisible)}
         onToggleTheme={() => void toggleTheme()}
-        onNewQuery={newQuery}
-        newQueryDisabled={!activeTab && readyProfiles.length === 0}
         historyOpen={historyOpen}
         onToggleHistory={() => setHistoryOpen(!historyOpen)}
-        onSchedules={() => openSchedulesPanel()}
-        jobsOpen={jobsOpen}
-        jobsRunning={jobsRunning}
-        onToggleJobs={() => showJobs(!jobsOpen)}
       />
       <ConnectionToolbar />
       <div className="flex min-h-0 flex-1">
@@ -186,6 +179,7 @@ export function App() {
       )}
       <Prompts />
       <ScheduleDialog />
+      <SavedComparisonsHost />
       <HostKeyPrompts />
       <TransferDialogs />
       <TransferDbHost />

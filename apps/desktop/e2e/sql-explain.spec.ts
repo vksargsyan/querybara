@@ -6,7 +6,7 @@ import { createMysqlAdapter } from '@querybara/driver-mysql';
 import { resolvedProfileFromUrl } from '@querybara/driver-sql-base';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { launchApp, openNewConnection, type LaunchedApp } from './app';
+import { launchApp, newQueryTab, openNewConnection, type LaunchedApp } from './app';
 import { connect, query, scratchDatabase } from './db';
 
 /**
@@ -98,7 +98,7 @@ async function typeInEditor(text: string): Promise<void> {
 
 test('explains the statement at the cursor with Ctrl/Cmd+E', async () => {
   await addConnection(database!.url, 'E2E Explain');
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   await typeInEditor('select * from items where qty > 1500');
   await page.keyboard.press('ControlOrMeta+e');
 

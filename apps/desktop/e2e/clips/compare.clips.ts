@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { runCommand } from '../app';
 import { DEMO } from '../screenshots/harness';
 import { visible } from '../screenshots/nosql';
 import { film } from './director';
@@ -19,11 +20,7 @@ test('structure-sync', async () => {
     },
     async (clip) => {
       const { page } = clip;
-      await page
-        .getByRole('toolbar', { name: 'Window' })
-        .getByRole('button', { name: 'Compare' })
-        .click();
-      await page.getByRole('menuitem', { name: 'Compare structure…' }).click();
+      await runCommand(page, 'Compare: Compare Structure…');
       const view = visible(page, 'structure-compare');
       const side = async (role: 'Source' | 'Target', profile: string, database: string) => {
         await view

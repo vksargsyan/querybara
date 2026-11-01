@@ -201,15 +201,18 @@ test('keeps a password typed for an imported connection that asked for it', asyn
   await expect(page.getByRole('dialog', { name: 'Connect to E2E Reports' })).toHaveCount(0);
 });
 
-test('the Compare menu shows a glyph for each item', async () => {
+test('the title bar keeps the two panel toggles and the theme (ADR 0043)', async () => {
   const launched = await launch();
   const page = launched.page;
-  await page.getByRole('button', { name: 'Compare' }).click();
-  const items = page.getByRole('menuitem');
-  await expect(items).toHaveCount(3);
-  for (const item of await items.all()) await expect(item.locator('svg')).toHaveCount(1);
-  await shot(page, 'compare-menu');
-  await page.keyboard.press('Escape');
+  const actions = page.getByRole('toolbar', { name: 'Window' }).getByRole('button');
+  await expect(actions).toHaveCount(3);
+  // History's glyph is the side bar's, mirrored: the panel on the right.
+  await expect(actions.nth(0)).toHaveAccessibleName('Side bar');
+  await expect(actions.nth(0).locator('svg')).toHaveAttribute('data-icon', 'sidebar');
+  await expect(actions.nth(1)).toHaveAccessibleName('History');
+  await expect(actions.nth(1).locator('svg')).toHaveAttribute('data-icon', 'sidebar-right');
+  await expect(actions.nth(2)).toHaveAccessibleName('Switch theme');
+  await shot(page, 'title-bar');
   await page.getByRole('button', { name: 'Connection actions' }).click();
   await shot(page, 'connection-actions');
 });

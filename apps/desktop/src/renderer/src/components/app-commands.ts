@@ -30,6 +30,7 @@ import { openSchedulesPanel } from '../state/schedules';
 import { showSidebar } from '../state/sidebar';
 import { setToolbarVisible, useToolbar } from '../state/toolbar';
 import { activeCollectionView, activeIntelliShell } from '../state/mongo/context';
+import { openDataCompare, openStructureCompare, showSavedComparisons } from '../state/sync/panels';
 import { getTableView } from '../state/table-view';
 import { openAbout } from '../state/updates';
 import { currentDock, openTableDesigner, requestClose } from './dock';
@@ -439,6 +440,34 @@ export function registerAppCommands(actions: () => AppActions): () => void {
       title: 'Schedules',
       icon: 'schedule',
       run: () => openSchedulesPanel(),
+    },
+    {
+      id: 'sync.compareStructure',
+      category: 'Compare',
+      title: 'Compare Structure…',
+      icon: 'compare',
+      keywords: ['schema', 'sync', 'diff', 'migrate'],
+      run: () => {
+        openStructureCompare();
+      },
+    },
+    {
+      id: 'sync.compareData',
+      category: 'Compare',
+      title: 'Compare Data…',
+      icon: 'compare-rows',
+      keywords: ['rows', 'documents', 'sync', 'diff'],
+      run: () => {
+        openDataCompare();
+      },
+    },
+    {
+      id: 'sync.savedComparisons',
+      category: 'Compare',
+      title: 'Saved Comparisons…',
+      icon: 'bookmark',
+      keywords: ['sync', 'diff', 'saved'],
+      run: () => showSavedComparisons(true),
     },
     {
       id: 'tools.jobs',
