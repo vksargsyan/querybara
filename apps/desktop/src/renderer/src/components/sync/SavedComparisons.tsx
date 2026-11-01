@@ -1,61 +1,23 @@
 import { ENGINES } from '@querybara/core';
 import type { SavedComparison } from '@querybara/ipc';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { DropdownMenu } from 'radix-ui';
-import { useState, type ReactElement } from 'react';
+import { useState } from 'react';
 
 import { errorMessage } from '../../lib/errors';
 import { mainApi } from '../../lib/main-client';
 import { useProfiles } from '../../state/data';
 import { confirm } from '../../state/dialogs';
-import {
-  openDataCompare,
-  openSavedComparison,
-  openStructureCompare,
-  showSavedComparisons,
-  useSyncPanels,
-} from '../../state/sync/panels';
-import { MenuItem } from '../MenuItem';
+import { openSavedComparison, showSavedComparisons, useSyncPanels } from '../../state/sync/panels';
 import { Button, Modal } from '../ui';
 import { comparisonDraft, editSchedule } from '../../state/schedules';
 
-/**
- * The window's Compare menu (spec §13): a new structure or data compare, and the saved
- * comparisons, which reopen in a panel of their own.
- */
-
 export const SAVED_COMPARISONS_KEY = ['sync', 'saved'] as const;
 
-/** `trigger` is the button that opens the menu (the title bar's Compare icon). */
-export function SyncMenu(props: { readonly trigger: ReactElement }) {
-  return (
-    <>
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>{props.trigger}</DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            align="end"
-            className="z-50 min-w-48 rounded border border-border bg-raised p-1 text-[13px] shadow-widget"
-          >
-            <MenuItem icon="compare" onSelect={() => openStructureCompare()}>
-              Compare structure…
-            </MenuItem>
-            <MenuItem icon="compare-rows" onSelect={() => openDataCompare()}>
-              Compare data…
-            </MenuItem>
-            <DropdownMenu.Separator className="my-1 h-px bg-border" />
-            <MenuItem icon="bookmark" onSelect={() => showSavedComparisons(true)}>
-              Saved comparisons…
-            </MenuItem>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
-      <SavedComparisonsHost />
-    </>
-  );
-}
-
-function SavedComparisonsHost() {
+/**
+ * The saved comparisons (spec §13), opened from the connection toolbar's Compare group or the
+ * palette (Compare: Saved Comparisons…); each reopens in a panel of its own. Mounted once, in App.
+ */
+export function SavedComparisonsHost() {
   const open = useSyncPanels((state) => state.savedOpen);
   return open ? <SavedComparisonsDialog onClose={() => showSavedComparisons(false)} /> : null;
 }

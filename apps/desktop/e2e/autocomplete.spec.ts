@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { launchApp, openNewConnection, type LaunchedApp } from './app';
+import { launchApp, newQueryTab, openNewConnection, type LaunchedApp } from './app';
 import { scratchDatabase } from './db';
 
 /**
@@ -85,7 +85,7 @@ test('creates tables with a foreign key through SQL', async () => {
   await treeRow(database!.name).click();
   await treeRow('public').click();
   await treeRow('Tables').click();
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   await expect(page.getByTestId('query-panel')).toBeVisible();
 
   await clearEditor();

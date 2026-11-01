@@ -1,6 +1,7 @@
 # 0042. A toolbar for every connection, following the one in front
 
-- Status: Accepted
+- Status: Accepted; the tools of each engine and how the toolbar draws them superseded by
+  [0043](0043-a-lighter-toolbar-and-title-bar.md)
 - Date: 2026-10-29
 
 ## Context

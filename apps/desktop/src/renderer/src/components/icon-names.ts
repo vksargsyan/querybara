@@ -31,6 +31,7 @@ export type IconName =
   | 'discard'
   | 'columns'
   | 'sidebar'
+  | 'sidebar-right'
   | 'bookmark'
   | 'folder-move'
   | 'folder-up'

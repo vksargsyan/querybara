@@ -31,7 +31,8 @@ With the Kiln design system (ADR 0025), the app is to follow VS Code's UI signat
   banner naming the connection instead.
 - **The right** holds the window's actions as icons with tooltips: new query, history, compare,
   schedules, jobs (with Kiln's solid rust count badge), and the theme switch (sun or moon). They
-  keep their accessible names.
+  keep their accessible names. ADR 0043 leaves the side bar and History toggles and the theme
+  switch there; the rest moved to the connection toolbar and the palette.
 - **Windows and Linux menu bar:** the native menu bar hides with the native title bar there, so
   the title bar draws the application menu at its left (File, Edit, View, Window, Help), as VS
   Code does. It has the same items as the native menu (`shared/window-menu.ts`, checked against

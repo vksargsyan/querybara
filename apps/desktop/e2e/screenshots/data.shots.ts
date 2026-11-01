@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import type { LaunchedApp } from '../app';
+import { runCommand, showJobsPanel, type LaunchedApp } from '../app';
 import { addConnection, capture, connectProfile, DEMO, launchForShots } from './harness';
 
 /**
@@ -231,19 +231,15 @@ async function chooseSide(
   await view.getByLabel(`${role} schemas`).fill('shop');
 }
 
-async function openCompare(item: 'Compare structure…' | 'Compare data…'): Promise<void> {
-  await page
-    .getByRole('toolbar', { name: 'Window' })
-    .getByRole('button', { name: 'Compare' })
-    .click();
-  await page.getByRole('menuitem', { name: item }).click();
+async function openCompare(item: 'Compare Structure…' | 'Compare Data…'): Promise<void> {
+  await runCommand(page, `Compare: ${item}`);
 }
 
 // ---------------------------------------------------------------------------------------------
 // Structure sync and data compare
 
 test('structure-sync', async () => {
-  await openCompare('Compare structure…');
+  await openCompare('Compare Structure…');
   const view = panel('structure-compare');
   await chooseSide(view, 'Source', DEMO.postgres.name, 'larchwood');
   await chooseSide(view, 'Target', DEMO.postgresStaging.name, 'larchwood_staging');
@@ -259,7 +255,7 @@ test('structure-sync', async () => {
 
 test('data-compare', async () => {
   await closeTabs();
-  await openCompare('Compare data…');
+  await openCompare('Compare Data…');
   const view = panel('data-compare');
   await chooseSide(view, 'Source', DEMO.postgres.name, 'larchwood');
   await chooseSide(view, 'Target', DEMO.postgresStaging.name, 'larchwood_staging');
@@ -446,7 +442,7 @@ test('schedules', async () => {
 
   // A saved structure comparison, run every weekday morning.
   await closeTabs();
-  await openCompare('Compare structure…');
+  await openCompare('Compare Structure…');
   const view = panel('structure-compare');
   await chooseSide(view, 'Source', DEMO.postgres.name, 'larchwood');
   await chooseSide(view, 'Target', DEMO.postgresStaging.name, 'larchwood_staging');
@@ -455,11 +451,7 @@ test('schedules', async () => {
   await view.getByRole('button', { name: 'Save comparison…' }).click();
   await view.getByLabel('Comparison name').fill('Staging drift check');
   await view.getByRole('button', { name: 'Save', exact: true }).click();
-  await page
-    .getByRole('toolbar', { name: 'Window' })
-    .getByRole('button', { name: 'Compare' })
-    .click();
-  await page.getByRole('menuitem', { name: 'Saved comparisons…' }).click();
+  await runCommand(page, 'Compare: Saved Comparisons…');
   const saved = page.getByRole('dialog', { name: 'Saved comparisons' });
   await saved
     .getByTestId('saved-comparison')
@@ -477,10 +469,7 @@ test('schedules', async () => {
   await expect(treeRow('shop')).toBeHidden();
   await closeTabs();
 
-  await page
-    .getByRole('toolbar', { name: 'Window' })
-    .getByRole('button', { name: 'Schedules' })
-    .click();
+  await runCommand(page, 'Tools: Schedules');
   const schedules = panel('schedules-panel');
   await expect(schedules).toBeVisible();
   await schedules
@@ -658,7 +647,7 @@ test('jobs', async () => {
   );
   await openRows('orders');
   // A fresh job list: a small export that finishes, then the large import that runs.
-  await page.getByRole('button', { name: 'Jobs' }).click();
+  await showJobsPanel(page);
   const clear = page.getByRole('button', { name: 'Clear finished' });
   if (await clear.isEnabled()) await clear.click();
   await closeJobs();
@@ -714,8 +703,7 @@ test('jobs', async () => {
   if ((await objects.count()) > 0) await objects.first().click();
   await page.locator('.dv-tab').filter({ hasText: 'orders' }).click();
 
-  const jobs = page.getByTestId('jobs-panel');
-  if (!(await jobs.isVisible())) await page.getByRole('button', { name: 'Jobs' }).click();
+  await showJobsPanel(page);
   const running = job('page-views-2026-09.csv');
   await expect(running).toHaveAttribute('data-state', 'running');
   await expect(running.getByRole('progressbar')).toHaveAttribute('aria-valuenow', /^[3-9]\d$/, {

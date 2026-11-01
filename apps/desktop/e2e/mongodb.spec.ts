@@ -5,7 +5,7 @@ import type { MongoSession } from '@querybara/driver-mongodb';
 import { toEjson } from '@querybara/mongo-tools';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { launchApp, openNewConnection, type LaunchedApp } from './app';
+import { launchApp, newQueryTab, openNewConnection, type LaunchedApp } from './app';
 import { connectMongo, scratchMongoDatabase, withoutTls } from './mongo-db';
 
 /**
@@ -491,7 +491,7 @@ async function runScript(script: string): Promise<void> {
 }
 
 test('runs mongosh scripts in IntelliShell, a result tab per find()', async () => {
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   await expect(shellPanel()).toBeVisible();
   await expect(page.locator('.dv-tab', { hasText: `IntelliShell: ${NAME}` })).toHaveCount(1);
   await expect(shellPanel().getByTestId('intellishell-output')).toContainText('mongosh');

@@ -5,10 +5,10 @@ import { launchApp, openNewConnection, type LaunchedApp } from './app';
 import { connect, query, scratchDatabase } from './db';
 
 /**
- * The connection toolbar (ADR 0042) against real servers: it shows the tools of the connection
- * in front and follows it from a PostgreSQL tab to a Redis one and back; its SQL tools act on
- * the database, schema and table in front and ask for the rest; Redis and Elasticsearch get
- * their own sets. Each engine's part runs when its server's URL is set.
+ * The connection toolbar (ADR 0042, ADR 0043) against real servers: it shows the tools of the
+ * connection in front and follows it from a PostgreSQL tab to a Redis one and back; its SQL
+ * tools act on the database, schema and table in front and ask for the rest; Redis and
+ * Elasticsearch get their own sets. Each engine's part runs when its server's URL is set.
  */
 
 const PG_URL = process.env['QUERYBARA_TEST_POSTGRES_URL'];
@@ -155,11 +155,30 @@ test('offers the Elasticsearch tools with its console in front', async () => {
   await expect(page.getByRole('toolbar', { name: 'Elasticsearch' })).toBeVisible();
   await tool('Cluster').click();
   await expect(page.getByTestId('search-cluster').filter({ visible: true })).toBeVisible();
-  await tool('New Index').click();
-  const create = page.getByRole('dialog', { name: 'Create index' });
-  await expect(create).toBeVisible();
-  await create.getByRole('button', { name: 'Cancel' }).click();
-  await expect(create).toBeHidden();
+  await tool('SQL').click();
+  await expect(page.getByTestId('search-sql').filter({ visible: true })).toBeVisible();
+});
+
+test('keeps one width for every button, in groups labelled above (ADR 0043)', async () => {
+  test.skip(!PG_URL && !REDIS_URL && !ES_URL, 'Needs a connection');
+  const groups = toolbar().getByRole('group');
+  expect(await groups.count()).toBeGreaterThan(1);
+  for (const group of await groups.all()) {
+    await expect(group).toContainText((await group.getAttribute('aria-label'))!, {
+      ignoreCase: true,
+    });
+  }
+  const widths = await toolbar()
+    .getByRole('button')
+    .evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().width));
+  expect(new Set(widths).size).toBe(1);
+  // Each icon has its glaze; the label stays muted.
+  const colours = await toolbar()
+    .locator('button svg')
+    .evaluateAll((icons) => icons.map((icon) => getComputedStyle(icon).color));
+  expect(new Set(colours).size).toBeGreaterThan(1);
+  // New connection lives in the side bar's actions, not here.
+  await expect(tool('Connect')).toHaveCount(0);
 });
 
 test('hides and shows with Ctrl+Alt+B', async () => {

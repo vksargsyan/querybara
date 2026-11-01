@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 
 import {
   _electron as electron,
+  expect,
   type ElectronApplication,
   type Locator,
   type Page,
@@ -50,6 +51,33 @@ export async function launchApp(
       if (options.userData === undefined) rmSync(userData, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * Runs a command from the palette (Ctrl/⌘+Shift+P) by its full name as the palette lists it,
+ * "Category: Title". The window-wide actions the title bar no longer carries (ADR 0043) are
+ * reached this way.
+ */
+export async function runCommand(page: Page, name: string): Promise<void> {
+  const palette = page.getByTestId('command-palette');
+  await page.keyboard.press('ControlOrMeta+Shift+P');
+  await expect(palette.getByRole('combobox')).toHaveValue('>');
+  await page.keyboard.type(name);
+  await palette.getByRole('option').filter({ hasText: name }).first().click();
+  await expect(palette).toBeHidden();
+}
+
+/** Opens a query tab on the connection in front (Query: New Query Tab, Ctrl/⌘+T). */
+export async function newQueryTab(page: Page): Promise<void> {
+  await runCommand(page, 'Query: New Query Tab');
+}
+
+/** Opens the Jobs panel unless it is open (Tools: Toggle Jobs). */
+export async function showJobsPanel(page: Page): Promise<void> {
+  if (!(await page.getByTestId('jobs-panel').isVisible())) {
+    await runCommand(page, 'Tools: Toggle Jobs');
+  }
+  await expect(page.getByTestId('jobs-panel')).toBeVisible();
 }
 
 /** Opens the new connection dialog from the side bar's actions menu. */

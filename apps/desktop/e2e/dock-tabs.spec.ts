@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { connectionTab, launchApp, openNewConnection, type LaunchedApp } from './app';
+import { connectionTab, launchApp, newQueryTab, openNewConnection, type LaunchedApp } from './app';
 
 /**
  * The dock's tabs and the side bar's folders: a connection's colour along the top of its tabs;
@@ -52,7 +52,7 @@ const folderIcon = (): Locator =>
 
 async function newQuery(): Promise<void> {
   const before = await tabs().count();
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   await expect(tabs()).toHaveCount(before + 1);
 }
 

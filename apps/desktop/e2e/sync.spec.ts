@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Session } from '@querybara/core';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { launchApp, openNewConnection, type LaunchedApp } from './app';
+import { launchApp, openNewConnection, runCommand, showJobsPanel, type LaunchedApp } from './app';
 import { connect, query, scratchDatabase } from './db';
 
 /**
@@ -186,21 +186,24 @@ test('compares structure, applies all but one operation and re-compares to it', 
   await view.getByLabel('Comparison name').fill('Nightly structure');
   await view.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(view.getByTestId('sync-notice')).toContainText('Saved "Nightly structure"');
-  await page.locator('header').getByRole('button', { name: 'Compare', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Saved comparisons…' }).click();
+  // The toolbar's Compare group keeps the saved comparisons.
+  await page
+    .getByRole('toolbar', { name: 'PostgreSQL' })
+    .getByRole('group', { name: 'Compare' })
+    .getByRole('button', { name: 'Saved', exact: true })
+    .click();
   const saved = page.getByRole('dialog', { name: 'Saved comparisons' });
   await expect(saved.getByTestId('saved-comparison')).toContainText('Nightly structure');
   await saved.getByRole('button', { name: 'Close' }).click();
   await expect(saved).toBeHidden();
 
   const job = page.getByTestId('job-item').filter({ hasText: 'Apply structure changes to' });
-  await page.getByRole('button', { name: 'Jobs' }).click();
+  await showJobsPanel(page);
   await expect(job).toHaveAttribute('data-state', 'completed');
 });
 
 test('compares data, applies an insert, an update and a delete, and compares clean', async () => {
-  await page.locator('header').getByRole('button', { name: 'Compare', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Compare data…' }).click();
+  await runCommand(page, 'Compare: Compare Data…');
   const view = panel('data-compare');
   await view.getByLabel('Source connection').selectOption({ label: `${NAME} · PostgreSQL` });
   await view.getByLabel('Source database').fill(source!.name);

@@ -3,16 +3,28 @@ import { isSqlEngine, type EngineId } from '@querybara/core';
 import type { IconName } from '../icon-names';
 
 /**
- * The connection toolbar's buttons for each engine (ADR 0042). Each is a command
- * (state/commands.ts), so it acts on what is in front and shows in the palette with its key.
- * MongoDB keeps Studio 3T's set (ADR 0036); the SQL engines, Redis and Elasticsearch get the
- * same shape from the tools their explorer menus already open.
+ * The connection toolbar's buttons for each engine (ADR 0042, trimmed by ADR 0043). Each is a
+ * command (state/commands.ts), so it acts on what is in front and shows in the palette with its
+ * key. The toolbar keeps the connection's tools reached for most; the rest stay in the
+ * connection's menu, the explorer's menus and the palette, and New connection in the side bar's
+ * actions. Buttons come in labelled groups, each icon in a Kiln glaze.
  */
+
+/** A Kiln glaze (styles.css): the icon's colour. */
+export type ToolTone = 'rust' | 'cobalt' | 'celadon' | 'ochre' | 'lilac' | 'peach' | 'teal';
 
 export interface Tool {
   readonly command: string;
+  /** Short enough for the toolbar's fixed button width (one word, or two short ones). */
   readonly label: string;
   readonly icon: IconName;
+  readonly tone: ToolTone;
+}
+
+/** A run of buttons between separators, with its label above it. */
+export interface ToolGroup {
+  readonly label: string;
+  readonly tools: readonly Tool[];
 }
 
 export type ToolbarKind = 'sql' | 'mongodb' | 'redis' | 'elasticsearch';
@@ -22,119 +34,127 @@ export function toolbarKind(engine: EngineId): ToolbarKind {
   return engine;
 }
 
-const CONNECT: readonly Tool[] = [
-  { command: 'connection.new', label: 'Connect', icon: 'connection-new' },
-];
+const TASKS: Tool = { command: 'tools.schedules', label: 'Tasks', icon: 'schedule', tone: 'ochre' };
 
-const TASKS: Tool = { command: 'tools.schedules', label: 'Tasks', icon: 'schedule' };
+const SAVED: Tool = {
+  command: 'sync.savedComparisons',
+  label: 'Saved',
+  icon: 'bookmark',
+  tone: 'ochre',
+};
 
-export const TOOLBARS: Readonly<Record<ToolbarKind, readonly (readonly Tool[])[]>> = {
+export const TOOLBARS: Readonly<Record<ToolbarKind, readonly ToolGroup[]>> = {
   sql: [
-    CONNECT,
-    [
-      { command: 'sql.newQuery', label: 'Query', icon: 'query' },
-      { command: 'sql.queryBuilder', label: 'Builder', icon: 'builder' },
-      { command: 'sql.runSqlFile', label: 'SQL File', icon: 'file-run' },
-      { command: 'query.history', label: 'History', icon: 'history' },
-    ],
-    [
-      { command: 'sql.openTable', label: 'Table', icon: 'table' },
-      { command: 'sql.newTable', label: 'New Table', icon: 'table-new' },
-      { command: 'sql.newDatabase', label: 'New Database', icon: 'database' },
-      { command: 'sql.erDiagram', label: 'ER Diagram', icon: 'diagram' },
-    ],
-    [
-      { command: 'sql.import', label: 'Import', icon: 'import' },
-      { command: 'sql.export', label: 'Export', icon: 'export' },
-      { command: 'sql.transfer', label: 'Transfer', icon: 'transfer' },
-      { command: 'sql.backup', label: 'Backup', icon: 'archive' },
-      { command: 'sql.restore', label: 'Restore', icon: 'restore' },
-    ],
-    [
-      { command: 'sql.compareStructure', label: 'Compare', icon: 'compare' },
-      { command: 'sql.compareData', label: 'Data Compare', icon: 'compare-rows' },
-      TASKS,
-    ],
-    [
-      { command: 'sql.serverMonitor', label: 'Monitor', icon: 'gauge' },
-      { command: 'sql.sessions', label: 'Sessions', icon: 'pulse' },
-      { command: 'sql.topQueries', label: 'Top Queries', icon: 'chart' },
-      { command: 'sql.users', label: 'Users', icon: 'users' },
-      { command: 'sql.maintenance', label: 'Maintenance', icon: 'wrench' },
-    ],
+    {
+      label: 'Query',
+      tools: [
+        { command: 'sql.newQuery', label: 'Query', icon: 'query', tone: 'cobalt' },
+        { command: 'sql.queryBuilder', label: 'Builder', icon: 'builder', tone: 'lilac' },
+      ],
+    },
+    {
+      label: 'Objects',
+      tools: [
+        { command: 'sql.openTable', label: 'Table', icon: 'table', tone: 'teal' },
+        { command: 'sql.erDiagram', label: 'ER Diagram', icon: 'diagram', tone: 'peach' },
+      ],
+    },
+    {
+      label: 'Data',
+      tools: [
+        { command: 'sql.import', label: 'Import', icon: 'import', tone: 'celadon' },
+        { command: 'sql.export', label: 'Export', icon: 'export', tone: 'rust' },
+      ],
+    },
+    {
+      label: 'Compare',
+      tools: [
+        { command: 'sql.compareStructure', label: 'Structure', icon: 'compare', tone: 'lilac' },
+        { command: 'sql.compareData', label: 'Data', icon: 'compare-rows', tone: 'cobalt' },
+        SAVED,
+      ],
+    },
+    {
+      label: 'Tools',
+      tools: [
+        { command: 'sql.serverMonitor', label: 'Monitor', icon: 'gauge', tone: 'rust' },
+        TASKS,
+      ],
+    },
   ],
   mongodb: [
-    CONNECT,
-    [
-      { command: 'mongo.openCollection', label: 'Collection', icon: 'table' },
-      { command: 'mongo.openIntelliShell', label: 'IntelliShell', icon: 'shell' },
-      { command: 'mongo.openSql', label: 'SQL', icon: 'query' },
-      { command: 'mongo.openAggregation', label: 'Aggregate', icon: 'filter' },
-      { command: 'mongo.profiler', label: 'Query Profiler', icon: 'history' },
-    ],
-    [
-      { command: 'mongo.export', label: 'Export', icon: 'export' },
-      { command: 'mongo.import', label: 'Import', icon: 'import' },
-    ],
-    [
-      { command: 'mongo.compare', label: 'Compare', icon: 'compare' },
-      { command: 'mongo.analyzeSchema', label: 'Schema', icon: 'chart' },
-      { command: 'mongo.reschema', label: 'Reschema', icon: 'design' },
-      { command: 'mongo.mask', label: 'Masking', icon: 'eye-off' },
-      { command: 'mongo.generate', label: 'Generate', icon: 'table-new' },
-      { command: 'mongo.transfer', label: 'Transfer', icon: 'transfer' },
-      TASKS,
-    ],
-    [
-      { command: 'mongo.manageUsers', label: 'Users', icon: 'users' },
-      { command: 'mongo.manageRoles', label: 'Roles', icon: 'key' },
-      { command: 'mongo.serverStatus', label: 'Server Status', icon: 'gauge' },
-    ],
+    {
+      label: 'Query',
+      tools: [
+        { command: 'mongo.openCollection', label: 'Collection', icon: 'table', tone: 'teal' },
+        { command: 'mongo.openIntelliShell', label: 'IntelliShell', icon: 'shell', tone: 'cobalt' },
+        { command: 'mongo.openAggregation', label: 'Aggregate', icon: 'filter', tone: 'lilac' },
+      ],
+    },
+    {
+      label: 'Data',
+      tools: [
+        { command: 'mongo.import', label: 'Import', icon: 'import', tone: 'celadon' },
+        { command: 'mongo.export', label: 'Export', icon: 'export', tone: 'rust' },
+      ],
+    },
+    {
+      label: 'Compare',
+      tools: [
+        { command: 'mongo.compare', label: 'Structure', icon: 'compare', tone: 'lilac' },
+        { command: 'mongo.compareData', label: 'Data', icon: 'compare-rows', tone: 'cobalt' },
+        SAVED,
+      ],
+    },
+    {
+      label: 'Tools',
+      tools: [
+        { command: 'mongo.analyzeSchema', label: 'Schema', icon: 'chart', tone: 'peach' },
+        { command: 'mongo.serverStatus', label: 'Monitor', icon: 'gauge', tone: 'rust' },
+        TASKS,
+      ],
+    },
   ],
   redis: [
-    CONNECT,
-    [
-      { command: 'redis.keys', label: 'Keys', icon: 'key' },
-      { command: 'redis.cli', label: 'CLI', icon: 'shell' },
-      { command: 'redis.pubsub', label: 'Pub/Sub', icon: 'link' },
-      { command: 'redis.search', label: 'Search', icon: 'search' },
-    ],
-    [
-      { command: 'redis.dashboard', label: 'Dashboard', icon: 'gauge' },
-      { command: 'redis.slowlog', label: 'Slow Log', icon: 'history' },
-      { command: 'redis.clients', label: 'Clients', icon: 'plug' },
-      { command: 'redis.latency', label: 'Latency', icon: 'pulse' },
-      { command: 'redis.monitor', label: 'Monitor', icon: 'server' },
-      { command: 'redis.bigkeys', label: 'Big Keys', icon: 'chart' },
-    ],
-    [
-      { command: 'redis.config', label: 'Config', icon: 'settings' },
-      { command: 'redis.acl', label: 'ACL', icon: 'users' },
-      { command: 'redis.topology', label: 'Topology', icon: 'diagram' },
-    ],
-    [
-      { command: 'redis.transfer', label: 'Transfer', icon: 'transfer' },
-      { command: 'redis.backup', label: 'Backup', icon: 'archive' },
-      { command: 'redis.restore', label: 'Restore', icon: 'restore' },
-      { command: 'redis.dumpAnalysis', label: 'Dump', icon: 'open' },
-      TASKS,
-    ],
+    {
+      label: 'Data',
+      tools: [
+        { command: 'redis.keys', label: 'Keys', icon: 'key', tone: 'teal' },
+        { command: 'redis.cli', label: 'CLI', icon: 'shell', tone: 'cobalt' },
+        { command: 'redis.pubsub', label: 'Pub/Sub', icon: 'link', tone: 'lilac' },
+      ],
+    },
+    {
+      label: 'Server',
+      tools: [
+        { command: 'redis.dashboard', label: 'Dashboard', icon: 'gauge', tone: 'rust' },
+        { command: 'redis.slowlog', label: 'Slow Log', icon: 'history', tone: 'peach' },
+        { command: 'redis.clients', label: 'Clients', icon: 'plug', tone: 'celadon' },
+      ],
+    },
+    { label: 'Tools', tools: [TASKS] },
   ],
   elasticsearch: [
-    CONNECT,
-    [
-      { command: 'search.console', label: 'Console', icon: 'shell' },
-      { command: 'search.documents', label: 'Documents', icon: 'table' },
-      { command: 'search.sql', label: 'SQL', icon: 'query' },
-    ],
-    [
-      { command: 'search.index', label: 'Index', icon: 'settings' },
-      { command: 'search.createIndex', label: 'New Index', icon: 'table-new' },
-    ],
-    [
-      { command: 'search.cluster', label: 'Cluster', icon: 'server' },
-      { command: 'search.templates', label: 'Templates', icon: 'design' },
-      { command: 'search.snapshots', label: 'Snapshots', icon: 'archive' },
-    ],
+    {
+      label: 'Query',
+      tools: [
+        { command: 'search.console', label: 'Console', icon: 'shell', tone: 'cobalt' },
+        { command: 'search.sql', label: 'SQL', icon: 'query', tone: 'lilac' },
+      ],
+    },
+    {
+      label: 'Data',
+      tools: [
+        { command: 'search.documents', label: 'Documents', icon: 'table', tone: 'teal' },
+        { command: 'search.index', label: 'Index', icon: 'settings', tone: 'peach' },
+      ],
+    },
+    {
+      label: 'Server',
+      tools: [
+        { command: 'search.cluster', label: 'Cluster', icon: 'server', tone: 'rust' },
+        { command: 'search.snapshots', label: 'Snapshots', icon: 'archive', tone: 'ochre' },
+      ],
+    },
   ],
 };

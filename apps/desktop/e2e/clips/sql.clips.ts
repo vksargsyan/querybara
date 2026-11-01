@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { newQueryTab } from '../app';
 import { DEMO } from '../screenshots/harness';
 import { treeRow, visible } from '../screenshots/nosql';
 import { film, openShopTables } from './director';
@@ -90,7 +91,7 @@ test('visual-explain', async () => {
   await film({ connections: [DEMO.postgres], connect: [DEMO.postgres.name] }, async (clip) => {
     const { page } = clip;
     await openShopTables(page, DEMO.postgres.name);
-    await page.getByRole('button', { name: 'New query' }).click();
+    await newQueryTab(page);
     await expect(visible(page, 'query-panel')).toBeVisible();
     await splitEditor(page, 0.3);
 

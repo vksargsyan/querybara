@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { Session } from '@querybara/core';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { launchApp, openNewConnection, type LaunchedApp } from './app';
+import { launchApp, newQueryTab, openNewConnection, type LaunchedApp } from './app';
 import { connect, query, scratchDatabase } from './db';
 
 /**
@@ -203,7 +203,7 @@ test('opens SQL with a CTE read-only, naming the construct, and still runs it', 
 });
 
 test('opens the statement at the cursor of a SQL tab in a builder', async () => {
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   const editor = page.getByTestId('sql-editor').filter({ visible: true });
   await editor.click();
   await page.keyboard.insertText(

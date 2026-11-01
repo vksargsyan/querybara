@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openDatabase } from '@querybara/storage';
 import { expect, test, type Page } from '@playwright/test';
 
-import { launchApp, openNewConnection, type LaunchedApp } from './app';
+import { launchApp, newQueryTab, openNewConnection, type LaunchedApp } from './app';
 
 /**
  * Editor autosave and crash restore (spec §18) with a real store: a query tab's text is saved
@@ -81,7 +81,7 @@ test('saves a query tab a few seconds after typing', async () => {
   const profile = page.getByRole('treeitem', { name: NAME });
   await profile.locator('[data-tree-row]').first().dblclick();
   await expect(profile.getByText('Connected', { exact: true })).toBeAttached();
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   await typeInEditor("select 'crash_survivor' as marker");
   await expect.poll(savedTexts, { timeout: 10_000 }).toEqual(["select 'crash_survivor' as marker"]);
 });

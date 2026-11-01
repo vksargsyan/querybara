@@ -1,8 +1,5 @@
-import type { ReactNode } from 'react';
-
 import { useWindowState } from '../state/window';
-import { SyncMenu } from './sync/SyncMenu';
-import { Icon, cx } from './ui';
+import { Icon } from './ui';
 import { bindingLabel } from '../lib/keys';
 import { useBindingOf } from '../state/keybindings';
 import { openPalette } from '../state/palette';
@@ -13,8 +10,10 @@ import { WindowMenuBar } from './WindowMenuBar';
  * see main/window-chrome.ts): 35px on the chrome ground, dragging the window. On macOS it leaves
  * room for the traffic lights (not in full screen, where they hide); on Windows and Linux for
  * the window controls overlaid at its right. In the middle, the active tab's title, or on a
- * production connection the red banner naming it; at the right, the window's actions as icons
- * with tooltips. On Windows and Linux the menu bar sits at its left (the native one hides with
+ * production connection the red banner naming it; at the right, the toggles of the panels either
+ * side of the tabs (the side bar on the left, History on the right, in mirrored glyphs) and the
+ * theme. The connection's tools (new query, compare, tasks) are in the connection toolbar under
+ * it (ADR 0043). On Windows and Linux the menu bar sits at its left (the native one hides with
  * the native title bar). The app's name is in the application menu only, and so is About.
  */
 
@@ -25,14 +24,8 @@ export function TitleBar(props: {
   readonly sidebarVisible: boolean;
   readonly onToggleSidebar: () => void;
   readonly onToggleTheme: () => void;
-  readonly onNewQuery: () => void;
-  readonly newQueryDisabled: boolean;
   readonly historyOpen: boolean;
   readonly onToggleHistory: () => void;
-  readonly onSchedules: () => void;
-  readonly jobsOpen: boolean;
-  readonly jobsRunning: number;
-  readonly onToggleJobs: () => void;
 }) {
   const platform = useWindowState((s) => s.platform);
   const mac = platform === 'darwin';
@@ -86,17 +79,6 @@ export function TitleBar(props: {
         role="toolbar"
         aria-label="Window"
       >
-        {/* Spelled out, in the production badge's red: the window's first action. */}
-        <button
-          type="button"
-          aria-label="New query"
-          title="New query"
-          onClick={props.onNewQuery}
-          disabled={props.newQueryDisabled}
-          className="mr-1 flex h-[20px] items-center rounded-sm bg-env-production/20 px-1.5 text-[10px] font-semibold tracking-wide text-env-production uppercase hover:bg-env-production/30 active:bg-env-production/40 disabled:opacity-40 disabled:hover:bg-env-production/20"
-        >
-          + New query
-        </button>
         <TitleButton
           label="Side bar"
           tooltip={props.sidebarVisible ? 'Hide the side bar' : 'Show the side bar'}
@@ -106,33 +88,10 @@ export function TitleBar(props: {
         />
         <TitleButton
           label="History"
-          icon="history"
+          tooltip={props.historyOpen ? 'Hide the history' : 'Show the history'}
+          icon="sidebar-right"
           pressed={props.historyOpen}
           onClick={props.onToggleHistory}
-        />
-        <SyncMenu
-          trigger={
-            <button type="button" aria-label="Compare" title="Compare" className={BUTTON}>
-              <Icon name="compare" />
-            </button>
-          }
-        />
-        <TitleButton label="Schedules" icon="schedule" onClick={props.onSchedules} />
-        <TitleButton
-          label="Jobs"
-          icon="jobs"
-          pressed={props.jobsOpen}
-          onClick={props.onToggleJobs}
-          badge={
-            props.jobsRunning > 0 ? (
-              <span
-                className="absolute -top-0.5 -right-0.5 min-w-3.5 rounded-full bg-accent px-0.5 text-center text-[9px] leading-3.5 font-semibold text-accent-fg"
-                aria-label={`${props.jobsRunning} running`}
-              >
-                {props.jobsRunning}
-              </span>
-            ) : undefined
-          }
         />
         <span aria-hidden="true" className="mx-1 h-4 w-px bg-border" />
         <TitleButton
@@ -147,7 +106,7 @@ export function TitleBar(props: {
 }
 
 const BUTTON =
-  'relative flex h-[22px] w-[26px] items-center justify-center rounded-sm text-muted hover:bg-hover hover:text-fg active:bg-pressed disabled:opacity-40 disabled:hover:bg-transparent aria-pressed:bg-pressed aria-pressed:text-fg data-[state=open]:bg-pressed data-[state=open]:text-fg';
+  'flex h-[22px] w-[26px] items-center justify-center rounded-sm text-muted hover:bg-hover hover:text-fg active:bg-pressed aria-pressed:bg-pressed aria-pressed:text-fg';
 
 function TitleButton(props: {
   readonly label: string;
@@ -155,8 +114,6 @@ function TitleButton(props: {
   readonly icon: Parameters<typeof Icon>[0]['name'];
   readonly onClick: () => void;
   readonly pressed?: boolean;
-  readonly disabled?: boolean;
-  readonly badge?: ReactNode;
 }) {
   return (
     <button
@@ -164,12 +121,10 @@ function TitleButton(props: {
       aria-label={props.label}
       title={props.tooltip ?? props.label}
       aria-pressed={props.pressed}
-      disabled={props.disabled}
       onClick={props.onClick}
-      className={cx(BUTTON)}
+      className={BUTTON}
     >
       <Icon name={props.icon} />
-      {props.badge}
     </button>
   );
 }

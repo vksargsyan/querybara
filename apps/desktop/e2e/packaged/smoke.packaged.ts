@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { newQueryTab } from '../app';
 import { EXECUTABLE, launchPackaged, type PackagedApp } from './launch';
 
 /**
@@ -52,7 +53,7 @@ test('starts, loads its window from the archive and runs a connection host', asy
   const profile = page.getByRole('treeitem', { name: 'Smoke' });
   await profile.locator('[data-tree-row]').first().dblclick();
   await expect(profile.getByText('Connected', { exact: true })).toBeAttached();
-  await page.getByRole('button', { name: 'New query' }).click();
+  await newQueryTab(page);
   const editor = page.getByTestId('sql-editor').last();
   await editor.click();
   await page.keyboard.type('select 6 * 7 as answer');
