@@ -218,6 +218,19 @@ class Parser {
     return this.text.slice(this.tokens[from]!.start, this.tokens[to]!.end);
   }
 
+  /**
+   * tokens[from, to] as written, for a raw expression or condition. It cannot end with an operator
+   * (only `*` alone or in `t.*` can): nothing is postfix, and MySQL's `a --` would read as a
+   * comment once the generated query puts a line break after it.
+   */
+  private rawSource(from: number, to: number): string {
+    const last = this.tokens[to]!;
+    const star = isOperator(last, '*') && (to === from || isPunct(this.tokens[to - 1], '.'));
+    if (last.kind === 'operator' && !star)
+      this.invalid('An expression ends with an operator.', last);
+    return this.source(from, to);
+  }
+
   // The statement
 
   parse(): QueryModel {
@@ -838,7 +851,7 @@ class Parser {
     const custom = (): Node => ({
       kind: 'custom',
       id: this.id(prefix),
-      sql: this.source(start, end - 1),
+      sql: this.rawSource(start, end - 1),
     });
     let at = -1;
     let negated = false;
@@ -925,7 +938,7 @@ class Parser {
   ): QueryExpr {
     const tokens = this.tokens;
     if (start >= end) this.invalid('An expression is missing.', tokens[start] ?? tokens[start - 1]);
-    const raw = (): QueryExpr => ({ kind: 'raw', sql: this.source(start, end - 1) });
+    const raw = (): QueryExpr => ({ kind: 'raw', sql: this.rawSource(start, end - 1) });
     const first = tokens[start]!;
     const count = end - start;
     if (count === 1) {

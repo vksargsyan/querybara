@@ -475,4 +475,30 @@ describe('parseQuery', () => {
     const result = parseQuery('SELECT * FROM t JOIN u AS t ON t.a = t.b', 'postgres');
     expect(result).toMatchObject({ status: 'invalid', message: 'Two tables are called "t".' });
   });
+
+  it('refuses an expression that ends with an operator', () => {
+    // MySQL reads `--` before a letter as two minus signs. Written back with a line break after
+    // it, the `--` would start a comment and the query would lose the rest of the line.
+    for (const dialect of ['mysql', 'mariadb'] as const) {
+      const sql = 'SELECT .--ORDER BY =';
+      const result = parseQuery(sql, dialect);
+      expect(result).toMatchObject({
+        status: 'invalid',
+        message: 'An expression ends with an operator.',
+      });
+      if (result.status === 'invalid') expect(sql.slice(result.start, result.end)).toBe('--');
+    }
+    for (const dialect of DIALECTS) {
+      for (const sql of ['SELECT a - FROM t', 'SELECT a FROM t WHERE a > 1 +']) {
+        expect({ sql, dialect, status: parseQuery(sql, dialect).status }).toEqual({
+          sql,
+          dialect,
+          status: 'invalid',
+        });
+      }
+      // `*` alone and in `t.*` still read as columns.
+      expect(parseQuery('SELECT * FROM t', dialect).status).toBe('ok');
+      expect(parseQuery('SELECT t.* FROM t', dialect).status).toBe('ok');
+    }
+  });
 });
