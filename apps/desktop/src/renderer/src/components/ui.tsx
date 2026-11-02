@@ -583,6 +583,14 @@ export function Icon({
         <path d="M5.9 5.9l4.2 4.2M10.1 5.9l-4.2 4.2" />
       </>
     ),
+    // Scissors: a table truncated, cut back to no rows.
+    scissors: (
+      <>
+        <circle cx="4.6" cy="11.4" r="2.1" {...wash} />
+        <circle cx="11.4" cy="11.4" r="2.1" {...wash} />
+        <path d="M6.1 9.9 12.6 2.4M9.9 9.9 3.4 2.4" />
+      </>
+    ),
     // The window with its side bar.
     sidebar: (
       <>

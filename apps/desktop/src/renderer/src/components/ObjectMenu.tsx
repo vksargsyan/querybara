@@ -218,7 +218,7 @@ export function ObjectMenuItems(props: {
                 Empty table…
               </MenuItem>
               <MenuItem
-                icon="discard"
+                icon="scissors"
                 warning
                 onSelect={() => void clearTable(profile, table, 'truncate')}
               >

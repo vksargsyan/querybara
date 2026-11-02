@@ -29,6 +29,7 @@ export type IconName =
   | 'undo'
   | 'redo'
   | 'discard'
+  | 'scissors'
   | 'columns'
   | 'sidebar'
   | 'sidebar-right'
