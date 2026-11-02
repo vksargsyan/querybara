@@ -21,11 +21,22 @@ export function effectiveTheme(
   return 'dark';
 }
 
-/** Kiln's chrome ground and muted ink, per theme (Tenmoku, Bisque). */
-const CHROME: Readonly<Record<Theme, { readonly ground: string; readonly ink: string }>> = {
-  dark: { ground: '#110f0e', ink: '#a39a8b' },
-  light: { ground: '#eee7da', ink: '#6b6255' },
+/** Kiln's chrome ground, muted ink and red (the production frame's), per theme (Tenmoku, Bisque). */
+const CHROME: Readonly<
+  Record<Theme, { readonly ground: string; readonly ink: string; readonly red: string }>
+> = {
+  dark: { ground: '#110f0e', ink: '#a39a8b', red: '#f07d72' },
+  light: { ground: '#eee7da', ink: '#6b6255', red: '#c0392e' },
 };
+
+/**
+ * The window's own colour, behind the page: the chrome ground, or the production frame's red
+ * while the page draws that frame. macOS clips the page to rounder corners than the window's
+ * own, so this colour shows at the corners, outside the frame; red there keeps it unbroken.
+ */
+export function windowBackground(theme: Theme, productionFrame: boolean): string {
+  return productionFrame ? CHROME[theme].red : CHROME[theme].ground;
+}
 
 /** The Windows and Linux window controls, drawn over the page's title bar. */
 export function titleBarOverlay(theme: Theme): TitleBarOverlay {

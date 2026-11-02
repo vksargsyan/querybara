@@ -4,6 +4,7 @@ import {
   TITLE_BAR_HEIGHT,
   effectiveTheme,
   titleBarOverlay,
+  windowBackground,
   windowChrome,
 } from '../src/main/window-chrome';
 import { BISQUE, TENMOKU } from '../src/renderer/src/lib/kiln';
@@ -31,6 +32,14 @@ describe('the window chrome', () => {
       symbolColor: TENMOKU.muted,
       height: TITLE_BAR_HEIGHT,
     });
+  });
+
+  it('turns the window itself the production frame’s red while the page shows it', () => {
+    // macOS shows the window's own colour at its rounded corners, outside the page.
+    expect(windowBackground('dark', false)).toBe(TENMOKU.bgDeep);
+    expect(windowBackground('light', false)).toBe(BISQUE.bgDeep);
+    expect(windowBackground('dark', true)).toBe(TENMOKU.red);
+    expect(windowBackground('light', true)).toBe(BISQUE.red);
   });
 
   it('follows the theme the page draws, "system" by the OS', () => {

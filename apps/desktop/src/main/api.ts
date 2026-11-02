@@ -112,6 +112,8 @@ export interface WindowServices<P> extends FileDialogs {
   readonly openFile: (options: OpenFileOptions) => Promise<string | null>;
   /** Runs a window menu item on this window (Edit, View and Window roles, quitting). */
   readonly runMenu?: (command: WindowMenuCommand) => void;
+  /** The page shows the production frame, or stopped: the window's own colour follows. */
+  readonly setProductionFrame?: (shown: boolean) => void;
 }
 
 const SETTINGS_KEY = 'app';
@@ -348,6 +350,9 @@ export function createMainHandlers<P>(
         if (command === 'checkForUpdates') services.menuCommands?.checkForUpdates();
         else if (command === 'releaseNotes') services.menuCommands?.releaseNotes();
         else window.runMenu?.(command);
+      },
+      productionFrame: ({ shown }) => {
+        window.setProductionFrame?.(shown);
       },
     },
 

@@ -457,6 +457,7 @@ describe('mainContract never hands a secret to the renderer', () => {
         openExternal: notUsed,
         commands: notUsed,
         menu: notUsed,
+        productionFrame: notUsed,
       },
       dialogs: {
         openFile: notUsed,
@@ -649,6 +650,7 @@ describe('desktop additions', () => {
         openExternal: () => {},
         commands: notUsed,
         menu: notUsed,
+        productionFrame: notUsed,
       },
       dialogs: {
         openFile: () => ({ path: null }),

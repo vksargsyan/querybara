@@ -200,6 +200,11 @@ export const mainContract = defineContract({
     commands: { input: z.void(), item: appCommandSchema },
     /** Runs an item of the window's own menu bar (Windows and Linux) in main. */
     menu: { input: z.object({ command: windowMenuCommandSchema }), output: z.void() },
+    /**
+     * The page shows the production frame (spec §4), or stopped: the window's own colour, which
+     * macOS shows at the corners, turns the frame's red and back.
+     */
+    productionFrame: { input: z.object({ shown: z.boolean() }), output: z.void() },
   },
   dialogs: {
     /** A native open-file dialog (TLS CA, certificate and key paths); null when cancelled. */
