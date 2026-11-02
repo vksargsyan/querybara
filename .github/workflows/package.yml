@@ -407,8 +407,19 @@ jobs:
           codesign --display --verbose=2 Querybara.app 2>&1 | grep -E '^(Identifier|Format|Signature|Authority|TeamIdentifier)'
           lipo -archs "Querybara.app/Contents/MacOS/$(defaults read "$PWD/Querybara.app/Contents/Info" CFBundleExecutable)"
           if [ "$SIGNED" = true ]; then
-            xcrun stapler validate Querybara.app
-            spctl --assess --type execute --verbose Querybara.app
+            # Both ask Apple's ticket service, which a runner's network sometimes drops in the
+            # middle of a request ("The network connection was lost", stapler error 68): try
+            # again a few times before failing the release.
+            retry() {
+              for attempt in 1 2 3 4; do
+                "$@" && return 0
+                if [ "$attempt" = 4 ]; then return 1; fi
+                echo "::warning::$* failed (attempt $attempt of 4); trying again in $((attempt * 15))s"
+                sleep $((attempt * 15))
+              done
+            }
+            retry xcrun stapler validate Querybara.app
+            retry spctl --assess --type execute --verbose Querybara.app
           fi
       - uses: actions/upload-artifact@v7
         with:
