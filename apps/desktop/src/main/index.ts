@@ -53,7 +53,7 @@ import {
   STORE_FILE,
   migratePreviousInstall,
 } from './previous-install';
-import { effectiveTheme, titleBarOverlay, windowChrome } from './window-chrome';
+import { effectiveTheme, titleBarOverlay, windowBackground, windowChrome } from './window-chrome';
 import { QuitGuard } from './quit-guard';
 import { createSafeStorageSealer } from './sealer';
 import {
@@ -426,10 +426,23 @@ function serveMainContract(services: MainServices<MessagePortMain>): void {
           break;
       }
     };
+    const setProductionFrame = (shown: boolean): void => {
+      if (owner.isDestroyed() || productionFrames.has(owner) === shown) return;
+      if (shown) productionFrames.add(owner);
+      else productionFrames.delete(owner);
+      applyChrome(owner);
+    };
     const server = serve(
       fromElectronPort(port1),
       mainContract,
-      createMainHandlers(services, { sendPort, openFile, saveFile, openDirectory, runMenu }),
+      createMainHandlers(services, {
+        sendPort,
+        openFile,
+        saveFile,
+        openDirectory,
+        runMenu,
+        setProductionFrame,
+      }),
     );
     servers.set(contents, { server, port: port1 });
     sendPort({ kind: 'main' }, port2);
@@ -481,11 +494,16 @@ function startJobs(openedStore: Store, hostKeys: HostKeyBroker): JobManager {
   return jobs;
 }
 
-/** The chrome's colours for the current theme (the Windows and Linux controls overlay). */
+/** Windows whose page shows the production frame (spec §4): their own colour is its red. */
+const productionFrames = new WeakSet<BrowserWindow>();
+
+/**
+ * The chrome's colours for the current theme (the window's own colour, the Windows and Linux
+ * controls overlay).
+ */
 function applyChrome(window: BrowserWindow): void {
   const theme = effectiveTheme(themeSetting, nativeTheme.shouldUseDarkColors);
-  const chrome = windowChrome(process.platform, theme);
-  window.setBackgroundColor(chrome.backgroundColor!);
+  window.setBackgroundColor(windowBackground(theme, productionFrames.has(window)));
   if (process.platform !== 'darwin') window.setTitleBarOverlay(titleBarOverlay(theme));
 }
 

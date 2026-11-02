@@ -84,6 +84,13 @@ export function App() {
     document.documentElement.dataset['theme'] = theme;
   }, [theme]);
 
+  // The window's own colour shows at its rounded corners (macOS): red with the frame.
+  useEffect(() => {
+    mainApi()
+      .app.productionFrame({ shown: production })
+      .catch(() => undefined);
+  }, [production]);
+
   useEffect(() => {
     void watchJobs();
   }, []);

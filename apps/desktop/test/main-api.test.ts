@@ -54,7 +54,7 @@ function serialise(value: unknown): string {
   );
 }
 
-function setup(options: { canSave?: boolean } = {}) {
+function setup(options: { canSave?: boolean; setProductionFrame?: (shown: boolean) => void } = {}) {
   const store = openStore(':memory:', {
     sealer: { ...sealer, isAvailable: () => options.canSave ?? true },
   });
@@ -104,6 +104,7 @@ function setup(options: { canSave?: boolean } = {}) {
     {
       sendPort: (payload, port) => sentPorts.push({ payload, port }),
       openFile: async () => null,
+      ...(options.setProductionFrame ? { setProductionFrame: options.setProductionFrame } : {}),
     },
   );
   const channel = new MessageChannel();
@@ -423,6 +424,16 @@ describe('main contract handlers', () => {
     }
     expect(seen).toEqual(['connecting', 'ready']);
     supervisor.close(opened.connectionId);
+  });
+
+  it('tells the window when the page shows the production frame', async () => {
+    const frames: boolean[] = [];
+    const { main } = setup({ setProductionFrame: (shown) => frames.push(shown) });
+    await main.app.productionFrame({ shown: true });
+    await main.app.productionFrame({ shown: false });
+    expect(frames).toEqual([true, false]);
+    // A window without the service (tests, other platforms' hosts) ignores it.
+    await expect(setup().main.app.productionFrame({ shown: true })).resolves.toBeUndefined();
   });
 
   it('opens only https links externally', async () => {

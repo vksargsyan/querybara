@@ -5,7 +5,8 @@ import { Icon, cx, type IconName } from './ui';
 
 /**
  * A menu item, with its glyph when it has one (every tree menu's items do). `danger` colours a
- * destructive item red; `warning` colours one that interrupts work (Disconnect) ochre.
+ * destructive item red; `warning` colours one that interrupts work (Disconnect) or clears data
+ * but keeps the object (Empty table, Truncate table) ochre.
  */
 export function MenuItem(props: {
   readonly children: ReactNode;
