@@ -13,22 +13,27 @@ import {
   tableLocation,
   tablesFolderPath,
 } from '../state/explorer';
+import { shortcutLabel } from '../state/keybindings';
 import { refreshObjects } from '../state/metadata';
+import type { ObjectShortcuts } from '../state/object-shortcuts';
 import { openQueryBuilder } from '../state/query-builder/panels';
 import { openServerTools } from '../state/server-tools/panels';
 import { openDataCompare, openStructureCompare } from '../state/sync/panels';
+import { clearTable, openDuplicateTable } from '../state/table-actions';
 import { openTransferFrom } from '../state/transfer-db/api';
 import { openExportTables, openImportWizard, openRunSqlFile } from '../state/transfer-dialogs';
 import { BackupMenuItems } from './backup/BackupDialogs';
 import { DropTableDialog } from './designer/ReviewDialogs';
 import { useWorkspace } from '../state/workspace';
 import { currentDock, openQueryTab, openTableData, openTableDesigner } from './dock';
-import { MenuItem } from './MenuItem';
+import { MenuItem, MenuSub } from './MenuItem';
 
 /**
  * What a SQL object offers, in the explorer tree and in the Objects view alike: opening its rows,
- * the table designer, import, export, maintenance, transfer, query builder, ER diagram, compare,
- * backup, refresh and drop. The object's node (a path from the explorer) says what applies.
+ * the table designer, new table, empty, truncate and duplicate, import, export, maintenance,
+ * transfer, query builder, ER diagram, compare, backup, refresh and drop. The object's node (a
+ * path from the explorer) says what applies; ⌘O, ⌘D and ⌘N do the first three on the focused
+ * object (objectShortcuts), and the menu shows those keys.
  */
 
 /** The table the "Drop table…" review is open for. */
@@ -104,6 +109,46 @@ export function designerTarget(
   );
 }
 
+/**
+ * Where a new table for the node goes: the database, schema or tables folder itself, or, for a
+ * table, the schema it is in (Navicat's New Table on a table).
+ */
+function newTableTarget(node: BrowseNode, dialect: SqlDialect) {
+  const table = isDesignableTable(node, dialect) ? tableLocation(node, dialect) : undefined;
+  return table
+    ? { database: table.database, schema: table.schema }
+    : newTableLocation(node, dialect);
+}
+
+/** What ⌘O, ⌘D and ⌘N do on a SQL object: open its rows, design it, a new table beside it. */
+export function objectShortcuts(
+  profile: StoredProfile,
+  node: BrowseNode,
+  dialect: SqlDialect,
+): ObjectShortcuts {
+  const designable = isDesignableTable(node, dialect);
+  const create = newTableTarget(node, dialect);
+  return {
+    open: designable || opensData(node) ? () => openObjectData(profile, node, dialect) : undefined,
+    design: designable
+      ? () => {
+          const target = designerTarget(profile, node, dialect, node.name);
+          if (target) openTableDesigner(target);
+        }
+      : undefined,
+    create: create
+      ? () =>
+          openTableDesigner({
+            profileId: profile.id,
+            database: create.database,
+            schema: create.schema,
+            name: null,
+            tablesPath: tablesFolderPath({ ...create, name: '' }, dialect),
+          })
+      : undefined,
+  };
+}
+
 /** Asks to drop a table (the review dialog shows the statement first). */
 export function requestDropTable(
   profile: StoredProfile,
@@ -129,6 +174,7 @@ export function ObjectMenuItems(props: {
   const { node, profile, dialect } = props;
   const table = isDesignableTable(node, dialect) ? tableLocation(node, dialect) : undefined;
   const newTable = newTableLocation(node, dialect);
+  const writable = !profile.presentation.readOnly;
   const openData = (): void => openObjectData(profile, node, dialect);
   const designTarget = (
     name: string | null,
@@ -145,12 +191,56 @@ export function ObjectMenuItems(props: {
     <>
       {table ? (
         <>
-          <MenuItem icon="table" onSelect={openData}>
+          <MenuItem icon="table" onSelect={openData} shortcut={shortcutLabel('explorer.open')}>
             Open data
           </MenuItem>
-          <MenuItem icon="design" onSelect={() => openTableDesigner(designTarget(table.name)!)}>
+          <MenuItem
+            icon="design"
+            onSelect={() => openTableDesigner(designTarget(table.name)!)}
+            shortcut={shortcutLabel('explorer.design')}
+          >
             Design table
           </MenuItem>
+          <MenuItem
+            icon="table-new"
+            onSelect={() => openTableDesigner(designTarget(null)!)}
+            shortcut={shortcutLabel('explorer.newTable')}
+          >
+            New table…
+          </MenuItem>
+          {writable && (
+            <>
+              <MenuItem
+                icon="discard"
+                danger
+                onSelect={() => void clearTable(profile, table, 'empty')}
+              >
+                Empty table…
+              </MenuItem>
+              <MenuItem
+                icon="discard"
+                danger
+                onSelect={() => void clearTable(profile, table, 'truncate')}
+              >
+                Truncate table…
+              </MenuItem>
+              <MenuSub icon="copy" label="Duplicate table">
+                <MenuItem
+                  icon="copy"
+                  onSelect={() => openDuplicateTable(profile, table, 'structure-and-data')}
+                >
+                  Structure and data…
+                </MenuItem>
+                <MenuItem
+                  icon="table-new"
+                  onSelect={() => openDuplicateTable(profile, table, 'structure')}
+                >
+                  Structure only…
+                </MenuItem>
+              </MenuSub>
+            </>
+          )}
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
           <MenuItem icon="import" onSelect={() => openImportWizard(profile, table, table.name)}>
             Import data…
           </MenuItem>
@@ -192,7 +282,7 @@ export function ObjectMenuItems(props: {
         </>
       ) : (
         opensData(node) && (
-          <MenuItem icon="table" onSelect={openData}>
+          <MenuItem icon="table" onSelect={openData} shortcut={shortcutLabel('explorer.open')}>
             Open rows
           </MenuItem>
         )
@@ -202,6 +292,7 @@ export function ObjectMenuItems(props: {
           <MenuItem
             icon="table-new"
             onSelect={() => openTableDesigner(designTarget(null, newTable)!)}
+            shortcut={shortcutLabel('explorer.newTable')}
           >
             New table…
           </MenuItem>

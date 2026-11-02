@@ -26,6 +26,7 @@ import {
 import { openCreateCollection, openCreateView } from '../../state/mongo/create-dialogs';
 import { mongoObjectsPathFor } from '../../state/objects-model';
 import { shortcutLabel } from '../../state/keybindings';
+import type { ObjectShortcuts } from '../../state/object-shortcuts';
 import { showObjects, useObjectsView } from '../../state/objects-view';
 import { openServerTools } from '../../state/server-tools/panels';
 import { openTransferFrom } from '../../state/transfer-db/api';
@@ -444,7 +445,11 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
         {pasteCollectionItem}
         {!readOnly && (
           <>
-            <MenuItem icon="table-new" onSelect={() => openCreateCollection(profileId, db)}>
+            <MenuItem
+              icon="table-new"
+              onSelect={() => openCreateCollection(profileId, db)}
+              shortcut={shortcutLabel('explorer.newTable')}
+            >
               Add Collection…
             </MenuItem>
             <MenuItem icon="plus" onSelect={() => openCreateView(profileId, db)}>
@@ -554,7 +559,11 @@ function ToolItems(props: { readonly profile: StoredProfile; readonly node: Brow
             Open IntelliShell
           </MenuItem>
           {!readOnly && (
-            <MenuItem icon="table-new" onSelect={() => openCreateCollection(profileId, db)}>
+            <MenuItem
+              icon="table-new"
+              onSelect={() => openCreateCollection(profileId, db)}
+              shortcut={shortcutLabel('explorer.newTable')}
+            >
               Add Collection…
             </MenuItem>
           )}
@@ -659,6 +668,26 @@ export function opensDocuments(node: BrowseNode): boolean {
   );
 }
 
+/**
+ * What ⌘O and ⌘N do on a MongoDB node: open a collection's documents, a new collection in the
+ * database. ⌘D stays Insert Document in the collection tab (Studio 3T's, ADR 0036): clicking a
+ * collection opens its tab with the focus still in the tree.
+ */
+export function mongoShortcuts(profile: StoredProfile, node: BrowseNode): ObjectShortcuts {
+  const [db, folder] = node.path;
+  // The database, its collections folder, or a collection in it: a new collection beside it.
+  const creates =
+    !profile.presentation.readOnly &&
+    db !== undefined &&
+    (node.kind === 'database' ||
+      (node.kind === 'folder' && node.path.length === 2 && folder === 'collections') ||
+      mongoObjectOf(node)?.kind === 'collection');
+  return {
+    open: opensDocuments(node) ? mongoNodeOpener(profile, node) : undefined,
+    create: creates ? () => openCreateCollection(profile.id, db) : undefined,
+  };
+}
+
 /** Whether a node has a menu at all. */
 export function hasMongoMenu(profile: StoredProfile, node: BrowseNode): boolean {
   const object = mongoObjectOf(node);
@@ -711,7 +740,7 @@ export function MongoNodeMenu(props: {
   return (
     <>
       {opens && (
-        <MenuItem icon="table" onSelect={open} shortcut="↵">
+        <MenuItem icon="table" onSelect={open} shortcut={shortcutLabel('explorer.open') ?? '↵'}>
           Open Collection Tab
         </MenuItem>
       )}
@@ -813,6 +842,7 @@ function MongoNode(props: {
             <MongoNodeMenu node={node} profile={profile} onError={props.onError} />
           ) : undefined
         }
+        shortcuts={mongoShortcuts(profile, node)}
       />
       {expanded && node.hasChildren && (
         <div role="group">

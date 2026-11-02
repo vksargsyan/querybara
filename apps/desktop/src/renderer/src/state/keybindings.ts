@@ -33,6 +33,10 @@ export const DEFAULT_KEYBINDINGS: Readonly<Record<string, string>> = {
   'view.refresh': 'f5',
   'tools.jobs': 'mod+shift+j',
   'view.toggleToolbar': 'mod+alt+b',
+  // The focused side bar row or Objects selection, as Navicat binds them (SCOPES below).
+  'explorer.open': 'mod+o',
+  'explorer.design': 'mod+d',
+  'explorer.newTable': 'mod+n',
   // MongoDB, as Studio 3T binds them (ADR 0036).
   'mongo.openIntelliShell': 'mod+l',
   'mongo.openSql': 'mod+shift+l',
@@ -45,6 +49,23 @@ export const DEFAULT_KEYBINDINGS: Readonly<Record<string, string>> = {
   'mongo.deleteDialog': 'f8',
   'mongo.queryCode': 'mod+g',
 };
+
+/**
+ * Commands whose key works on the focused item rather than the whole window: the explorer's act
+ * on the focused side bar row or Objects selection (state/object-shortcuts.ts). Commands of
+ * different scopes share keys on purpose (the explorer's ⌘D and a collection tab's); a scoped
+ * one, enabled now, runs before a window-wide one.
+ */
+const SCOPES: Readonly<Record<string, 'explorer'>> = {
+  'explorer.open': 'explorer',
+  'explorer.design': 'explorer',
+  'explorer.newTable': 'explorer',
+};
+
+/** Where a command's key works: a scope, or undefined for the whole window. */
+export function commandScope(commandId: string): 'explorer' | undefined {
+  return SCOPES[commandId];
+}
 
 interface KeybindingsState {
   /** The user's bindings over the defaults (the settings' keybindings). */
@@ -94,12 +115,24 @@ export function shortcutLabel(commandId: string): string | undefined {
     : bindingLabel(binding, useWindowState.getState().platform === 'darwin');
 }
 
-/** Commands sharing a binding with others: binding → command ids. */
-export function conflicts(bindings: ReadonlyMap<string, string>): ReadonlyMap<string, string[]> {
+/**
+ * What a binding clashes on: its keys, within the command's scope. Commands of different scopes
+ * share keys on purpose (the explorer's ⌘D and a collection tab's).
+ */
+export function conflictKey(binding: string, scope?: string): string {
+  const keys = parseBinding(binding).join(' ');
+  return scope === undefined ? keys : `${scope}:${keys}`;
+}
+
+/** Commands sharing a binding with others in the same scope: conflictKey → command ids. */
+export function conflicts(
+  bindings: ReadonlyMap<string, string>,
+  scopeOf: (commandId: string) => string | undefined = commandScope,
+): ReadonlyMap<string, string[]> {
   const byKey = new Map<string, string[]>();
   for (const [command, binding] of bindings) {
     if (binding === '') continue;
-    const key = parseBinding(binding).join(' ');
+    const key = conflictKey(binding, scopeOf(command));
     byKey.set(key, [...(byKey.get(key) ?? []), command]);
   }
   return new Map([...byKey].filter(([, commands]) => commands.length > 1));
@@ -119,6 +152,10 @@ export async function setKeybinding(commandId: string, key: string | undefined):
 }
 
 const CHORD_WAIT_MS = 1500;
+
+function scoped(commandId: string): boolean {
+  return commandScope(commandId) !== undefined;
+}
 
 function editable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -169,10 +206,13 @@ export function startKeybindings(): () => void {
         starts = true;
       }
     }
-    exact = exact.filter((id) => {
-      const command = commandById(id);
-      return command !== undefined && isEnabled(command);
-    });
+    exact = exact
+      .filter((id) => {
+        const command = commandById(id);
+        return command !== undefined && isEnabled(command);
+      })
+      // The focused item's own key (the explorer's ⌘D) before the window's.
+      .sort((a, b) => Number(scoped(b)) - Number(scoped(a)));
     const second = pending !== undefined;
     if (pending !== undefined) {
       const first = pending;

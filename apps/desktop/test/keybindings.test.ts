@@ -11,6 +11,8 @@ import {
 } from '../src/renderer/src/lib/keys';
 import {
   DEFAULT_KEYBINDINGS,
+  commandScope,
+  conflictKey,
   conflicts,
   effectiveBindings,
 } from '../src/renderer/src/state/keybindings';
@@ -101,5 +103,27 @@ describe('bindings', () => {
     const bindings = effectiveBindings([{ command: 'query.history', key: 'mod+t' }]);
     expect(conflicts(bindings).get('mod+t')).toEqual(['query.new', 'query.history']);
     expect(conflicts(effectiveBindings([])).size).toBe(0);
+  });
+
+  it('binds Navicat’s object keys to the focused explorer item', () => {
+    expect(DEFAULT_KEYBINDINGS['explorer.open']).toBe('mod+o');
+    expect(DEFAULT_KEYBINDINGS['explorer.design']).toBe('mod+d');
+    expect(DEFAULT_KEYBINDINGS['explorer.newTable']).toBe('mod+n');
+    expect(commandScope('explorer.design')).toBe('explorer');
+    expect(commandScope('mongo.insertDocument')).toBeUndefined();
+  });
+
+  it('lets commands of different scopes share a key, not commands of one scope', () => {
+    // ⌘D designs the focused table, and inserts a document in a collection tab.
+    expect(DEFAULT_KEYBINDINGS['mongo.insertDocument']).toBe('mod+d');
+    expect(conflictKey('mod+d', 'explorer')).not.toBe(conflictKey('mod+d'));
+    expect(conflictKey('Mod+D')).toBe('mod+d');
+    const clash = effectiveBindings([{ command: 'explorer.open', key: 'mod+d' }]);
+    expect(conflicts(clash).get(conflictKey('mod+d', 'explorer'))).toEqual([
+      'explorer.open',
+      'explorer.design',
+    ]);
+    const window = effectiveBindings([{ command: 'query.new', key: 'mod+o' }]);
+    expect(conflicts(window).size).toBe(0);
   });
 });

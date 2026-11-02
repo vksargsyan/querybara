@@ -80,7 +80,11 @@ What works today:
 - **Table designer**: create and alter tables (columns, indexes, foreign keys, unique and check
   constraints, triggers, partitions, options, comment) with validation as you type; Save shows
   the script with data-loss warnings and row counts before running it. Drop table checks what
-  depends on the table.
+  depends on the table. A table's menu also empties it (DELETE, keeping the auto-increment
+  counter), truncates it (the counter starts over) and duplicates it, with or without its rows,
+  each after showing the SQL. In the side bar and the Objects view, ⌘O (Ctrl+O) opens the
+  focused table's data, ⌘D (Ctrl+D) designs it and ⌘N (Ctrl+N) starts a new table in the
+  focused database or schema; the menus show these keys.
 - **Structure sync**: compare two databases, review create / alter / drop operations with
   destructive ones unselected, generate a dependency-ordered script, apply it, and re-compare
   to zero differences. Data compare with server-side range checksums and sync scripts; tick or

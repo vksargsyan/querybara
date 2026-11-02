@@ -48,3 +48,4 @@ supersede it with a new one.
 | [0041](0041-mongodb-collection-history.md)       | Collection History: changes made in the app, kept locally to undo    | Accepted                   |
 | [0042](0042-a-toolbar-for-every-connection.md)   | A toolbar for every connection, following the one in front           | Superseded in part by 0043 |
 | [0043](0043-a-lighter-toolbar-and-title-bar.md)  | A lighter connection toolbar and title bar                           | Accepted                   |
+| [0044](0044-table-actions-and-object-keys.md)    | Empty, truncate and duplicate a table; Navicat's object keys         | Accepted                   |

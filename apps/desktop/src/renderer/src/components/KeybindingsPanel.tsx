@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { fuzzyMatch } from '../lib/fuzzy';
-import { bindingLabel, chordOf, parseBinding } from '../lib/keys';
+import { bindingLabel, chordOf } from '../lib/keys';
 import { allCommands, useCommands, type Command } from '../state/commands';
 import {
   DEFAULT_KEYBINDINGS,
+  commandScope,
+  conflictKey,
   conflicts,
   effectiveBindings,
   setKeybinding,
@@ -82,7 +84,7 @@ export function KeybindingsPanel() {
         </div>
         {rows.map((command) => {
           const binding = bindings.get(command.id) ?? '';
-          const key = parseBinding(binding).join(' ');
+          const key = conflictKey(binding, commandScope(command.id));
           const others = (shared.get(key) ?? []).filter((id) => id !== command.id);
           const user = userSet.has(command.id);
           const isSelected = selected === command.id;
@@ -245,7 +247,10 @@ function Recorder(props: {
       ? []
       : [...props.bindings]
           .filter(
-            ([id, other]) => id !== props.command.id && parseBinding(other).join(' ') === binding,
+            ([id, other]) =>
+              id !== props.command.id &&
+              conflictKey(other, commandScope(id)) ===
+                conflictKey(binding, commandScope(props.command.id)),
           )
           .map(([id]) => id);
 

@@ -18,6 +18,7 @@ import { createFolder } from '../state/folders';
 import { showJobs, useJobs } from '../state/jobs';
 import { openKeybindingsPanel } from '../state/keybindings-panel';
 import { loadSnapshot } from '../state/metadata';
+import { hasShortcut, runShortcut } from '../state/object-shortcuts';
 import {
   openCreateCollection,
   openNewDatabase as openNewMongoDatabase,
@@ -344,6 +345,34 @@ export function registerAppCommands(actions: () => AppActions): () => void {
         setProfileExpanded(target.profile.id, true);
         openCreateCollection(target.profile.id, target.db);
       },
+    },
+    // ⌘O, ⌘D and ⌘N on the focused side bar row or Objects selection (Navicat's keys).
+    {
+      id: 'explorer.open',
+      category: 'Explorer',
+      title: 'Open Selected Object',
+      icon: 'table',
+      keywords: ['open table', 'data', 'rows', 'documents'],
+      enabled: () => hasShortcut('open'),
+      run: () => runShortcut('open'),
+    },
+    {
+      id: 'explorer.design',
+      category: 'Explorer',
+      title: 'Design Selected Table',
+      icon: 'design',
+      keywords: ['designer', 'structure', 'columns'],
+      enabled: () => hasShortcut('design'),
+      run: () => runShortcut('design'),
+    },
+    {
+      id: 'explorer.newTable',
+      category: 'Explorer',
+      title: 'New Table in Selected Database',
+      icon: 'table-new',
+      keywords: ['create table', 'collection', 'schema'],
+      enabled: () => hasShortcut('create'),
+      run: () => runShortcut('create'),
     },
     {
       id: 'view.objects',

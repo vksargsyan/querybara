@@ -2,6 +2,7 @@ import { isSqlEngine, type BrowseNode, type EngineId } from '@querybara/core';
 import type { StoredProfile } from '@querybara/ipc';
 import { DropdownMenu } from 'radix-ui';
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -34,6 +35,7 @@ import {
   type ObjectColumn,
   type ObjectSort,
 } from '../state/objects-model';
+import { useShortcutsRef, type ObjectShortcuts } from '../state/object-shortcuts';
 import { showObjects, useObjectsView } from '../state/objects-view';
 import { formatBytes } from '../state/redis/value-model';
 import { openCreateCollection } from '../state/mongo/create-dialogs';
@@ -206,6 +208,42 @@ function ObjectsList(props: {
     if (mongo) mongoNodeOpener(profile, node)?.();
     else openObjectData(profile, node, dialect);
   };
+
+  // ⌘O opens what is selected, ⌘D designs the one selected table, ⌘N makes a new table (or
+  // collection) here: what the toolbar's Open, Design and New buttons do.
+  const shortcuts: ObjectShortcuts = {
+    open: picked.some(openable)
+      ? () => picked.filter(openable).forEach((node) => open(node))
+      : undefined,
+    design: designable
+      ? () => {
+          const target = single && designerTarget(profile, single, dialect, single.name);
+          if (target) openTableDesigner(target);
+        }
+      : undefined,
+    create: mongo
+      ? mongoDb !== undefined && !profile.presentation.readOnly
+        ? () => openCreateCollection(profile.id, mongoDb)
+        : undefined
+      : newTable
+        ? () => {
+            const target = designerTarget(profile, container, dialect, null);
+            if (target) openTableDesigner(target);
+          }
+        : undefined,
+  };
+  const gridShortcuts = useShortcutsRef<HTMLDivElement>(shortcuts);
+  const menuShortcuts = useShortcutsRef<HTMLDivElement>(shortcuts, () => {
+    setMenu(undefined);
+    grid.current?.focus();
+  });
+  const gridRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      grid.current = element;
+      gridShortcuts(element);
+    },
+    [gridShortcuts],
+  );
 
   /** Opens the object's menu at a point on screen. */
   const openMenu = (node: BrowseNode, x: number, y: number): void => {
@@ -443,7 +481,7 @@ function ObjectsList(props: {
         </Centered>
       ) : (
         <div
-          ref={grid}
+          ref={gridRef}
           role="grid"
           aria-label="Objects"
           aria-multiselectable="true"
@@ -612,6 +650,7 @@ function ObjectsList(props: {
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content
+              ref={menuShortcuts}
               align="start"
               className="z-50 min-w-44 rounded border border-border bg-raised p-1 text-[13px] shadow-widget"
               onKeyDown={(event) => event.stopPropagation()}

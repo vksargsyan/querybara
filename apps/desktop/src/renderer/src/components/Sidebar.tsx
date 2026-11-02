@@ -56,6 +56,7 @@ import { openRunSqlFile } from '../state/transfer-dialogs';
 import { openTransferFrom } from '../state/transfer-db/api';
 import { openErDiagram } from '../state/er-diagram/panels';
 import { openQueryBuilder } from '../state/query-builder/panels';
+import { useShortcutsRef, type ObjectShortcuts } from '../state/object-shortcuts';
 import { toastError } from '../state/toasts';
 import { EngineIcon } from './EngineIcon';
 import { Highlighted } from './Highlighted';
@@ -65,8 +66,10 @@ import {
   DropTableHost,
   ObjectMenuItems,
   hasObjectMenu,
+  objectShortcuts,
   openObjectData,
 } from './ObjectMenu';
+import { DuplicateTableHost } from './designer/DuplicateTableDialog';
 import { BackupMenuItems } from './backup/BackupDialogs';
 import { MongoTree } from './mongo/MongoTree';
 import { NewDatabaseHost } from './NewDatabaseDialog';
@@ -235,6 +238,7 @@ export function Sidebar(props: { readonly onEdit: (mode: ConnectionDialogMode) =
       </div>
       <SearchBar />
       <DropTableHost />
+      <DuplicateTableHost />
       <NewDatabaseHost />
       <CreateIndexHost />
     </aside>
@@ -917,6 +921,7 @@ function ObjectNode(props: {
             <ObjectMenuItems node={node} profile={profile} dialect={dialect} />
           ) : undefined
         }
+        shortcuts={objectShortcuts(profile, node, dialect)}
       />
       {expanded && node.hasChildren && (
         <div role="group">
@@ -961,9 +966,15 @@ export function Row(props: {
    * as its tooltip, and clicks and keys do not open it. Its menu still opens.
    */
   readonly unavailable?: string | undefined;
+  /** What ⌘O, ⌘D and ⌘N do while the row (or its menu) has the focus. */
+  readonly shortcuts?: ObjectShortcuts | undefined;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const blocked = props.unavailable !== undefined;
+  const shortcuts = blocked ? undefined : props.shortcuts;
+  const rowRef = useShortcutsRef<HTMLDivElement>(shortcuts);
+  // From the open menu, the key closes it first, as choosing the item would.
+  const menuRef = useShortcutsRef<HTMLDivElement>(shortcuts, () => setMenuOpen(false));
   const expandable = props.expandable && !blocked;
   const clickToggles = (props.clickToggles ?? true) && !blocked;
   const onSelect = blocked ? undefined : props.onSelect;
@@ -1002,6 +1013,7 @@ export function Row(props: {
   };
   return (
     <div
+      ref={rowRef}
       data-tree-row
       tabIndex={0}
       title={props.unavailable ?? props.title}
@@ -1076,6 +1088,7 @@ export function Row(props: {
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content
+              ref={menuRef}
               align="start"
               className="z-50 min-w-44 rounded border border-border bg-raised p-1 text-[13px] shadow-widget"
               // The menu is portalled, but React events still bubble to the row: a click on an

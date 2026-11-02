@@ -1241,6 +1241,17 @@ export function getTableView(id: string): TableView | undefined {
   return views.get(id);
 }
 
+/** The open views of a table: its data tab and any filtered ones (Empty Table reloads them). */
+export function tableViewsOf(table: TableTarget): TableView[] {
+  return [...views.values()].filter(
+    (view) =>
+      view.target.profileId === table.profileId &&
+      (view.target.database ?? '') === (table.database ?? '') &&
+      view.target.schema === table.schema &&
+      view.target.name === table.name,
+  );
+}
+
 /** Closes a view's session (the panel closed). */
 export async function disposeTableView(id: string): Promise<void> {
   const view = views.get(id);
