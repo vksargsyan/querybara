@@ -212,14 +212,14 @@ export function ObjectMenuItems(props: {
             <>
               <MenuItem
                 icon="discard"
-                danger
+                warning
                 onSelect={() => void clearTable(profile, table, 'empty')}
               >
                 Empty table…
               </MenuItem>
               <MenuItem
                 icon="discard"
-                danger
+                warning
                 onSelect={() => void clearTable(profile, table, 'truncate')}
               >
                 Truncate table…
