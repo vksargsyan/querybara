@@ -401,11 +401,19 @@ export function registerAppCommands(actions: () => AppActions): () => void {
       enabled: () =>
         activeKind() === 'objects' && document.activeElement?.closest('.monaco-editor') == null,
       run: () => {
-        // Once the palette, when it ran from there, has handed the focus back.
+        const search = (): HTMLInputElement | null =>
+          document.querySelector<HTMLInputElement>('[data-testid="objects-search"]');
+        // At once, so the keys typed right after ⌘F land in the search, with its text selected
+        // to type over.
+        search()?.focus();
+        search()?.select();
+        // The palette, when it ran from there, hands the focus back as it closes: take it again,
+        // but leave alone what was typed meanwhile.
         requestAnimationFrame(() => {
-          const input = document.querySelector<HTMLInputElement>('[data-testid="objects-search"]');
-          input?.focus();
-          input?.select();
+          const input = search();
+          if (!input || document.activeElement === input) return;
+          input.focus();
+          input.select();
         });
       },
     },
