@@ -88,6 +88,12 @@ function activeId(): string | undefined {
   return currentDock()?.activePanel?.id;
 }
 
+/** The kind of the active dock panel (a query tab, a table's data, the Objects tab…). */
+function activeKind(): string | undefined {
+  const id = activeId();
+  return id === undefined ? undefined : panelInfo(id)?.kind;
+}
+
 function stepTab(by: number): void {
   const dock = currentDock();
   const group = dock?.activeGroup;
@@ -383,6 +389,24 @@ export function registerAppCommands(actions: () => AppActions): () => void {
         if (!revealObjects()) {
           showStatus('info', 'Click a database, a schema or a folder in the side bar first.');
         }
+      },
+    },
+    {
+      id: 'objects.search',
+      category: 'View',
+      title: 'Search Objects',
+      icon: 'search',
+      keywords: ['find', 'filter', 'tables', 'collections'],
+      // While the Objects tab is in front; an editor keeps its own find.
+      enabled: () =>
+        activeKind() === 'objects' && document.activeElement?.closest('.monaco-editor') == null,
+      run: () => {
+        // Once the palette, when it ran from there, has handed the focus back.
+        requestAnimationFrame(() => {
+          const input = document.querySelector<HTMLInputElement>('[data-testid="objects-search"]');
+          input?.focus();
+          input?.select();
+        });
       },
     },
     {

@@ -38,7 +38,8 @@ What works today:
 - **Explorer**: a side bar you resize by dragging its edge and hide with ⌘B (Ctrl+B), with search
   and a filter by engine, environment and state; a click on a database, schema or folder lists
   its objects in the Objects tab with rows, sizes, engine, dates and comments (documents, sizes
-  and indexes for MongoDB); a click on a table or collection opens its data. **New database…**
+  and indexes for MongoDB), whose search ⌘F (Ctrl+F) goes to; a click on a table or collection
+  opens its data. **New database…**
   in a connection's menu (or the palette) creates one: character set and collation on MySQL and
   MariaDB, owner, encoding and template on PostgreSQL, the statement shown before it runs;
   MongoDB names the database and its first collection.

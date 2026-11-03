@@ -35,6 +35,7 @@ import {
   type ObjectColumn,
   type ObjectSort,
 } from '../state/objects-model';
+import { shortcutLabel } from '../state/keybindings';
 import { useShortcutsRef, type ObjectShortcuts } from '../state/object-shortcuts';
 import { showObjects, useObjectsView } from '../state/objects-view';
 import { formatBytes } from '../state/redis/value-model';
@@ -53,7 +54,7 @@ import { Button, Icon, cx, type IconName } from './ui';
  * object with its statistics, for SQL engines and MongoDB. A click selects (Cmd/Ctrl adds, Shift
  * extends); a double-click or Enter opens a table's data, a view's rows or a collection's
  * documents, or goes into a schema or a database. The toolbar and the right-click menu offer
- * what the tree's menu does; the search narrows by name.
+ * what the tree's menu does; the search narrows by name, and ⌘F (Ctrl+F) goes to it.
  */
 
 const WIDTHS: Readonly<Record<ObjectColumn['format'], string>> = {
@@ -312,6 +313,10 @@ function ObjectsList(props: {
         : { key: column, descending: false },
     );
 
+  // ⌘F (Ctrl+F) puts the cursor in the search: a key binding (objects.search).
+  const searchKeys = shortcutLabel('objects.search');
+  const searchTip = searchKeys === undefined ? 'Search objects' : `Search objects (${searchKeys})`;
+
   const size = totalSize(shown);
   const tool = (icon: IconName, label: string, onClick: () => void, disabled = false) => (
     <Button
@@ -440,6 +445,9 @@ function ObjectsList(props: {
             }}
             placeholder="Search"
             aria-label="Search objects"
+            title={searchTip}
+            {...(searchKeys !== undefined ? { 'aria-keyshortcuts': searchKeys } : {})}
+            data-testid="objects-search"
             spellCheck={false}
             className="min-w-0 flex-1 bg-transparent text-xs text-fg outline-none! placeholder:text-faint"
           />
