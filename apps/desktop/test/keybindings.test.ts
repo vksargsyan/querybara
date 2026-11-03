@@ -105,6 +105,12 @@ describe('bindings', () => {
     expect(conflicts(effectiveBindings([])).size).toBe(0);
   });
 
+  it('puts ⌘F on the Objects tab’s search, clashing with no default', () => {
+    expect(DEFAULT_KEYBINDINGS['objects.search']).toBe('mod+f');
+    expect(commandScope('objects.search')).toBeUndefined();
+    expect(conflicts(effectiveBindings([])).get(conflictKey('mod+f'))).toBeUndefined();
+  });
+
   it('binds Navicat’s object keys to the focused explorer item', () => {
     expect(DEFAULT_KEYBINDINGS['explorer.open']).toBe('mod+o');
     expect(DEFAULT_KEYBINDINGS['explorer.design']).toBe('mod+d');

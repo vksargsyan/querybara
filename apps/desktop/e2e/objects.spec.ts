@@ -162,3 +162,28 @@ test('the object menu opens on a right-click and offers what the tree does', asy
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
 });
+
+test('⌘F puts the cursor in the search while the Objects tab is in front', async () => {
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await page.getByRole('tab', { name: /Objects/ }).click();
+  // With the focus on a tree row, the key finds the Objects tab's search all the same.
+  await treeRow('Tables').focus();
+  await page.keyboard.press(`${mod}+f`);
+  const search = page.getByLabel('Search objects');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveAttribute('title', /^Search objects \((Ctrl\+F|⌘F)\)$/);
+  await page.keyboard.type('cust');
+  await expect(names()).toHaveText(['customers']);
+  // Pressed again, it selects what was typed, ready to type over.
+  await grid().focus();
+  await page.keyboard.press(`${mod}+f`);
+  await page.keyboard.type('ord');
+  await expect(names()).toHaveText(['orders']);
+  await search.fill('');
+
+  // With a table's data in front, the key leaves the Objects search alone.
+  await treeRow('orders').click();
+  await expect(page.getByTestId('table-data-panel').filter({ visible: true })).toBeVisible();
+  await page.keyboard.press(`${mod}+f`);
+  await expect(search).not.toBeFocused();
+});
