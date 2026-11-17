@@ -51,6 +51,38 @@ describe('mapMysqlError', () => {
     },
   );
 
+  it('says how to fix system tables a server upgrade left behind', () => {
+    // A MySQL 5.7.31 data directory opened by MariaDB 10.6.20 without mariadb-upgrade.
+    const proc = mapMysqlError(
+      serverError(
+        1558,
+        'ER_COL_COUNT_DOESNT_MATCH_PLEASE_UPDATE',
+        'HY000',
+        'Column count of mysql.proc is wrong. Expected 21, found 20. Created with MariaDB 50731, now running 100620. Please use mariadb-upgrade to fix this error',
+      ),
+      { where },
+    );
+    expect(proc.toJSON()).toMatchObject({ code: 'SQL_ERROR', engineCode: 1558 });
+    expect(proc.hint).toMatch(/system tables.*mariadb-upgrade/);
+    for (const errno of [1728, 1805]) {
+      expect(mapMysqlError(serverError(errno, 'X', 'HY000', 'message'), { where }).hint).toMatch(
+        /mariadb-upgrade/,
+      );
+    }
+
+    const events = mapMysqlError(
+      serverError(
+        1577,
+        'ER_EVENTS_DB_ERROR',
+        'HY000',
+        'Cannot proceed, because event scheduler is disabled',
+      ),
+      { where },
+    );
+    expect(events.toJSON()).toMatchObject({ code: 'SQL_ERROR', engineCode: 1577 });
+    expect(events.hint).toMatch(/event_scheduler=DISABLED.*error log/);
+  });
+
   it('maps mysql2 protocol, TLS and network errors', () => {
     const client = (code: string, message = code, fatal = true) =>
       Object.assign(new Error(message), { code, fatal });

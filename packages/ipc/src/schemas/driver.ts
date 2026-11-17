@@ -44,6 +44,7 @@ export const introspectScopeSchema: z.ZodType<IntrospectScope, IntrospectScope> 
   database: z.string().min(1).optional(),
   schemas: z.array(z.string().min(1)).optional(),
   include: z.array(z.enum(SCHEMA_OBJECT_KINDS)).optional(),
+  bestEffort: z.boolean().optional(),
 });
 
 export const browseNodeSchema: z.ZodType<BrowseNode, BrowseNode> = z.object({

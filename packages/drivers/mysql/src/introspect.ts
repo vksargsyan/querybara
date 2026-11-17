@@ -28,6 +28,7 @@ import {
   removeDatabaseQualifier,
   stripDefiner,
 } from './dialect';
+import { EVENTS_UNAVAILABLE_ERRNO, OUTDATED_SYSTEM_TABLE_ERRNOS } from './errors';
 
 /**
  * MySQL / MariaDB introspection into a SchemaSnapshot, following the producer conventions in
@@ -92,6 +93,18 @@ export function partitionBound(
   return undefined;
 }
 
+/**
+ * True for an error that means the server cannot list routines or events in any database: its
+ * system tables were not upgraded with it, or its event scheduler is disabled for good.
+ */
+function unlistable(error: unknown): boolean {
+  const errno = error instanceof QuerybaraError ? error.engineCode : undefined;
+  return (
+    typeof errno === 'number' &&
+    (OUTDATED_SYSTEM_TABLE_ERRNOS.has(errno) || errno === EVENTS_UNAVAILABLE_ERRNO)
+  );
+}
+
 /** Introspects one database. `query` runs SQL on the caller's connection. */
 export async function introspectMysql(
   query: QueryFn,
@@ -100,6 +113,15 @@ export async function introspectMysql(
 ): Promise<SchemaSnapshot> {
   const { database: db, mariadb } = target;
   const wants = (kind: SchemaObjectKind): boolean => !scope.include || scope.include.includes(kind);
+  /** A listing a best-effort introspection leaves out when the server cannot list that kind. */
+  const listing = async (sql: string, values: unknown[]): Promise<Row[]> => {
+    try {
+      return await query(sql, values);
+    } catch (error) {
+      if (scope.bestEffort === true && unlistable(error)) return [];
+      throw error;
+    }
+  };
   const clean = (sql: string): string => removeDatabaseQualifier(stripDefiner(sql), db);
   const showCreate = async (kind: string, name: string, column: string): Promise<string> => {
     const [row] = await query(`SHOW CREATE ${kind} ${quoteQualified([db, name], 'mysql')}`);
@@ -323,7 +345,7 @@ export async function introspectMysql(
 
   const routines: RoutineDef[] = [];
   if (wants('routine')) {
-    const routineRows = await query(
+    const routineRows = await listing(
       `SELECT ROUTINE_NAME AS name, ROUTINE_TYPE AS type, DTD_IDENTIFIER AS returns,
          DEFINER AS definer, ROUTINE_COMMENT AS comment
        FROM information_schema.ROUTINES
@@ -356,7 +378,7 @@ export async function introspectMysql(
 
   const events: EventDef[] = [];
   if (wants('event')) {
-    const eventRows = await query(
+    const eventRows = await listing(
       `SELECT EVENT_NAME AS name, STATUS AS status FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ?`,
       [db],
     );
