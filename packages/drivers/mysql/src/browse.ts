@@ -1,7 +1,30 @@
 import { QuerybaraError, atLeast, type BrowseNode, type BrowseNodeKind } from '@querybara/core';
 import { num, opt, str, type Row } from '@querybara/driver-sql-base';
 
+import { isUnlistable } from './errors';
 import type { QueryFn } from './introspect';
+import { readEventTable, readProcTable } from './system-tables';
+
+/**
+ * Rows from information_schema, or from the mysql tables when the server cannot list routines
+ * or events there (system-tables.ts). When those cannot be read either (no SELECT on them), the
+ * server's own error, with its upgrade hint, is the one to show.
+ */
+async function orSystemTable(
+  primary: () => Promise<Row[]>,
+  fallback: () => Promise<Row[]>,
+): Promise<Row[]> {
+  try {
+    return await primary();
+  } catch (error) {
+    if (!isUnlistable(error)) throw error;
+    try {
+      return await fallback();
+    } catch {
+      throw error;
+    }
+  }
+}
 
 /**
  * The MySQL / MariaDB object explorer tree (spec §5), loaded one level at a time:
@@ -211,12 +234,17 @@ async function listRoutines(
   path: readonly string[],
   procedures: boolean,
 ): Promise<BrowseNode[]> {
-  const rows = await query(
-    `SELECT ROUTINE_NAME AS name, DTD_IDENTIFIER AS returns, DEFINER AS definer,
-       ROUTINE_COMMENT AS comment, CREATED AS created, LAST_ALTERED AS modified
-     FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = ?
-     ORDER BY ROUTINE_NAME`,
-    [db, procedures ? 'PROCEDURE' : 'FUNCTION'],
+  const type = procedures ? 'PROCEDURE' : 'FUNCTION';
+  const rows = await orSystemTable(
+    () =>
+      query(
+        `SELECT ROUTINE_NAME AS name, DTD_IDENTIFIER AS returns, DEFINER AS definer,
+           ROUTINE_COMMENT AS comment, CREATED AS created, LAST_ALTERED AS modified
+         FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = ?
+         ORDER BY ROUTINE_NAME`,
+        [db, type],
+      ),
+    () => readProcTable(query, db, type),
   );
   return rows.map((row) =>
     node(
@@ -270,12 +298,16 @@ async function listEvents(
   db: string,
   path: readonly string[],
 ): Promise<BrowseNode[]> {
-  const rows = await query(
-    `SELECT EVENT_NAME AS name, STATUS AS status, EVENT_TYPE AS type, INTERVAL_VALUE AS every,
-       INTERVAL_FIELD AS unit, EXECUTE_AT AS execute_at, LAST_EXECUTED AS last_executed,
-       EVENT_COMMENT AS comment
-     FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ? ORDER BY EVENT_NAME`,
-    [db],
+  const rows = await orSystemTable(
+    () =>
+      query(
+        `SELECT EVENT_NAME AS name, STATUS AS status, EVENT_TYPE AS type, INTERVAL_VALUE AS every,
+           INTERVAL_FIELD AS unit, EXECUTE_AT AS execute_at, LAST_EXECUTED AS last_executed,
+           EVENT_COMMENT AS comment
+         FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ? ORDER BY EVENT_NAME`,
+        [db],
+      ),
+    () => readEventTable(query, db),
   );
   return rows.map((row) =>
     node(

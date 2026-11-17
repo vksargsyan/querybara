@@ -28,7 +28,8 @@ import {
   removeDatabaseQualifier,
   stripDefiner,
 } from './dialect';
-import { EVENTS_UNAVAILABLE_ERRNO, OUTDATED_SYSTEM_TABLE_ERRNOS } from './errors';
+import { isUnlistable } from './errors';
+import { readEventTable, readProcTable } from './system-tables';
 
 /**
  * MySQL / MariaDB introspection into a SchemaSnapshot, following the producer conventions in
@@ -93,18 +94,6 @@ export function partitionBound(
   return undefined;
 }
 
-/**
- * True for an error that means the server cannot list routines or events in any database: its
- * system tables were not upgraded with it, or its event scheduler is disabled for good.
- */
-function unlistable(error: unknown): boolean {
-  const errno = error instanceof QuerybaraError ? error.engineCode : undefined;
-  return (
-    typeof errno === 'number' &&
-    (OUTDATED_SYSTEM_TABLE_ERRNOS.has(errno) || errno === EVENTS_UNAVAILABLE_ERRNO)
-  );
-}
-
 /** Introspects one database. `query` runs SQL on the caller's connection. */
 export async function introspectMysql(
   query: QueryFn,
@@ -113,15 +102,39 @@ export async function introspectMysql(
 ): Promise<SchemaSnapshot> {
   const { database: db, mariadb } = target;
   const wants = (kind: SchemaObjectKind): boolean => !scope.include || scope.include.includes(kind);
-  /** A listing a best-effort introspection leaves out when the server cannot list that kind. */
-  const listing = async (sql: string, values: unknown[]): Promise<Row[]> => {
+  /**
+   * Routines or events from information_schema, or from the mysql tables when the server cannot
+   * list them there (system-tables.ts; rows then carry their rebuilt `definition`). When neither
+   * works, a best-effort introspection leaves the kind out; otherwise the server's own error,
+   * with its upgrade hint, says more than a denied read of the mysql tables.
+   */
+  const listing = async (
+    sql: string,
+    values: unknown[],
+    fallback: () => Promise<Row[]>,
+  ): Promise<Row[]> => {
     try {
       return await query(sql, values);
     } catch (error) {
-      if (scope.bestEffort === true && unlistable(error)) return [];
+      if (!isUnlistable(error)) throw error;
+      const rows = await fallback().catch(() => undefined);
+      if (rows !== undefined && rows.every((row) => typeof row['definition'] === 'string')) {
+        return rows;
+      }
+      if (scope.bestEffort === true) return [];
       throw error;
     }
   };
+  /** The rebuilt definition a system-table row carries, else SHOW CREATE. */
+  const definitionOf = async (
+    row: Row,
+    kind: string,
+    name: string,
+    column: string,
+  ): Promise<string> =>
+    typeof row['definition'] === 'string'
+      ? clean(row['definition'])
+      : showCreate(kind, name, column);
   const clean = (sql: string): string => removeDatabaseQualifier(stripDefiner(sql), db);
   const showCreate = async (kind: string, name: string, column: string): Promise<string> => {
     const [row] = await query(`SHOW CREATE ${kind} ${quoteQualified([db, name], 'mysql')}`);
@@ -351,6 +364,7 @@ export async function introspectMysql(
        FROM information_schema.ROUTINES
        WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE IN ('FUNCTION', 'PROCEDURE')`,
       [db],
+      () => readProcTable(query, db),
     );
     for (const row of routineRows) {
       const kind = str(row, 'type') === 'FUNCTION' ? 'function' : 'procedure';
@@ -360,7 +374,8 @@ export async function introspectMysql(
         kind,
         signature: '',
         language: 'SQL',
-        definition: await showCreate(
+        definition: await definitionOf(
+          row,
           kind === 'function' ? 'FUNCTION' : 'PROCEDURE',
           name,
           kind === 'function' ? 'Create Function' : 'Create Procedure',
@@ -381,11 +396,12 @@ export async function introspectMysql(
     const eventRows = await listing(
       `SELECT EVENT_NAME AS name, STATUS AS status FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ?`,
       [db],
+      () => readEventTable(query, db),
     );
     for (const row of eventRows) {
       events.push({
         name: str(row, 'name'),
-        definition: await showCreate('EVENT', str(row, 'name'), 'Create Event'),
+        definition: await definitionOf(row, 'EVENT', str(row, 'name'), 'Create Event'),
         enabled: str(row, 'status') === 'ENABLED',
       });
     }

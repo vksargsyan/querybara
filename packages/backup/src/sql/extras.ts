@@ -323,8 +323,20 @@ async function mysqlGrants(
 /** Wraps routine, trigger and event DDL in the sql_mode each was created under. */
 async function mysqlSqlModes(session: Session, objects: SqlObject[]): Promise<void> {
   const modes = new Map<string, string>();
-  const read = async (sql: string, kind: string): Promise<void> => {
-    for (const [name, mode] of await queryRows(session, sql)) {
+  // `fallback` reads the mysql table behind the information_schema view, for a server that
+  // cannot list routines or events there (system tables not upgraded with it; the MySQL driver
+  // reads their definitions the same way). When both fail, the view's error is the one to show.
+  const read = async (sql: string, kind: string, fallback?: string): Promise<void> => {
+    let rows: CellValue[][];
+    try {
+      rows = await queryRows(session, sql);
+    } catch (error) {
+      if (fallback === undefined) throw error;
+      rows = await queryRows(session, fallback).catch(() => {
+        throw error;
+      });
+    }
+    for (const [name, mode] of rows) {
       const n = text(name);
       const m = text(mode);
       if (n !== undefined && m !== undefined) modes.set(`${kind}:${n}`, m);
@@ -333,6 +345,7 @@ async function mysqlSqlModes(session: Session, objects: SqlObject[]): Promise<vo
   await read(
     'SELECT ROUTINE_NAME, SQL_MODE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE()',
     'routine',
+    'SELECT name, sql_mode FROM mysql.proc WHERE db = DATABASE()',
   );
   await read(
     'SELECT TRIGGER_NAME, SQL_MODE FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()',
@@ -341,6 +354,7 @@ async function mysqlSqlModes(session: Session, objects: SqlObject[]): Promise<vo
   await read(
     'SELECT EVENT_NAME, SQL_MODE FROM information_schema.EVENTS WHERE EVENT_SCHEMA = DATABASE()',
     'event',
+    'SELECT name, sql_mode FROM mysql.event WHERE db = DATABASE()',
   );
   for (const object of objects) {
     const mode = modes.get(`${object.kind}:${object.name}`);
