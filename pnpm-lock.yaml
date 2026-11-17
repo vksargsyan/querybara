@@ -43,6 +43,7 @@ catalogs:
 overrides:
   get-uri>basic-ftp: ^6.2.3
   monaco-editor>dompurify: ^3.4.17
+  mongodb@6>bson: ^7.3.3
 
 importers:
 
@@ -87,6 +88,9 @@ importers:
       mongodb:
         specifier: ^7.7.0
         version: 7.7.0(@aws-sdk/credential-providers@3.1158.0)(gcp-metadata@7.0.1)(kerberos@7.0.0)(mongodb-client-encryption@7.2.1)(socks@2.8.10)
+      mongodb6:
+        specifier: npm:mongodb@^6.22.0
+        version: mongodb@6.22.0(@aws-sdk/credential-providers@3.1158.0)(gcp-metadata@7.0.1)(kerberos@7.0.0)(mongodb-client-encryption@7.2.1)(socks@2.8.10)
       mysql2:
         specifier: ^3.24.4
         version: 3.24.4(@types/node@22.20.4)
@@ -460,6 +464,9 @@ importers:
       mongodb:
         specifier: ^7.7.0
         version: 7.7.0(@aws-sdk/credential-providers@3.1158.0)(gcp-metadata@7.0.1)(kerberos@7.0.0)(mongodb-client-encryption@7.2.1)(socks@2.8.10)
+      mongodb6:
+        specifier: npm:mongodb@^6.22.0
+        version: mongodb@6.22.0(@aws-sdk/credential-providers@3.1158.0)(gcp-metadata@7.0.1)(kerberos@7.0.0)(mongodb-client-encryption@7.2.1)(socks@2.8.10)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -3241,6 +3248,9 @@ packages:
   '@types/webidl-conversions@7.0.3':
     resolution: {integrity: sha512-CiJJvcRtIgzadHCYXw7dqEnMNRjhGZlYK05Mj9OyktqV8uVT8fD2BFOB7S1uwBE3Kj2Z+4UyPmFw/Ixgw/LAlA==}
 
+  '@types/whatwg-url@11.0.5':
+    resolution: {integrity: sha512-coYR071JRaHa+xoEvvYqvnIHaVqaYrLPbsufM9BF63HkwI5Lgmy2QR8Q5K/lYDYo5AK82wOvSOS0UsLTpTG7uQ==}
+
   '@types/whatwg-url@13.0.0':
     resolution: {integrity: sha512-N8WXpbE6Wgri7KUSvrmQcqrMllKZ9uxkYWMt+mCSGwNc0Hsw9VQTW7ApqI4XNrx6/SaM2QQJCzMPDEXE058s+Q==}
 
@@ -5038,6 +5048,9 @@ packages:
     resolution: {integrity: sha512-22N0jk04BFKMvuRNsxts+j5YnbyemV/UPJNp+q55BT0EcTVvoo/ASK71seW300/ryITzyow830HLTsQo0sYf2g==}
     engines: {node: '>=20.19.0'}
 
+  mongodb-connection-string-url@3.0.2:
+    resolution: {integrity: sha512-rMO7CGo/9BFwyZABcKAWL8UJwH/Kc2x0g72uhDWzG48URRax5TCIcJ7Rc3RZqffZzO/Gwff/jyKwCU9TN8gehA==}
+
   mongodb-connection-string-url@7.0.2:
     resolution: {integrity: sha512-ZoS07RoFqpKYQwAk59qmrx8+jJHNHU30UjlU96QktiGn1ltvDr+vCznLX5DiUBLEpMAHatHNWV1nM/74ul66kA==}
     engines: {node: '>=20.19.0'}
@@ -5049,6 +5062,33 @@ packages:
 
   mongodb-redact@1.4.18:
     resolution: {integrity: sha512-Vm0jkxnTgMperlZnp3jaR9rM39xvQ1mOVE9Rx878zJP3zwi5A5wIBpd4xoZVo2fadABVx1tmunmVZsp5TcaS4Q==}
+
+  mongodb@6.22.0:
+    resolution: {integrity: sha512-k9YPpPXZEVyT4kjglCen99LCDToxzM+R89x3cMp8kSWb1gnXDvrsEJQh3FQ4t4jS9+ZA4yBOojHNS1oAB5qwQg==}
+    engines: {node: '>=16.20.1'}
+    peerDependencies:
+      '@aws-sdk/credential-providers': ^3.188.0
+      '@mongodb-js/zstd': ^1.1.0 || ^2.0.0
+      gcp-metadata: ^5.2.0
+      kerberos: ^2.0.1
+      mongodb-client-encryption: '>=6.0.0 <7'
+      snappy: ^7.3.2
+      socks: ^2.7.1
+    peerDependenciesMeta:
+      '@aws-sdk/credential-providers':
+        optional: true
+      '@mongodb-js/zstd':
+        optional: true
+      gcp-metadata:
+        optional: true
+      kerberos:
+        optional: true
+      mongodb-client-encryption:
+        optional: true
+      snappy:
+        optional: true
+      socks:
+        optional: true
 
   mongodb@7.7.0:
     resolution: {integrity: sha512-XG1xXEqyouAV8GCb3PuRaujofeXKpAJAPvXYWZgHl6Dz4QHSJ1nRLl0+GpqaLTwKvC0RFE9truOur34RNFY1nw==}
@@ -8760,6 +8800,10 @@ snapshots:
 
   '@types/webidl-conversions@7.0.3': {}
 
+  '@types/whatwg-url@11.0.5':
+    dependencies:
+      '@types/webidl-conversions': 7.0.3
+
   '@types/whatwg-url@13.0.0':
     dependencies:
       '@types/webidl-conversions': 7.0.3
@@ -10828,6 +10872,11 @@ snapshots:
       prebuild-install: 7.1.3
     optional: true
 
+  mongodb-connection-string-url@3.0.2:
+    dependencies:
+      '@types/whatwg-url': 11.0.5
+      whatwg-url: 14.2.0
+
   mongodb-connection-string-url@7.0.2:
     dependencies:
       '@types/whatwg-url': 13.0.0
@@ -10842,6 +10891,18 @@ snapshots:
     dependencies:
       mongodb-connection-string-url: 7.0.2
       regexp.escape: 2.0.1
+
+  mongodb@6.22.0(@aws-sdk/credential-providers@3.1158.0)(gcp-metadata@7.0.1)(kerberos@7.0.0)(mongodb-client-encryption@7.2.1)(socks@2.8.10):
+    dependencies:
+      '@mongodb-js/saslprep': 1.5.4
+      bson: 7.3.3
+      mongodb-connection-string-url: 3.0.2
+    optionalDependencies:
+      '@aws-sdk/credential-providers': 3.1158.0
+      gcp-metadata: 7.0.1
+      kerberos: 7.0.0
+      mongodb-client-encryption: 7.2.1
+      socks: 2.8.10
 
   mongodb@7.7.0(@aws-sdk/credential-providers@3.1158.0)(gcp-metadata@7.0.1)(kerberos@7.0.0)(mongodb-client-encryption@7.2.1)(socks@2.8.10):
     dependencies:

@@ -38,6 +38,19 @@ export const OUTDATED_SYSTEM_TABLE_ERRNOS: ReadonlySet<number> = new Set([1558, 
  */
 export const EVENTS_UNAVAILABLE_ERRNO = 1577;
 
+/**
+ * True for an error that means the server cannot list routines or events in any database
+ * through information_schema: its system tables were not upgraded with it, or its event
+ * scheduler is disabled for good. system-tables.ts reads them from the mysql tables instead.
+ */
+export function isUnlistable(error: unknown): boolean {
+  const errno = error instanceof QuerybaraError ? error.engineCode : undefined;
+  return (
+    typeof errno === 'number' &&
+    (OUTDATED_SYSTEM_TABLE_ERRNOS.has(errno) || errno === EVENTS_UNAVAILABLE_ERRNO)
+  );
+}
+
 const UPGRADE_HINT =
   "The server's system tables (the mysql database) were not upgraded along with the server: an administrator needs to run mariadb-upgrade (mysql_upgrade on MySQL) on the server";
 

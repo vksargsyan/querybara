@@ -6,10 +6,11 @@ import {
 } from '@querybara/mongo-tools';
 import { MessageChannel } from 'node:worker_threads';
 
-import { MongoClient } from 'mongodb';
+import type { MongoClient } from 'mongodb';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ShellClient, buildMongoClientPlan } from '../../src';
+import { connectMongoDriver } from '../../src/driver';
 import { ShellRuntime, serveShellWorker, type ShellWritePolicy } from '../../src/shell';
 import { MONGO_URL, mongoProfile, testDatabase } from './helpers';
 
@@ -59,8 +60,8 @@ describe.skipIf(!MONGO_URL)('the embedded mongosh', () => {
 
   async function open(policy: ShellWritePolicy = DEV, pageSize?: number): Promise<ShellRuntime> {
     const plan = buildMongoClientPlan(mongoProfile(MONGO_URL!));
-    const client = new MongoClient(plan.url, plan.options);
-    await client.connect();
+    // The app's connect path: the legacy driver for MongoDB 4.2.
+    const client = await connectMongoDriver(plan.url, plan.options);
     clients.push(client);
     return ShellRuntime.open({
       client,

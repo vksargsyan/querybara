@@ -163,6 +163,16 @@ const RELEASE_BY_WIRE_VERSION: Readonly<Record<number, string>> = {
   8: '4.2',
 };
 
+const TOO_OLD =
+  /reports (?:maximum )?wire version (\d+), but .* requires at least \d+ \(MongoDB ([\d.]+)\)/;
+
+/** The driver refused the server as older than the oldest release it speaks. */
+export function isServerTooOld(error: unknown): boolean {
+  return (
+    errorProp(error, 'name') === 'MongoCompatibilityError' && TOO_OLD.test(errorMessage(error))
+  );
+}
+
 /**
  * The driver's refusal of a server whose wire versions it does not speak, as NOT_SUPPORTED
  * naming the server's release and the driver's limit; undefined for any other error. The
@@ -179,10 +189,7 @@ export function describeIncompatibleServer(
   const text = errorMessage(error);
   const address = /^Server at (\S+)/.exec(text)?.[1] ?? where;
   const data = { code: 'NOT_SUPPORTED', engineCode: 'MongoCompatibilityError' } as const;
-  const tooOld =
-    /reports (?:maximum )?wire version (\d+), but .* requires at least \d+ \(MongoDB ([\d.]+)\)/.exec(
-      text,
-    );
+  const tooOld = TOO_OLD.exec(text);
   if (tooOld) {
     const wire = Number(tooOld[1]);
     const release =

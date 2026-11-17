@@ -91,9 +91,13 @@ test('lists the third-party licences the build shipped', async () => {
   await expect(packages.getByText('react', { exact: true })).toBeVisible();
   await dialog.getByLabel('Filter packages').fill('Apache-2.0');
   await expect(packages.getByText('react', { exact: true })).toBeHidden();
-  const mongodb = packages
+  // Both MongoDB drivers ship: 7.x, and 6.x for MongoDB 4.2 (ADR 0045).
+  const drivers = packages
     .getByRole('listitem')
     .filter({ has: page.getByText('mongodb', { exact: true }) });
+  await expect(drivers).toHaveCount(2);
+  await expect(drivers.filter({ hasText: /\b6\.\d+\.\d+ · Apache-2\.0/ })).toHaveCount(1);
+  const mongodb = drivers.filter({ hasText: /\b7\.\d+\.\d+ · Apache-2\.0/ });
   await mongodb.getByText('mongodb', { exact: true }).click();
   await expect(mongodb.getByText(/Apache License/)).toBeVisible();
   await dialog.getByRole('button', { name: 'Close' }).click();
