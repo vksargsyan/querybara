@@ -34,6 +34,10 @@ overrides:
   # dompurify <=3.4.16 (GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr): monaco-editor 0.57 pins
   # 3.4.15 exactly. Drop once a monaco-editor release asks for a patched one.
   'monaco-editor>dompurify': ^3.4.17
+  # mongodb 6.x, the driver kept for MongoDB 4.2 (which 7.x dropped), asks for bson ^6. It runs
+  # on bson 7, and has to: bson refuses to serialize values made by another major, and values
+  # pass freely between both drivers and the rest of the repo. Drop with MongoDB 4.2 support.
+  'mongodb@6>bson': ^7.3.3
 
 # Advisories `pnpm audit` should not fail on, each with why and when to drop it.
 auditConfig:

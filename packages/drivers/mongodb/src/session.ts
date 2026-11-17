@@ -46,13 +46,14 @@ import type {
   WatchScope,
   WriteSummary,
 } from '@querybara/mongo-tools';
-import { MongoClient, type TopologyDescriptionChangedEvent } from 'mongodb';
+import type { MongoClient } from 'mongodb';
 
 import * as admin from './admin';
 import { browseMongo } from './browse';
 import { buildMongoClientPlan, type MongoClientPlan } from './config';
 import { MongoContext, checkDatabaseName } from './context';
 import * as documents from './documents';
+import { connectMongoDriver, releaseOf, type DriverRelease } from './driver';
 import { mapMongoError, type MongoErrorContext } from './errors';
 import { executeCommand, parseCommand } from './execute';
 import * as gridfs from './gridfs';
@@ -126,37 +127,11 @@ export async function connectMongoClient(
   const options = plan.browserSignIn
     ? await oidcSignInOptions(resolved.profile.id, plan.options, opts.oidcState)
     : plan.options;
-  let client: MongoClient;
   try {
-    client = new MongoClient(plan.url, options);
+    return { client: await connectMongoDriver(plan.url, options), plan, errorContext };
   } catch (error) {
     throw mapMongoError(error, errorContext);
   }
-  // A server whose wire versions the driver does not speak (MongoDB 4.2, say) fails every
-  // handshake the same way: once every known server has, stop rather than wait out server
-  // selection, and report that refusal instead of a selection timeout.
-  let incompatible: unknown;
-  const onTopology = (event: TopologyDescriptionChangedEvent): void => {
-    const servers = [...event.newDescription.servers.values()];
-    if (
-      incompatible === undefined &&
-      servers.length > 0 &&
-      servers.every((server) => server.error?.name === 'MongoCompatibilityError')
-    ) {
-      incompatible = servers[0]!.error;
-      void client.close().catch(() => undefined);
-    }
-  };
-  client.on('topologyDescriptionChanged', onTopology);
-  try {
-    await client.connect();
-  } catch (error) {
-    await client.close().catch(() => undefined);
-    throw mapMongoError(incompatible ?? error, errorContext);
-  } finally {
-    client.off('topologyDescriptionChanged', onTopology);
-  }
-  return { client, plan, errorContext };
 }
 
 /**
@@ -198,6 +173,11 @@ export class MongoDbSession implements MongoSession {
 
   get currentDatabase(): string {
     return this.database;
+  }
+
+  /** The driver release this session talks through: `legacy` for MongoDB 4.2. */
+  get driverRelease(): DriverRelease {
+    return releaseOf(this.ctx.client);
   }
 
   get inTransaction(): boolean {

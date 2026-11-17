@@ -86,11 +86,22 @@ jobs:
         options: >-
           --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 5s
           --health-timeout 5s --health-retries 30
+      # MongoDB 4.2, which only the legacy driver speaks (packages/drivers/mongodb/src/driver.ts).
+      mongodb42:
+        image: mongo:4.2
+        env:
+          MONGO_INITDB_ROOT_USERNAME: querybara
+          MONGO_INITDB_ROOT_PASSWORD: querybara
+        ports: ['27042:27017']
+        options: >-
+          --health-cmd "mongo --quiet --eval 'db.adminCommand({ ping: 1 }).ok'"
+          --health-interval 5s --health-timeout 5s --health-retries 30
     env:
       QUERYBARA_TEST_POSTGRES_URL: postgres://querybara:querybara@127.0.0.1:5432/querybara_test
       QUERYBARA_TEST_MYSQL_URL: mysql://root:querybara@127.0.0.1:3306/querybara_test
       QUERYBARA_TEST_MARIADB_URL: mariadb://root:querybara@127.0.0.1:3307/querybara_test
       QUERYBARA_TEST_MONGODB_URL: mongodb://querybara:querybara@127.0.0.1:27018/?replicaSet=rs0&authSource=admin
+      QUERYBARA_TEST_MONGODB_42_URL: mongodb://querybara:querybara@127.0.0.1:27042/?authSource=admin
       QUERYBARA_TEST_REDIS_URL: redis://default:querybara@127.0.0.1:63790/0
       QUERYBARA_TEST_REDIS_ACL_USER: app:app-secret
       QUERYBARA_TEST_REDIS_SENTINEL: 127.0.0.1:26380/querybara-master

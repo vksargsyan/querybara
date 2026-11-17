@@ -18,9 +18,8 @@ import {
   type NetworkTarget,
 } from '@querybara/driver-sql-base';
 import { tunnelledProfile, type Transport } from '@querybara/tunnel';
-import { MongoClient } from 'mongodb';
-
 import { buildMongoClientPlan, hostPortText, redactSecrets, type MongoClientPlan } from './config';
+import { connectMongoDriver } from './driver';
 import { mapMongoError } from './errors';
 import type { MongoDbSession } from './session';
 
@@ -111,7 +110,7 @@ const defaultDeps: Omit<MongoCheckDeps, 'connect'> = {
     });
   },
   async hello(plan, target) {
-    const client = new MongoClient(`mongodb://${hostPortText(target)}/`, {
+    const client = await connectMongoDriver(`mongodb://${hostPortText(target)}/`, {
       ...tlsOnly(plan),
       ...proxyOnly(plan),
       directConnection: true,
@@ -119,7 +118,6 @@ const defaultDeps: Omit<MongoCheckDeps, 'connect'> = {
       connectTimeoutMS: plan.options.connectTimeoutMS ?? 10_000,
     });
     try {
-      await client.connect();
       return await client.db('admin').command({ hello: 1 });
     } finally {
       await client.close().catch(() => undefined);
@@ -452,7 +450,9 @@ async function* driverSteps(
         : info?.topology === 'sharded'
           ? `sharded cluster (${info.members.length} shard${info.members.length === 1 ? '' : 's'})`
           : (info?.topology ?? session.topology);
-    yield log.ok('version', started, `MongoDB ${session.serverVersion}, ${topology}`);
+    const legacy =
+      session.driverRelease === 'legacy' ? '; through the driver kept for MongoDB 4.2' : '';
+    yield log.ok('version', started, `MongoDB ${session.serverVersion}, ${topology}${legacy}`);
   } finally {
     await session.close().catch(() => undefined);
   }

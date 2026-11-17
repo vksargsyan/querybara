@@ -3,7 +3,7 @@ import { pipeline } from 'node:stream/promises';
 
 import { QuerybaraError, cancelledError } from '@querybara/core';
 import { toEjson, type GridFsBucketRef, type GridFsFileInfo } from '@querybara/mongo-tools';
-import { GridFSBucket, type Document, type ObjectId, type Sort } from 'mongodb';
+import type { Document, GridFSBucket, ObjectId, Sort } from 'mongodb';
 
 import { numberOf } from './admin';
 import {
@@ -14,6 +14,7 @@ import {
   valueArg,
   type MongoContext,
 } from './context';
+import { gridFSBucketOf } from './driver';
 import type {
   GridFsDownloadOptions,
   GridFsListOptions,
@@ -44,7 +45,7 @@ export function gridFsBuckets(collectionNames: readonly string[]): string[] {
  */
 function bucketOf(ctx: MongoContext, ref: GridFsBucketRef, raw = false): GridFSBucket {
   checkCollectionName(ref.bucket);
-  return new GridFSBucket(raw ? ctx.rawDb(ref.db) : ctx.db(ref.db), { bucketName: ref.bucket });
+  return gridFSBucketOf(raw ? ctx.rawDb(ref.db) : ctx.db(ref.db), { bucketName: ref.bucket });
 }
 
 /** A file document as the browser lists it. */
