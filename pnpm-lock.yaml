@@ -88,6 +88,9 @@ importers:
       mongodb:
         specifier: ^7.7.0
         version: 7.7.0(@aws-sdk/credential-providers@3.1158.0)(gcp-metadata@7.0.1)(kerberos@7.0.0)(mongodb-client-encryption@7.2.1)(socks@2.8.10)
+      mongodb6:
+        specifier: npm:mongodb@^6.22.0
+        version: mongodb@6.22.0(@aws-sdk/credential-providers@3.1158.0)(gcp-metadata@7.0.1)(kerberos@7.0.0)(mongodb-client-encryption@7.2.1)(socks@2.8.10)
       mysql2:
         specifier: ^3.24.4
         version: 3.24.4(@types/node@22.20.4)
