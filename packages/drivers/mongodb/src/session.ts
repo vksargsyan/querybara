@@ -46,7 +46,7 @@ import type {
   WatchScope,
   WriteSummary,
 } from '@querybara/mongo-tools';
-import { MongoClient } from 'mongodb';
+import { MongoClient, type TopologyDescriptionChangedEvent } from 'mongodb';
 
 import * as admin from './admin';
 import { browseMongo } from './browse';
@@ -132,11 +132,29 @@ export async function connectMongoClient(
   } catch (error) {
     throw mapMongoError(error, errorContext);
   }
+  // A server whose wire versions the driver does not speak (MongoDB 4.2, say) fails every
+  // handshake the same way: once every known server has, stop rather than wait out server
+  // selection, and report that refusal instead of a selection timeout.
+  let incompatible: unknown;
+  const onTopology = (event: TopologyDescriptionChangedEvent): void => {
+    const servers = [...event.newDescription.servers.values()];
+    if (
+      incompatible === undefined &&
+      servers.length > 0 &&
+      servers.every((server) => server.error?.name === 'MongoCompatibilityError')
+    ) {
+      incompatible = servers[0]!.error;
+      void client.close().catch(() => undefined);
+    }
+  };
+  client.on('topologyDescriptionChanged', onTopology);
   try {
     await client.connect();
   } catch (error) {
     await client.close().catch(() => undefined);
-    throw mapMongoError(error, errorContext);
+    throw mapMongoError(incompatible ?? error, errorContext);
+  } finally {
+    client.off('topologyDescriptionChanged', onTopology);
   }
   return { client, plan, errorContext };
 }

@@ -414,6 +414,14 @@ async function* driverSteps(
     session = await d.connect(resolved);
   } catch (error) {
     let failure = asQuerybara(error, plan.where, plan.secrets);
+    if (failure.engineCode === 'MongoCompatibilityError') {
+      // The handshake refused the server's version before any login was tried.
+      const notTried = 'Not attempted: the server version is not supported';
+      yield log.skipped('auth', notTried);
+      yield log.skipped('ping', notTried);
+      yield log.failure('version', started, failure);
+      return;
+    }
     if (failure.code !== 'AUTH_FAILED' && failure.code !== 'TLS_FAILED') {
       failure = await diagnoseTopology(plan, target.server, d, failure);
     }

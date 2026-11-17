@@ -1,5 +1,6 @@
 import {
   MongoBulkWriteError,
+  MongoCompatibilityError,
   MongoMissingDependencyError,
   MongoNetworkError,
   MongoParseError,
@@ -286,6 +287,54 @@ describe('mapMongoError', () => {
       message:
         'No server was selectable within 5000 ms at db.example.com:27017 (topology Single; servers: x:1 Unknown)',
     });
+  });
+
+  it('names a server whose wire versions the driver does not speak', () => {
+    // Driver 7 against MongoDB 4.2.25: the monitor's handshake fails, the server stays Unknown.
+    const handshake = new MongoCompatibilityError(
+      'Server at 95.211.19.41:12017 reports maximum wire version 8, but this version of the Node.js Driver requires at least 9 (MongoDB 4.4)',
+    );
+    const expected = {
+      code: 'NOT_SUPPORTED',
+      engineCode: 'MongoCompatibilityError',
+      message: '95.211.19.41:12017 runs MongoDB 4.2, which is older than Querybara supports',
+      hint: 'Querybara connects to MongoDB 4.4 and later; upgrade the server',
+    };
+    expect(mapMongoError(handshake, context).toJSON()).toMatchObject(expected);
+    const timedOut = selectionError('Single', [
+      { address: '95.211.19.41:12017', type: 'Unknown', error: handshake },
+    ]);
+    expect(mapMongoError(timedOut, { ...context, timeoutMs: 10000 }).toJSON()).toMatchObject(
+      expected,
+    );
+    // The topology's own wording, and servers older than any named release.
+    expect(
+      mapMongoError(
+        new MongoCompatibilityError(
+          'Server at mongo1:27017 reports wire version 2, but this version of the driver requires at least 9 (MongoDB 4.4).',
+        ),
+        context,
+      ).message,
+    ).toBe('mongo1:27017 runs MongoDB 2.6 or older, which is older than Querybara supports');
+    expect(
+      mapMongoError(
+        new MongoCompatibilityError(
+          'Server at mongo1:27017 reports minimum wire version 40, but this version of the Node.js Driver requires at most 29 (MongoDB 8.3)',
+        ),
+        context,
+      ),
+    ).toMatchObject({
+      code: 'NOT_SUPPORTED',
+      message: expect.stringContaining('newer than Querybara supports (MongoDB 8.3 and earlier)'),
+      hint: 'Update Querybara',
+    });
+    // Other compatibility errors keep the driver's wording.
+    expect(
+      mapMongoError(
+        new MongoCompatibilityError('the server does not support load balancing mode'),
+        context,
+      ),
+    ).toMatchObject({ code: 'VALIDATION_FAILED' });
   });
 
   it('maps client errors and never leaks secrets', () => {
