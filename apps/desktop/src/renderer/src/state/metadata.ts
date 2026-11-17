@@ -91,13 +91,18 @@ export const metadataCache = new MetadataCache(
       metadataLane(profileId).run((host, sessionId) =>
         readConnectionFacts(dialect, async (sql) => (await collect(host, sessionId, { sql })).rows),
       ),
+    // Best effort: autocomplete and the ER diagram only read the structure, so a kind the
+    // server cannot list (MariaDB routines under outdated system tables) is left out.
     introspect: (profileId, dialect, database, schemas) =>
       dialect === 'postgres'
         ? metadataLane(profileId, database).run((host, sessionId) =>
-            host.introspect({ sessionId, scope: schemas ? { schemas: [...schemas] } : {} }),
+            host.introspect({
+              sessionId,
+              scope: { ...(schemas ? { schemas: [...schemas] } : {}), bestEffort: true },
+            }),
           )
         : metadataLane(profileId).run((host, sessionId) =>
-            host.introspect({ sessionId, scope: { database } }),
+            host.introspect({ sessionId, scope: { database, bestEffort: true } }),
           ),
   },
   {

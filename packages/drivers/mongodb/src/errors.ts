@@ -153,6 +153,66 @@ function firstWriteError(error: unknown): Record<string, unknown> | undefined {
   return single;
 }
 
+/** MongoDB releases by maximum wire version, to name a server too old for the driver. */
+const RELEASE_BY_WIRE_VERSION: Readonly<Record<number, string>> = {
+  3: '3.0',
+  4: '3.2',
+  5: '3.4',
+  6: '3.6',
+  7: '4.0',
+  8: '4.2',
+};
+
+/**
+ * The driver's refusal of a server whose wire versions it does not speak, as NOT_SUPPORTED
+ * naming the server's release and the driver's limit; undefined for any other error. The
+ * driver words it "Server at h:p reports maximum wire version 8, but this version of the
+ * Node.js Driver requires at least 9 (MongoDB 4.4)" at the handshake, and "reports wire
+ * version 8, but this version of the driver requires at least 9 (MongoDB 4.4)" for the
+ * topology; a server too new says "minimum wire version" / "requires wire version" instead.
+ */
+export function describeIncompatibleServer(
+  error: unknown,
+  where: string,
+): QuerybaraError | undefined {
+  if (errorProp(error, 'name') !== 'MongoCompatibilityError') return undefined;
+  const text = errorMessage(error);
+  const address = /^Server at (\S+)/.exec(text)?.[1] ?? where;
+  const data = { code: 'NOT_SUPPORTED', engineCode: 'MongoCompatibilityError' } as const;
+  const tooOld =
+    /reports (?:maximum )?wire version (\d+), but .* requires at least \d+ \(MongoDB ([\d.]+)\)/.exec(
+      text,
+    );
+  if (tooOld) {
+    const wire = Number(tooOld[1]);
+    const release =
+      RELEASE_BY_WIRE_VERSION[wire] ?? (wire < 3 ? '2.6 or older' : `(wire version ${wire})`);
+    return new QuerybaraError(
+      {
+        ...data,
+        message: `${address} runs MongoDB ${release}, which is older than Querybara supports`,
+        hint: `Querybara connects to MongoDB ${tooOld[2]} and later; upgrade the server`,
+      },
+      { cause: error },
+    );
+  }
+  const tooNew =
+    /(?:minimum wire version|requires wire version) (\d+), but .* (?:requires at most|only supports up to) \d+ \(MongoDB ([\d.]+)\)/.exec(
+      text,
+    );
+  if (tooNew) {
+    return new QuerybaraError(
+      {
+        ...data,
+        message: `${address} runs a MongoDB release newer than Querybara supports (MongoDB ${tooNew[2]} and earlier)`,
+        hint: 'Update Querybara',
+      },
+      { cause: error },
+    );
+  }
+  return undefined;
+}
+
 /** The topology behind a server selection failure, described without credentials. */
 function describeSelection(
   error: unknown,
@@ -169,6 +229,8 @@ function describeSelection(
     if (serverError === undefined || serverError === null) continue;
     const address =
       typeof description?.['address'] === 'string' ? description['address'] : context.where;
+    const incompatible = describeIncompatibleServer(serverError, address);
+    if (incompatible) return incompatible;
     const inner = record(serverError)?.['cause'] ?? serverError;
     const network = mapNetworkError(inner, address) ?? mapNetworkError(serverError, address);
     if (network) {
@@ -333,8 +395,9 @@ export function mapMongoError(error: unknown, context: MongoErrorContext): Query
     }
     case 'MongoParseError':
     case 'MongoInvalidArgumentError':
-    case 'MongoAPIError':
     case 'MongoCompatibilityError':
+      return describeIncompatibleServer(error, context.where) ?? make('VALIDATION_FAILED');
+    case 'MongoAPIError':
     case 'BSONError':
     case 'BSONVersionError':
       return make('VALIDATION_FAILED');

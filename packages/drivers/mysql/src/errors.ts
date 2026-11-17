@@ -25,6 +25,23 @@ const LOST_CODES = new Set([
 ]);
 
 /**
+ * A system table in the mysql database does not have the layout this server expects: the data
+ * directory came from an older server (MySQL 5.7 opened by MariaDB 10.6, say) and was never
+ * upgraded. 1558 "Column count of mysql.proc is wrong ... Please use mariadb-upgrade", 1805
+ * (the same, worded as corruption) and 1728 "Cannot load from mysql.proc".
+ */
+export const OUTDATED_SYSTEM_TABLE_ERRNOS: ReadonlySet<number> = new Set([1558, 1728, 1805]);
+
+/**
+ * ER_EVENTS_DB_ERROR: the event scheduler did not start, so no event can be read. The server was
+ * started with event_scheduler=DISABLED, or found mysql.event unusable (outdated) at startup.
+ */
+export const EVENTS_UNAVAILABLE_ERRNO = 1577;
+
+const UPGRADE_HINT =
+  "The server's system tables (the mysql database) were not upgraded along with the server: an administrator needs to run mariadb-upgrade (mysql_upgrade on MySQL) on the server";
+
+/**
  * Maps anything mysql2 throws to a QuerybaraError: server errors by errno (with SQLSTATE and the
  * syntax error position), then network and TLS failures, then mysql2's own protocol errors.
  */
@@ -81,6 +98,19 @@ export function mapMysqlError(error: unknown, context: MysqlErrorContext): Query
     }
     if (errno === 1040 || errno === 1129 || LOST_ERRNOS.has(errno)) {
       return new QuerybaraError({ ...base, code: 'CONNECTION_FAILED' }, cause);
+    }
+    if (OUTDATED_SYSTEM_TABLE_ERRNOS.has(errno)) {
+      return new QuerybaraError({ ...base, code: 'SQL_ERROR', hint: UPGRADE_HINT }, cause);
+    }
+    if (errno === EVENTS_UNAVAILABLE_ERRNO) {
+      return new QuerybaraError(
+        {
+          ...base,
+          code: 'SQL_ERROR',
+          hint: "The server started with its event scheduler disabled (event_scheduler=DISABLED), or found mysql.event outdated or damaged; the server's error log says which. For outdated system tables, run mariadb-upgrade (mysql_upgrade on MySQL) and restart the server",
+        },
+        cause,
+      );
     }
     const position =
       context.statement !== undefined ? syntaxErrorPosition(message, context.statement) : undefined;

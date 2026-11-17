@@ -28,6 +28,14 @@ export interface IntrospectScope {
   readonly schemas?: readonly string[];
   /** Object kinds to include; defaults to all. */
   readonly include?: readonly SchemaObjectKind[];
+  /**
+   * Leave out a kind of object the server cannot list at all, instead of failing: on MySQL and
+   * MariaDB, routines and events when the system tables were not upgraded with the server.
+   * For readers of the structure (autocomplete, the ER diagram), never for compare, sync or
+   * backup, where a missing object reads as a dropped one. Drivers with nothing to leave out
+   * ignore it.
+   */
+  readonly bestEffort?: boolean;
 }
 
 export const BROWSE_NODE_KINDS = [
